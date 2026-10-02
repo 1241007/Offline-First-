@@ -90,7 +90,8 @@ fun LandingScreen(
     onLogin: () -> Unit = {},
     isLoggedIn: Boolean = false,
     onAskAI: () -> Unit = {},
-    onOpenAITools: () -> Unit = onAskAI
+    onOpenAITools: () -> Unit = onAskAI,
+    onRoadmap: () -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -124,7 +125,7 @@ fun LandingScreen(
                 )
                 QuickActions(
                     onCourses = { scope.launch { catalogueRequester.bringIntoView() } },
-                    onRoadmap = { showMessage("Your personalized roadmap will be available soon.") },
+                    onRoadmap = onRoadmap,
                     onChatbot = onAskAI,
                     onAITools = onOpenAITools
                 )
