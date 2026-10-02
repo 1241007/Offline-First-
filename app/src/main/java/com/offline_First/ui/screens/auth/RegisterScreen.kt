@@ -37,6 +37,10 @@ import com.offline_First.ui.components.AuthHeader
 import com.offline_First.ui.components.AuthPasswordField
 import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
+import com.offline_First.ui.theme.EduNovaBackground
+import com.offline_First.ui.theme.EduNovaError
+import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.theme.EduNovaTextSecondary
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -58,7 +62,7 @@ fun RegisterScreen(onLogin: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     Scaffold(
-        containerColor = Color(0xFFF8FAFD),
+        containerColor = EduNovaBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
@@ -129,7 +133,7 @@ fun RegisterScreen(onLogin: () -> Unit) {
                             Text("I agree to the ")
                             Text(
                                 text = "Terms & Conditions",
-                                color = Color(0xFF246BFD),
+                                color = EduNovaPrimary,
                                 modifier = Modifier.clickable(
                                     role = Role.Button,
                                     onClick = {
@@ -144,7 +148,7 @@ fun RegisterScreen(onLogin: () -> Unit) {
                         }
                         Text(
                             text = "and Privacy Policy",
-                            color = Color(0xFF246BFD),
+                            color = EduNovaPrimary,
                             modifier = Modifier.clickable(
                                 role = Role.Button,
                                 onClick = {
@@ -156,7 +160,7 @@ fun RegisterScreen(onLogin: () -> Unit) {
                                 }
                             )
                         )
-                        termsError?.let { Text(it, color = Color(0xFFBA1A1A)) }
+                        termsError?.let { Text(it, color = EduNovaError) }
                     }
                 }
                 PrimaryAuthButton(text = "Create Account") {
@@ -188,7 +192,7 @@ fun RegisterScreen(onLogin: () -> Unit) {
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Already have an account?", color = Color(0xFF5F6B85))
+                Text("Already have an account?", color = EduNovaTextSecondary)
                 TextButton(onClick = onLogin) { Text("Login") }
             }
         }

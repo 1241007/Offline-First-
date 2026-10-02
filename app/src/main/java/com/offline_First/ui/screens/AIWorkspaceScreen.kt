@@ -92,12 +92,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import com.offline_First.ui.theme.EduNovaAccent
+import com.offline_First.ui.theme.EduNovaBackground
+import com.offline_First.ui.theme.EduNovaBorder
+import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.theme.EduNovaSecondary
+import com.offline_First.ui.theme.EduNovaSecondaryContainer
+import com.offline_First.ui.theme.EduNovaSuccess
+import com.offline_First.ui.theme.EduNovaTextPrimary
+import com.offline_First.ui.theme.EduNovaTextSecondary
 
-private val PageBackground = Color(0xFFF8FAFC)
-private val Ink = Color(0xFF0F172A)
-private val MutedInk = Color(0xFF64748B)
-private val Primary = Color(0xFF2563EB)
-private val Border = Color(0xFFE2E8F0)
+private val PageBackground = EduNovaBackground
+private val Ink = EduNovaTextPrimary
+private val MutedInk = EduNovaTextSecondary
+private val Primary = EduNovaPrimary
+private val Border = EduNovaBorder
 
 private enum class AITool(
     val title: String,
@@ -106,18 +115,18 @@ private enum class AITool(
     val accent: Color
 ) {
     CHAT("AI Chat", "Ask anything and learn with AI", Icons.Default.ChatBubbleOutline, Primary),
-    PLANNER("Study Planner", "Build a smarter learning routine", Icons.Default.CalendarMonth, Color(0xFF0F766E)),
-    MIND_MAP("Mind Map", "Turn a topic into a visual structure", Icons.Default.AccountTree, Color(0xFF7C3AED)),
-    IMAGE_ANALYSIS("Image Analysis", "Understand diagrams, notes, and images", Icons.Default.Image, Color(0xFFEA580C)),
-    QUIZ("Quiz", "Test your understanding", Icons.Default.Quiz, Color(0xFFD97706)),
-    FLASHCARDS("Flashcards", "Revise concepts quickly", Icons.Default.Style, Color(0xFF16A34A)),
-    VIDEO("AI Visual Video", "Turn a topic into a visual explanation", Icons.Default.SmartDisplay, Color(0xFFDB2777)),
-    REPORTS("Reports", "Track your learning progress", Icons.Default.Analytics, Color(0xFF0891B2)),
-    ONLINE_LEARNING("Online Learning", "Continue with curated learning", Icons.Default.School, Color(0xFF2563EB)),
-    AUDIO_LEARNING("Audio Learning", "Learn while listening", Icons.Default.Headphones, Color(0xFF4F46E5)),
-    PYQ("PYQ", "Practice previous year questions", Icons.Default.MenuBook, Color(0xFF1D4ED8)),
-    EXAM_MODE("Exam Mode", "Practice under exam conditions", Icons.Default.Timer, Color(0xFFDC2626)),
-    EXAM_REVIEW("Exam Review", "Review performance in depth", Icons.Default.FactCheck, Color(0xFF9333EA))
+    PLANNER("Study Planner", "Build a smarter learning routine", Icons.Default.CalendarMonth, EduNovaAccent),
+    MIND_MAP("Mind Map", "Turn a topic into a visual structure", Icons.Default.AccountTree, EduNovaSecondary),
+    IMAGE_ANALYSIS("Image Analysis", "Understand diagrams, notes, and images", Icons.Default.Image, EduNovaSecondary),
+    QUIZ("Quiz", "Test your understanding", Icons.Default.Quiz, EduNovaAccent),
+    FLASHCARDS("Flashcards", "Revise concepts quickly", Icons.Default.Style, EduNovaAccent),
+    VIDEO("AI Visual Video", "Turn a topic into a visual explanation", Icons.Default.SmartDisplay, EduNovaSecondary),
+    REPORTS("Reports", "Track your learning progress", Icons.Default.Analytics, EduNovaAccent),
+    ONLINE_LEARNING("Online Learning", "Continue with curated learning", Icons.Default.School, Primary),
+    AUDIO_LEARNING("Audio Learning", "Learn while listening", Icons.Default.Headphones, EduNovaSecondary),
+    PYQ("PYQ", "Practice previous year questions", Icons.Default.MenuBook, Primary),
+    EXAM_MODE("Exam Mode", "Practice under exam conditions", Icons.Default.Timer, Primary),
+    EXAM_REVIEW("Exam Review", "Review performance in depth", Icons.Default.FactCheck, EduNovaSecondary)
 }
 
 private data class ChatMessage(val text: String, val fromUser: Boolean)
@@ -558,11 +567,11 @@ private fun VideoTool() {
         }
         if (isGenerating) MockProgress()
         if (isReady) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF2F8)), modifier = Modifier.fillMaxWidth()) {
+            Card(colors = CardDefaults.cardColors(containerColor = EduNovaSecondaryContainer), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(topic, color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("AI Visual Explanation", color = Color(0xFF9D174D))
-                    Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().size(150.dp)) {
+                    Text("AI Visual Explanation", color = EduNovaSecondary)
+                    Surface(color = EduNovaTextPrimary, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().size(150.dp)) {
                         Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, "Play video preview", tint = Color.White, modifier = Modifier.size(42.dp)) }
                     }
                     Text("Water evaporates from Earth's surface and rises into the atmosphere...", color = MutedInk, fontSize = 13.sp)
@@ -633,7 +642,7 @@ private fun ReportsTool(isClass912Student: Boolean) {
         ).forEach { (label, value) ->
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF16A34A))
+                    Icon(Icons.Default.CheckCircle, null, tint = EduNovaSuccess)
                     Spacer(Modifier.width(12.dp))
                     Text(label, color = Ink, modifier = Modifier.weight(1f))
                     Text(value, color = Primary, fontWeight = FontWeight.Bold)

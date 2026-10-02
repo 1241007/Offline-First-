@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.offline_First.ui.screens.AIWorkspaceScreen
 import com.offline_First.ui.screens.LandingScreen
+import com.offline_First.ui.screens.RoadmapBuilderScreen
 import com.offline_First.ui.screens.RoadmapScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
@@ -23,7 +24,8 @@ private enum class AppDestination {
     REGISTER,
     FORGOT_PASSWORD,
     AI_WORKSPACE,
-    ROADMAP
+    ROADMAP,
+    ROADMAP_BUILDER
 }
 
 class MainActivity : ComponentActivity() {
@@ -43,6 +45,7 @@ class MainActivity : ComponentActivity() {
                         AppDestination.LOGIN -> AppDestination.LANDING
                         AppDestination.AI_WORKSPACE -> AppDestination.LANDING
                         AppDestination.ROADMAP -> AppDestination.LANDING
+                        AppDestination.ROADMAP_BUILDER -> AppDestination.ROADMAP
                         AppDestination.LANDING -> AppDestination.LANDING
                     }
                 }
@@ -81,7 +84,11 @@ class MainActivity : ComponentActivity() {
                         openToolsOnStart = openWorkspaceTools
                     )
                     AppDestination.ROADMAP -> RoadmapScreen(
-                        onBack = { destination = AppDestination.LANDING }
+                        onBack = { destination = AppDestination.LANDING },
+                        onBuildRoadmap = { destination = AppDestination.ROADMAP_BUILDER }
+                    )
+                    AppDestination.ROADMAP_BUILDER -> RoadmapBuilderScreen(
+                        onBack = { destination = AppDestination.ROADMAP }
                     )
                 }
             }

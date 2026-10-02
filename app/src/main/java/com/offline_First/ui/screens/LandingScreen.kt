@@ -59,15 +59,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.offline_First.R
+import com.offline_First.ui.theme.EduNovaAccent
+import com.offline_First.ui.theme.EduNovaBackground
+import com.offline_First.ui.theme.EduNovaBorder
+import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.theme.EduNovaPrimaryContainer
+import com.offline_First.ui.theme.EduNovaSecondary
+import com.offline_First.ui.theme.EduNovaSurface
+import com.offline_First.ui.theme.EduNovaTextPrimary
+import com.offline_First.ui.theme.EduNovaTextSecondary
 
-private val Primary = Color(0xFF2563EB)
-private val PrimaryDark = Color(0xFF0F172A)
-private val Accent = Color(0xFF14B8A6)
-private val Ink = Color(0xFF0F172A)
-private val MutedInk = Color(0xFF64748B)
-private val PageBackground = Color(0xFFF8FAFC)
-private val Border = Color(0xFFE2E8F0)
-private val SoftPrimary = Color(0xFFEFF6FF)
+private val Primary = EduNovaPrimary
+private val PrimaryDark = EduNovaTextPrimary
+private val Accent = EduNovaAccent
+private val Ink = EduNovaTextPrimary
+private val MutedInk = EduNovaTextSecondary
+private val PageBackground = EduNovaBackground
+private val Border = EduNovaBorder
+private val SoftPrimary = EduNovaPrimaryContainer
 
 private data class Course(
     val name: String,
@@ -77,12 +86,12 @@ private data class Course(
 )
 
 private val courses = listOf(
-    Course("Python", "Build a strong programming foundation.", "Py", Color(0xFF3776AB)),
-    Course("Java", "Learn practical object-oriented programming.", "J", Color(0xFFE76F00)),
-    Course("C++", "Strengthen logic with powerful fundamentals.", "C+", Color(0xFF2563EB)),
-    Course("Data Science", "Turn data into useful insights.", "DS", Color(0xFF7C3AED)),
-    Course("DSA", "Master problem solving and algorithms.", "⌘", Color(0xFF0F766E)),
-    Course("Full Stack", "Create complete modern web experiences.", "</>", Color(0xFFDB2777))
+    Course("Python", "Build a strong programming foundation.", "Py", EduNovaPrimary),
+    Course("Java", "Learn practical object-oriented programming.", "J", EduNovaSecondary),
+    Course("C++", "Strengthen logic with powerful fundamentals.", "C+", EduNovaPrimary),
+    Course("Data Science", "Turn data into useful insights.", "DS", EduNovaSecondary),
+    Course("DSA", "Master problem solving and algorithms.", "⌘", EduNovaAccent),
+    Course("Full Stack", "Create complete modern web experiences.", "</>", EduNovaPrimary)
 )
 
 @Composable
@@ -491,8 +500,8 @@ private fun SupportRow(
 
 private enum class SupportIcon(val containerColor: Color) {
     Help(SoftPrimary),
-    Contact(Color(0xFFE6FFFB)),
-    About(Color(0xFFF1F5F9))
+    Contact(EduNovaSurface),
+    About(EduNovaSurface)
 }
 
 @Composable

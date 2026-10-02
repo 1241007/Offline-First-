@@ -2,538 +2,935 @@ package com.offline_First.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import com.offline_First.ui.theme.EduNovaAccent
+import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.theme.EduNovaSecondary
+import com.offline_First.ui.theme.EduNovaSuccess
 
-private val RoadmapPageBackground = Color(0xFFF8FAFC)
-private val RoadmapCard = Color.White
-private val RoadmapBorder = Color(0xFFE2E8F0)
-private val RoadmapMuted = Color(0xFF64748B)
-private val RoadmapInk = Color(0xFF0F172A)
-private val RoadmapPrimary = Color(0xFF2563EB)
-private val RoadmapPrimarySoft = Color(0xFFEFF6FF)
-private val RoadmapAccent = Color(0xFF14B8A6)
-private val RoadmapSuccess = Color(0xFF22C55E)
-private val RoadmapWarning = Color(0xFFF59E0B)
-private val RoadmapGhost = Color(0xFFF1F5F9)
-
-private data class RoadmapSummary(
-    val label: String,
-    val value: String,
-    val tone: Color = RoadmapPrimary
-)
-
-private data class RoadmapStage(
-    val number: Int,
+private data class RoadmapOption(
     val title: String,
+    val category: String,
     val description: String,
-    val topics: List<String>,
+    val skills: List<String>,
+    val level: String,
     val duration: String,
-    val status: StageStatus,
-    val isCurrent: Boolean = false
+    val stages: Int,
+    val icon: String,
+    val accent: Color
 )
 
-private enum class StageStatus {
-    COMPLETED,
-    IN_PROGRESS,
-    UPCOMING,
-    LOCKED
-}
+private data class GeneratedRoadmapPreview(
+    val goal: String,
+    val level: String,
+    val studyTime: String,
+    val duration: String,
+    val stages: List<String>
+)
 
+private val roadmapCategories = listOf(
+    "All",
+    "Development",
+    "Data & AI",
+    "Mobile",
+    "Cloud & DevOps",
+    "Security"
+)
+
+private val roadmapPrimary = EduNovaPrimary
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoadmapScreen(onBack: () -> Unit = {}) {
-    val summary = listOf(
-        RoadmapSummary("Goal", "Data Scientist", RoadmapPrimary),
-        RoadmapSummary("Level", "Intermediate", RoadmapAccent),
-        RoadmapSummary("Study time", "1–2 hrs/day", RoadmapWarning),
-        RoadmapSummary("Focus", "Python • SQL", RoadmapPrimary)
-    )
-
-    val stages = listOf(
-        RoadmapStage(
-            number = 1,
-            title = "Foundation",
-            description = "Build your core concepts and confidence in Python and logic.",
-            topics = listOf("Python basics", "Variables", "Functions", "OOP"),
-            duration = "2 weeks",
-            status = StageStatus.COMPLETED
-        ),
-        RoadmapStage(
-            number = 2,
-            title = "Core Skills",
-            description = "Practice data handling, SQL queries, and analytical thinking.",
-            topics = listOf("SQL", "Pandas", "Data cleaning", "Analysis"),
-            duration = "3 weeks",
-            status = StageStatus.IN_PROGRESS,
-            isCurrent = true
-        ),
-        RoadmapStage(
-            number = 3,
-            title = "Projects",
-            description = "Apply your knowledge to complete guided mini-projects.",
-            topics = listOf("Dashboards", "Case studies", "Presentations"),
-            duration = "4 weeks",
-            status = StageStatus.UPCOMING
-        ),
-        RoadmapStage(
-            number = 4,
-            title = "Advanced",
-            description = "Prepare for machine learning, modeling, and deployment workflows.",
-            topics = listOf("ML basics", "Model eval", "Feature engineering"),
-            duration = "5 weeks",
-            status = StageStatus.LOCKED
-        ),
-        RoadmapStage(
-            number = 5,
-            title = "Career Ready",
-            description = "Package your portfolio, interview prep, and job-market readiness.",
-            topics = listOf("Portfolio", "Git", "Technical stories"),
-            duration = "2 weeks",
-            status = StageStatus.LOCKED
+fun RoadmapScreen(
+    onBack: () -> Unit = {},
+    onBuildRoadmap: () -> Unit = {}
+) {
+    val roadmapOptions = remember {
+        listOf(
+            RoadmapOption(
+                title = "Frontend Developer",
+                category = "Development",
+                description = "Build polished interfaces and production-ready web apps.",
+                skills = listOf("HTML", "CSS", "JavaScript", "React"),
+                level = "Beginner",
+                duration = "8–10 weeks",
+                stages = 6,
+                icon = "FE",
+                accent = EduNovaPrimary
+            ),
+            RoadmapOption(
+                title = "Backend Developer",
+                category = "Development",
+                description = "Create APIs, databases, and backend systems students can ship.",
+                skills = listOf("Node.js", "APIs", "Databases", "Security"),
+                level = "Intermediate",
+                duration = "10–12 weeks",
+                stages = 7,
+                icon = "BE",
+                accent = EduNovaSecondary
+            ),
+            RoadmapOption(
+                title = "Full Stack Developer",
+                category = "Development",
+                description = "Move from UI work to complete product development workflows.",
+                skills = listOf("React", "Node", "Databases", "DevOps"),
+                level = "Intermediate",
+                duration = "12–14 weeks",
+                stages = 8,
+                icon = "FS",
+                accent = EduNovaSuccess
+            ),
+            RoadmapOption(
+                title = "Data Scientist",
+                category = "Data & AI",
+                description = "Learn data analysis, modeling, and decision-making with real datasets.",
+                skills = listOf("Python", "SQL", "Statistics", "ML"),
+                level = "Beginner",
+                duration = "10–12 weeks",
+                stages = 7,
+                icon = "DS",
+                accent = EduNovaSecondary
+            ),
+            RoadmapOption(
+                title = "Machine Learning Engineer",
+                category = "Data & AI",
+                description = "Master model training, evaluation, and deployment for AI products.",
+                skills = listOf("Python", "ML", "PyTorch", "Math"),
+                level = "Intermediate",
+                duration = "12–16 weeks",
+                stages = 9,
+                icon = "ML",
+                accent = EduNovaAccent
+            ),
+            RoadmapOption(
+                title = "Android Developer",
+                category = "Mobile",
+                description = "Build user-friendly mobile apps with Kotlin and Jetpack Compose.",
+                skills = listOf("Kotlin", "Compose", "UI", "Testing"),
+                level = "Beginner",
+                duration = "8–10 weeks",
+                stages = 6,
+                icon = "AD",
+                accent = EduNovaSecondary
+            ),
+            RoadmapOption(
+                title = "DevOps Engineer",
+                category = "Cloud & DevOps",
+                description = "Learn automation, deployment flow, and cloud-first engineering habits.",
+                skills = listOf("Linux", "CI/CD", "Cloud", "Containers"),
+                level = "Intermediate",
+                duration = "10–12 weeks",
+                stages = 7,
+                icon = "DO",
+                accent = EduNovaAccent
+            ),
+            RoadmapOption(
+                title = "Data Analyst",
+                category = "Data & AI",
+                description = "Turn messy numbers into trends, dashboards, and smart business decisions.",
+                skills = listOf("Excel", "SQL", "Tableau", "Insights"),
+                level = "Beginner",
+                duration = "6–8 weeks",
+                stages = 5,
+                icon = "DA",
+                accent = EduNovaSecondary
+            ),
+            RoadmapOption(
+                title = "Cybersecurity",
+                category = "Security",
+                description = "Build the fundamentals of secure systems, networks, and threat awareness.",
+                skills = listOf("Networking", "Security", "Ethical Hacking", "Monitoring"),
+                level = "Intermediate",
+                duration = "10–12 weeks",
+                stages = 7,
+                icon = "CY",
+                accent = EduNovaPrimary
+            )
         )
-    )
+    }
+
+    var selectedCategory by rememberSaveable { mutableStateOf("All") }
+    var selectedRoadmap by remember { mutableStateOf<RoadmapOption?>(null) }
+    var showPersonalizationSheet by rememberSaveable { mutableStateOf(false) }
+    var isGenerating by rememberSaveable { mutableStateOf(false) }
+    var generatedRoadmap by remember { mutableStateOf<GeneratedRoadmapPreview?>(null) }
+
+    var selectedGoal by rememberSaveable { mutableStateOf("Get a job") }
+    var selectedLevel by rememberSaveable { mutableStateOf("Beginner") }
+    var selectedStudyTime by rememberSaveable { mutableStateOf("1 hour/day") }
+    var selectedInterest by rememberSaveable { mutableStateOf("AI / ML") }
+
+    val filteredRoadmaps = remember(selectedCategory, roadmapOptions) {
+        if (selectedCategory == "All") roadmapOptions else roadmapOptions.filter { it.category == selectedCategory }
+    }
+
+    val featureRoadmaps = filteredRoadmaps.take(2)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            delay(1200L)
+            generatedRoadmap = GeneratedRoadmapPreview(
+                goal = selectedGoal,
+                level = selectedLevel,
+                studyTime = selectedStudyTime,
+                duration = "10–12 weeks",
+                stages = listOf(
+                    "Python Foundations",
+                    "Math for ML",
+                    "Data Processing",
+                    "Machine Learning",
+                    "Deep Learning",
+                    "Real-world Projects"
+                )
+            )
+            showPersonalizationSheet = false
+            isGenerating = false
+        }
+    }
 
     Scaffold(
-        containerColor = RoadmapPageBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Surface(
-                color = Color.Transparent,
-                shadowElevation = 0.dp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = RoadmapInk
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Roadmap",
-                        color = RoadmapInk,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 18.sp
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Roadmap",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(paddingValues)
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Developer Roadmaps",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Follow a structured path, learn the right skills, and build your way toward your goal.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+
+            item {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = roadmapPrimary.copy(alpha = 0.08f)),
+                    border = BorderStroke(1.dp, roadmapPrimary.copy(alpha = 0.15f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(roadmapPrimary, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "✦",
+                                    color = Color.White,
+                                    fontSize = 20.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Chat then Build",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Tell EduNova about your goals, current level, and available study time.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PersonalizationTag("Your goal")
+                            PersonalizationTag("Current level")
+                            PersonalizationTag("Study time")
+                            PersonalizationTag("Interests")
+                        }
+
+                        Button(
+                            onClick = onBuildRoadmap,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Chat & Build")
+                        }
+                    }
+                }
+            }
+
+            if (generatedRoadmap != null) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Your roadmap is ready!",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Goal: ${generatedRoadmap!!.goal}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Level: ${generatedRoadmap!!.level}   •   Study time: ${generatedRoadmap!!.studyTime}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Estimated journey: ${generatedRoadmap!!.duration}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = roadmapPrimary
+                            )
+
+                            generatedRoadmap!!.stages.forEachIndexed { index, stage ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(roadmapPrimary.copy(alpha = 0.12f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "%02d".format(index + 1),
+                                            color = roadmapPrimary,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = stage,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Button(
+                                    onClick = { },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
+                                ) {
+                                    Text("Start Roadmap")
+                                }
+                                OutlinedButton(
+                                    onClick = { generatedRoadmap = null },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Adjust Goals")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isGenerating) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(roadmapPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "AI",
+                                    color = roadmapPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = "Building your roadmap...",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "EduNova is creating a learning path based on your goals.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Explore by interest",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        roadmapCategories.forEach { category ->
+                            val isSelected = category == selectedCategory
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(
+                                        if (isSelected) roadmapPrimary else MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    .clickable { selectedCategory = category }
+                            ) {
+                                Text(
+                                    text = category,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Popular this week",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        featureRoadmaps.forEach { roadmap ->
+                            FeaturedRoadmapCard(
+                                roadmap = roadmap,
+                                onClick = { selectedRoadmap = roadmap },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Standard Roadmaps",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Choose a structured path and start learning.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (filteredRoadmaps.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "No roadmaps found",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Try another category.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                val rows = filteredRoadmaps.chunked(2)
+                items(rows.size) { index ->
+                    val row = rows[index]
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { roadmap ->
+                            StandardRoadmapCard(
+                                roadmap = roadmap,
+                                onClick = { selectedRoadmap = roadmap },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (row.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(12.dp)) }
+        }
+    }
+
+    if (showPersonalizationSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showPersonalizationSheet = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Text(
+                    text = "Build your personalized roadmap",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Tell EduNova about your goals, current level, and time to learn.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                QuestionBlock(
+                    title = "What’s your goal?",
+                    options = listOf("Get a job", "Prepare for an interview", "Learn a new skill", "Build projects", "Prepare for an exam"),
+                    selected = selectedGoal,
+                    onSelect = { selectedGoal = it }
+                )
+
+                QuestionBlock(
+                    title = "What’s your current level?",
+                    options = listOf("Beginner", "Intermediate", "Advanced"),
+                    selected = selectedLevel,
+                    onSelect = { selectedLevel = it }
+                )
+
+                QuestionBlock(
+                    title = "How much time can you study?",
+                    options = listOf("30 min/day", "1 hour/day", "2 hours/day", "3+ hours/day"),
+                    selected = selectedStudyTime,
+                    onSelect = { selectedStudyTime = it }
+                )
+
+                QuestionBlock(
+                    title = "What do you want to learn?",
+                    options = listOf("Web Development", "AI / ML", "Data Science", "Android", "Cloud"),
+                    selected = selectedInterest,
+                    onSelect = { selectedInterest = it }
+                )
+
+                Button(
+                    onClick = { isGenerating = true },
+                    enabled = !isGenerating,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
+                ) {
+                    Text("Generate roadmap")
+                }
+            }
+        }
+    }
+
+    selectedRoadmap?.let { roadmap ->
+        AlertDialog(
+            onDismissRequest = { selectedRoadmap = null },
+            title = {
+                Text(
+                    text = roadmap.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = roadmap.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Difficulty: ${roadmap.level}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Duration: ${roadmap.duration}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Stages: ${roadmap.stages}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Skills covered:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        roadmap.skills.forEach { skill ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(roadmapPrimary.copy(alpha = 0.08f))
+                            ) {
+                                Text(
+                                    text = skill,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    color = roadmapPrimary,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { selectedRoadmap = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
+                ) {
+                    Text("Start Roadmap")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedRoadmap = null }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PersonalizationTag(label: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
+private fun QuestionBlock(
+    title: String,
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { option ->
+                val isSelected = option == selected
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            if (isSelected) roadmapPrimary else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .clickable { onSelect(option) }
+                ) {
+                    Text(
+                        text = option,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeaturedRoadmapCard(
+    roadmap: RoadmapOption,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .heightIn(min = 180.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(roadmap.accent.copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = roadmap.icon,
+                    color = roadmap.accent,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = roadmap.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = roadmap.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 18.sp
+            )
+            Text(
+                text = "${roadmap.level} • ${roadmap.stages} stages",
+                style = MaterialTheme.typography.labelMedium,
+                color = roadmapPrimary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun StandardRoadmapCard(
+    roadmap: RoadmapOption,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(roadmap.accent.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = roadmap.icon,
+                        fontWeight = FontWeight.Bold,
+                        color = roadmap.accent,
+                        fontSize = 13.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = roadmap.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Text(
+                text = roadmap.skills.joinToString(" • "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 18.sp
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Your Learning Roadmap",
-                        color = RoadmapInk,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 34.sp
-                    )
-                    Text(
-                        text = "Built around your goals, pace, and current level.",
-                        color = RoadmapMuted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-                Surface(
-                    color = RoadmapPrimarySoft,
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, RoadmapPrimary.copy(alpha = 0.18f))
-                ) {
-                    Text(
-                        text = "Personalized for you",
-                        color = RoadmapPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-                    )
-                }
+                Text(
+                    text = roadmap.level,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = roadmapPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${roadmap.stages} stages",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = RoadmapCard),
-                border = BorderStroke(1.dp, RoadmapBorder),
+            Button(
+                onClick = onClick,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary.copy(alpha = 0.10f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .background(RoadmapPrimary, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "AI",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Your roadmap is ready",
-                                color = RoadmapInk,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
-                            Text(
-                                text = "Based on your goals and current progress.",
-                                color = RoadmapMuted,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "I’ve mapped your path around your current level, study rhythm, and target career. We’ll keep refining it as you finish each milestone.",
-                        color = RoadmapInk,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = {},
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = RoadmapPrimary),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            Text("Create my roadmap", fontWeight = FontWeight.SemiBold)
-                        }
-                        Button(
-                            onClick = {},
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = RoadmapPrimarySoft),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            Text("Update my goals", color = RoadmapPrimary, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, RoadmapBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Profile snapshot",
-                        color = RoadmapInk,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        summary.forEach { item ->
-                            SummaryChip(item, Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = RoadmapCard),
-                border = BorderStroke(1.dp, RoadmapBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Your journey",
-                            color = RoadmapInk,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                        Text(
-                            text = "4 of 12 milestones done",
-                            color = RoadmapPrimary,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        listOf("Foundation", "Core Skills", "Projects", "Advanced", "Goal").forEachIndexed { index, item ->
-                            Surface(
-                                color = if (index <= 2) RoadmapPrimarySoft else RoadmapGhost,
-                                shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, if (index <= 2) RoadmapPrimary.copy(alpha = 0.18f) else RoadmapBorder)
-                            ) {
-                                Text(
-                                    text = item,
-                                    color = if (index <= 2) RoadmapPrimary else RoadmapMuted,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (index <= 2) FontWeight.SemiBold else FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        MiniStat("Today", "2 lessons", Modifier.weight(1f))
-                        MiniStat("ETA", "~10 weeks", Modifier.weight(1f))
-                        MiniStat("Current", "Core Skills", Modifier.weight(1f))
-                    }
-                }
-            }
-
-            Text(
-                text = "Roadmap timeline",
-                color = RoadmapInk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                stages.forEachIndexed { index, stage ->
-                    RoadmapStageCard(stage = stage, isLast = index == stages.lastIndex)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryChip(summary: RoadmapSummary, modifier: Modifier = Modifier) {
-    Surface(
-        color = RoadmapPrimarySoft,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, RoadmapPrimary.copy(alpha = 0.14f)),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = summary.label,
-                color = RoadmapMuted,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp
-            )
-            Text(
-                text = summary.value,
-                color = RoadmapInk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        color = RoadmapGhost,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, RoadmapBorder),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(text = label, color = RoadmapMuted, fontSize = 10.sp)
-            Text(text = value, color = RoadmapInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun RoadmapStageCard(stage: RoadmapStage, isLast: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(end = 12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(stageStatusColor(stage.status)),
-                contentAlignment = Alignment.Center
-            ) {
                 Text(
-                    text = stage.number.toString().padStart(2, '0'),
-                    color = stageStatusTextColor(stage.status),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            }
-            if (!isLast) {
-                Divider(
-                    color = RoadmapBorder,
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(72.dp)
-                        .padding(top = 6.dp)
+                    text = "View Roadmap",
+                    color = roadmapPrimary,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
-
-        Card(
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, RoadmapBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = stage.title, color = RoadmapInk, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    StageBadge(stage.status, stage.isCurrent)
-                }
-
-                Text(
-                    text = stage.description,
-                    color = RoadmapMuted,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
-
-                Text(
-                    text = stage.topics.joinToString(" • "),
-                    color = RoadmapInk,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 18.sp
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "Estimated time", color = RoadmapMuted, fontSize = 11.sp)
-                    Text(text = stage.duration, color = RoadmapInk, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                }
-            }
-        }
     }
-}
-
-@Composable
-private fun StageBadge(status: StageStatus, isCurrent: Boolean) {
-    val (text, bg, textColor) = when (status) {
-        StageStatus.COMPLETED -> Triple("Completed", RoadmapPrimarySoft, RoadmapPrimary)
-        StageStatus.IN_PROGRESS -> Triple("In progress", RoadmapAccent.copy(alpha = 0.12f), RoadmapAccent)
-        StageStatus.UPCOMING -> Triple("Upcoming", RoadmapGhost, RoadmapMuted)
-        StageStatus.LOCKED -> Triple("Locked", Color(0xFFF1F5F9), RoadmapMuted)
-    }
-
-    val displayText = if (isCurrent && status == StageStatus.IN_PROGRESS) "Current" else text
-    val displayBg = if (isCurrent && status == StageStatus.IN_PROGRESS) RoadmapPrimarySoft else bg
-    val displayTextColor = if (isCurrent && status == StageStatus.IN_PROGRESS) RoadmapPrimary else textColor
-
-    Surface(
-        color = displayBg,
-        shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, displayTextColor.copy(alpha = 0.12f))
-    ) {
-        Text(
-            text = displayText,
-            color = displayTextColor,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 10.sp,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
-        )
-    }
-}
-
-private fun stageStatusColor(status: StageStatus): Color = when (status) {
-    StageStatus.COMPLETED -> RoadmapPrimary
-    StageStatus.IN_PROGRESS -> RoadmapAccent
-    StageStatus.UPCOMING -> RoadmapGhost
-    StageStatus.LOCKED -> Color(0xFFE2E8F0)
-}
-
-private fun stageStatusTextColor(status: StageStatus): Color = when (status) {
-    StageStatus.COMPLETED -> Color.White
-    StageStatus.IN_PROGRESS -> Color.White
-    StageStatus.UPCOMING -> RoadmapMuted
-    StageStatus.LOCKED -> RoadmapMuted
 }

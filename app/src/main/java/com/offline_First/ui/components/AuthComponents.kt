@@ -32,9 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.theme.EduNovaTextPrimary
+import com.offline_First.ui.theme.EduNovaTextSecondary
 
-private val Ink = Color(0xFF0D1B3E)
-private val Blue = Color(0xFF246BFD)
+private val Ink = EduNovaTextPrimary
 
 @Composable
 fun AuthHeader(title: String, subtitle: String) {
@@ -47,14 +49,14 @@ fun AuthHeader(title: String, subtitle: String) {
             modifier = Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(17.dp))
-                .background(Blue),
+                .background(EduNovaPrimary),
             contentAlignment = Alignment.Center
         ) {
             Text("E", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black)
         }
         Text("EduNova", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(title, color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Black)
-        Text(subtitle, color = Color(0xFF5F6B85), fontSize = 15.sp)
+        Text(subtitle, color = EduNovaTextSecondary, fontSize = 15.sp)
     }
 }
 
@@ -124,7 +126,7 @@ fun PrimaryAuthButton(text: String, onClick: () -> Unit) {
             .padding(top = 4.dp)
             .semantics { contentDescription = text },
         shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Blue),
+        colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
     ) {
         Text(text, fontWeight = FontWeight.Bold)
