@@ -1,6 +1,8 @@
 package com.offline_First.ui.screens.auth
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,7 @@ import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RegisterScreen(onLogin: () -> Unit) {
     var fullName by rememberSaveable { mutableStateOf("") }
@@ -67,8 +72,8 @@ fun RegisterScreen(onLogin: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AuthHeader(
-                title = "Create your EduNova account",
-                subtitle = "Start learning at your own pace."
+                title = "Create your account",
+                subtitle = "Start your learning journey with EduNova."
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AuthTextField(
@@ -120,20 +125,37 @@ fun RegisterScreen(onLogin: () -> Unit) {
                         onCheckedChange = { termsAccepted = it; termsError = null }
                     )
                     Column(modifier = Modifier.padding(top = 12.dp)) {
-                        Row {
+                        FlowRow {
                             Text("I agree to the ")
-                            TextButton(
-                                onClick = {
-                                    scope.launch { snackbarHostState.showSnackbar("Terms and Privacy Policy will be available soon.") }
-                                }
-                            ) { Text("Terms & Conditions") }
+                            Text(
+                                text = "Terms & Conditions",
+                                color = Color(0xFF246BFD),
+                                modifier = Modifier.clickable(
+                                    role = Role.Button,
+                                    onClick = {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                "Terms and Privacy Policy will be available soon."
+                                            )
+                                        }
+                                    }
+                                )
+                            )
                         }
-                        TextButton(
-                            onClick = {
-                                scope.launch { snackbarHostState.showSnackbar("Terms and Privacy Policy will be available soon.") }
-                            },
-                            modifier = Modifier.padding(top = (-12).dp)
-                        ) { Text("and Privacy Policy") }
+                        Text(
+                            text = "and Privacy Policy",
+                            color = Color(0xFF246BFD),
+                            modifier = Modifier.clickable(
+                                role = Role.Button,
+                                onClick = {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "Terms and Privacy Policy will be available soon."
+                                        )
+                                    }
+                                }
+                            )
+                        )
                         termsError?.let { Text(it, color = Color(0xFFBA1A1A)) }
                     }
                 }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.offline_First.ui.screens.LandingScreen
+import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
 import com.offline_First.ui.theme.OfflineFirstTheme
@@ -17,7 +18,8 @@ import com.offline_First.ui.theme.OfflineFirstTheme
 private enum class AppDestination {
     LANDING,
     LOGIN,
-    REGISTER
+    REGISTER,
+    FORGOT_PASSWORD
 }
 
 class MainActivity : ComponentActivity() {
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = destination != AppDestination.LANDING) {
                     destination = when (destination) {
                         AppDestination.REGISTER -> AppDestination.LOGIN
+                        AppDestination.FORGOT_PASSWORD -> AppDestination.LOGIN
                         AppDestination.LOGIN -> AppDestination.LANDING
                         AppDestination.LANDING -> AppDestination.LANDING
                     }
@@ -44,12 +47,16 @@ class MainActivity : ComponentActivity() {
                     )
                     AppDestination.LOGIN -> LoginScreen(
                         onRegister = { destination = AppDestination.REGISTER },
+                        onForgotPassword = { destination = AppDestination.FORGOT_PASSWORD },
                         onLoginSuccess = {
                             isLoggedIn = true
                             destination = AppDestination.LANDING
                         }
                     )
                     AppDestination.REGISTER -> RegisterScreen(
+                        onLogin = { destination = AppDestination.LOGIN }
+                    )
+                    AppDestination.FORGOT_PASSWORD -> ForgotPasswordScreen(
                         onLogin = { destination = AppDestination.LOGIN }
                     )
                 }

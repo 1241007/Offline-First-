@@ -23,7 +23,20 @@ class AuthFlowTest {
         composeRule.onNodeWithText("Welcome back").assertIsDisplayed()
 
         composeRule.onNodeWithText("Create an account").performClick()
-        composeRule.onNodeWithText("Create your EduNova account").assertIsDisplayed()
+        composeRule.onNodeWithText("Create your account").assertIsDisplayed()
+    }
+
+    @Test
+    fun forgotPasswordValidatesContactAndReturnsToLogin() {
+        composeRule.onNodeWithText("Login").performClick()
+        composeRule.onNodeWithText("Forgot password?").performClick()
+        composeRule.onNodeWithText("Forgot password?").assertIsDisplayed()
+
+        composeRule.onNodeWithText("Send reset link").performClick()
+        composeRule.onNodeWithText("Please enter your email or mobile number.").assertIsDisplayed()
+
+        composeRule.onNodeWithText("Back to Login").performClick()
+        composeRule.onNodeWithText("Welcome back").assertIsDisplayed()
     }
 
     @Test

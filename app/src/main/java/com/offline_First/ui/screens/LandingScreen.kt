@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -490,9 +491,21 @@ private fun SupportIcon(icon: SupportIcon) {
         val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
         when (icon) {
             SupportIcon.Help -> {
-                drawArc(Primary, 205f, 230f, false, style = stroke)
-                drawCircle(Primary, 1.2.dp.toPx(), center.copy(y = size.height * .78f))
-                drawLine(Primary, center.copy(y = size.height * .43f), center.copy(y = size.height * .54f), stroke.width)
+                val questionMark = Path().apply {
+                    moveTo(size.width * .3f, size.height * .36f)
+                    cubicTo(
+                        size.width * .32f, size.height * .12f,
+                        size.width * .7f, size.height * .12f,
+                        size.width * .72f, size.height * .36f
+                    )
+                    cubicTo(
+                        size.width * .73f, size.height * .56f,
+                        size.width * .52f, size.height * .58f,
+                        size.width * .5f, size.height * .75f
+                    )
+                }
+                drawPath(questionMark, Primary, style = stroke)
+                drawCircle(Primary, 1.2.dp.toPx(), center.copy(y = size.height * .9f))
             }
             SupportIcon.Contact -> {
                 drawRoundRect(
