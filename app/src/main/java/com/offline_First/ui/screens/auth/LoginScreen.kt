@@ -28,6 +28,8 @@ import com.offline_First.ui.components.AuthHeader
 import com.offline_First.ui.components.AuthPasswordField
 import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
+import com.offline_First.ui.theme.EduNovaBackground
+import com.offline_First.ui.theme.EduNovaTextSecondary
 
 @Composable
 fun LoginScreen(
@@ -40,7 +42,7 @@ fun LoginScreen(
     var contactError by rememberSaveable { mutableStateOf<String?>(null) }
     var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
     Scaffold(
-        containerColor = Color(0xFFF8FAFD)
+        containerColor = EduNovaBackground
     ) { padding ->
         Column(
             modifier = Modifier
@@ -98,7 +100,7 @@ fun LoginScreen(
                 }
             }
             Row {
-                Text("New to EduNova?", color = Color(0xFF5F6B85))
+                Text("New to EduNova?", color = EduNovaTextSecondary)
                 TextButton(onClick = onRegister) { Text("Create an account") }
             }
         }

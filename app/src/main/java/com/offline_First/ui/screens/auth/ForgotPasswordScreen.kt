@@ -31,6 +31,7 @@ import com.offline_First.ui.components.AuthHeader
 import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
 import kotlinx.coroutines.launch
+import com.offline_First.ui.theme.EduNovaBackground
 
 @Composable
 fun ForgotPasswordScreen(onLogin: () -> Unit) {
@@ -40,7 +41,7 @@ fun ForgotPasswordScreen(onLogin: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     Scaffold(
-        containerColor = Color(0xFFF8FAFD),
+        containerColor = EduNovaBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
