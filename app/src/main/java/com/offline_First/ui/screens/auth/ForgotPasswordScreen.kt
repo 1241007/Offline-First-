@@ -11,36 +11,37 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.offline_First.ui.components.AuthHeader
-import com.offline_First.ui.components.AuthPasswordField
 import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
+import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(
-    onRegister: () -> Unit,
-    onForgotPassword: () -> Unit = {},
-    onLoginSuccess: () -> Unit = {}
-) {
+fun ForgotPasswordScreen(onLogin: () -> Unit) {
     var contact by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
     var contactError by rememberSaveable { mutableStateOf<String?>(null) }
-    var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
     Scaffold(
-        containerColor = Color(0xFFF8FAFD)
+        containerColor = Color(0xFFF8FAFD),
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -53,8 +54,8 @@ fun LoginScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             AuthHeader(
-                title = "Welcome back",
-                subtitle = "Continue your learning journey."
+                title = "Forgot password?",
+                subtitle = "Enter your email or mobile number and we'll help you reset your password."
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AuthTextField(
@@ -63,43 +64,24 @@ fun LoginScreen(
                     value = contact,
                     onValueChange = { contact = it; contactError = null },
                     error = contactError,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text
-                    )
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                 )
-                AuthPasswordField(
-                    label = "Password",
-                    placeholder = "Password",
-                    value = password,
-                    onValueChange = { password = it; passwordError = null },
-                    error = passwordError,
-                    imeAction = ImeAction.Done
-                )
-                Row {
-                    TextButton(
-                        onClick = onForgotPassword,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Forgot password?", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                PrimaryAuthButton(text = "Login") {
-                    val nextContactError = validateLoginContact(contact)
-                    val nextPasswordError = when {
-                        password.isBlank() -> "Password cannot be empty."
-                        password.length < 6 -> "Password must contain at least 6 characters."
-                        else -> null
-                    }
-                    contactError = nextContactError
-                    passwordError = nextPasswordError
-                    if (nextContactError == null && nextPasswordError == null) {
-                        onLoginSuccess()
+                PrimaryAuthButton(text = "Send reset link") {
+                    val nextError = validateLoginContact(contact)
+                    contactError = nextError
+                    if (nextError == null) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                "If an account exists with these details, password reset instructions will be sent."
+                            )
+                        }
                     }
                 }
             }
             Row {
-                Text("New to EduNova?", color = Color(0xFF5F6B85))
-                TextButton(onClick = onRegister) { Text("Create an account") }
+                TextButton(onClick = onLogin) {
+                    Text("Back to Login", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
