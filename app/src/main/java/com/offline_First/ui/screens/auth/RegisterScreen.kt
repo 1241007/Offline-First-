@@ -1,0 +1,174 @@
+package com.offline_First.ui.screens.auth
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.offline_First.ui.components.AuthHeader
+import com.offline_First.ui.components.AuthPasswordField
+import com.offline_First.ui.components.AuthTextField
+import com.offline_First.ui.components.PrimaryAuthButton
+import kotlinx.coroutines.launch
+
+@Composable
+fun RegisterScreen(onLogin: () -> Unit) {
+    var fullName by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var mobile by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var termsAccepted by rememberSaveable { mutableStateOf(false) }
+    var nameError by rememberSaveable { mutableStateOf<String?>(null) }
+    var emailError by rememberSaveable { mutableStateOf<String?>(null) }
+    var mobileError by rememberSaveable { mutableStateOf<String?>(null) }
+    var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmError by rememberSaveable { mutableStateOf<String?>(null) }
+    var termsError by rememberSaveable { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        containerColor = Color(0xFFF8FAFD),
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(padding)
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            AuthHeader(
+                title = "Create your EduNova account",
+                subtitle = "Start learning at your own pace."
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                AuthTextField(
+                    label = "Full name",
+                    placeholder = "Enter your full name",
+                    value = fullName,
+                    onValueChange = { fullName = it; nameError = null },
+                    error = nameError
+                )
+                AuthTextField(
+                    label = "Email",
+                    placeholder = "Enter your email",
+                    value = email,
+                    onValueChange = { email = it; emailError = null },
+                    error = emailError,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email
+                    )
+                )
+                AuthTextField(
+                    label = "Mobile number",
+                    placeholder = "Enter your mobile number",
+                    value = mobile,
+                    onValueChange = { mobile = it; mobileError = null },
+                    error = mobileError,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone
+                    )
+                )
+                AuthPasswordField(
+                    label = "Password",
+                    placeholder = "Create a password",
+                    value = password,
+                    onValueChange = { password = it; passwordError = null },
+                    error = passwordError,
+                    imeAction = ImeAction.Next
+                )
+                AuthPasswordField(
+                    label = "Confirm password",
+                    placeholder = "Confirm your password",
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it; confirmError = null },
+                    error = confirmError,
+                    imeAction = ImeAction.Done
+                )
+                Row(verticalAlignment = Alignment.Top) {
+                    Checkbox(
+                        checked = termsAccepted,
+                        onCheckedChange = { termsAccepted = it; termsError = null }
+                    )
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        Row {
+                            Text("I agree to the ")
+                            TextButton(
+                                onClick = {
+                                    scope.launch { snackbarHostState.showSnackbar("Terms and Privacy Policy will be available soon.") }
+                                }
+                            ) { Text("Terms & Conditions") }
+                        }
+                        TextButton(
+                            onClick = {
+                                scope.launch { snackbarHostState.showSnackbar("Terms and Privacy Policy will be available soon.") }
+                            },
+                            modifier = Modifier.padding(top = (-12).dp)
+                        ) { Text("and Privacy Policy") }
+                        termsError?.let { Text(it, color = Color(0xFFBA1A1A)) }
+                    }
+                }
+                PrimaryAuthButton(text = "Create Account") {
+                    val nextNameError = if (fullName.isBlank()) "Please enter your name." else null
+                    val nextEmailError = validateEmail(email)
+                    val nextMobileError = validateMobile(mobile)
+                    val nextPasswordError = when {
+                        password.isBlank() -> "Password cannot be empty."
+                        password.length < 6 -> "Password must contain at least 6 characters."
+                        else -> null
+                    }
+                    val nextConfirmError = when {
+                        confirmPassword.isBlank() -> "Please confirm your password."
+                        confirmPassword != password -> "Passwords do not match."
+                        else -> null
+                    }
+                    val nextTermsError = if (!termsAccepted) "Please accept the Terms & Conditions." else null
+                    nameError = nextNameError
+                    emailError = nextEmailError
+                    mobileError = nextMobileError
+                    passwordError = nextPasswordError
+                    confirmError = nextConfirmError
+                    termsError = nextTermsError
+                    if (nextNameError == null && nextEmailError == null && nextMobileError == null &&
+                        nextPasswordError == null && nextConfirmError == null && nextTermsError == null
+                    ) {
+                        scope.launch { snackbarHostState.showSnackbar("Account creation will be connected soon.") }
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Already have an account?", color = Color(0xFF5F6B85))
+                TextButton(onClick = onLogin) { Text("Login") }
+            }
+        }
+    }
+}
