@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -86,7 +88,9 @@ private val courses = listOf(
 @Composable
 fun LandingScreen(
     onLogin: () -> Unit = {},
-    isLoggedIn: Boolean = false
+    isLoggedIn: Boolean = false,
+    onAskAI: () -> Unit = {},
+    onOpenAITools: () -> Unit = onAskAI
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -121,7 +125,8 @@ fun LandingScreen(
                 QuickActions(
                     onCourses = { scope.launch { catalogueRequester.bringIntoView() } },
                     onRoadmap = { showMessage("Your personalized roadmap will be available soon.") },
-                    onChatbot = { showMessage("Your AI learning assistant will be available soon.") }
+                    onChatbot = onAskAI,
+                    onAITools = onOpenAITools
                 )
                 CourseCatalogue(
                     onCourseClick = { showMessage("Course content will be available soon.") },
@@ -142,7 +147,7 @@ fun LandingScreen(
                 SupportSection(onSupportAction = showMessage)
             }
             Button(
-                onClick = { showMessage("Your AI learning assistant will be available soon.") },
+                onClick = onAskAI,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
@@ -376,26 +381,30 @@ private fun CourseIcon(course: Course, large: Boolean = false) {
 private fun QuickActions(
     onCourses: () -> Unit,
     onRoadmap: () -> Unit,
-    onChatbot: () -> Unit
+    onChatbot: () -> Unit,
+    onAITools: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ActionButton("Courses", Modifier.weight(1f), onCourses)
-        ActionButton("Roadmap", Modifier.weight(1f), onRoadmap)
-        ActionButton("Chatbot", Modifier.weight(1f), onChatbot)
+        ActionButton("Courses", onCourses)
+        ActionButton("Roadmap", onRoadmap)
+        ActionButton("Chatbot", onChatbot)
+        ActionButton("AI Tools", onAITools)
     }
 }
 
 @Composable
-private fun ActionButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun ActionButton(label: String, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-    modifier = modifier
-        .height(46.dp)
+        modifier = Modifier
+        .widthIn(min = 84.dp)
+        .height(48.dp)
         .semantics { contentDescription = "Open $label" },
         shape = RoundedCornerShape(10.dp),
         color = Color.White,
