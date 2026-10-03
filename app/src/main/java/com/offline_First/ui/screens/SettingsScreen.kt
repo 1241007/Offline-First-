@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+private val supportedLanguages = listOf("English", "Hindi", "Marathi")
+
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
@@ -40,7 +42,7 @@ fun SettingsScreen(
     var notifications by rememberSaveable { mutableStateOf(true) }
     var darkTheme by rememberSaveable { mutableStateOf(false) }
     var languageMenuExpanded by rememberSaveable { mutableStateOf(false) }
-    val languages = listOf("English", "Hindi", "Marathi")
+    val languages = supportedLanguages
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

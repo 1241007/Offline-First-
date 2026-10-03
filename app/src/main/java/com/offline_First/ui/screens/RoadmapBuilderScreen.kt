@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -49,21 +48,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import com.offline_First.ui.theme.EduNovaBackground
-import com.offline_First.ui.theme.EduNovaBorder
-import com.offline_First.ui.theme.EduNovaPrimary
-import com.offline_First.ui.theme.EduNovaPrimaryContainer
 import com.offline_First.ui.theme.EduNovaSuccess
-import com.offline_First.ui.theme.EduNovaSurface
-import com.offline_First.ui.theme.EduNovaSurfaceVariant
-import com.offline_First.ui.theme.EduNovaTextPrimary
 
 private enum class BuilderSpeaker { MENTOR, STUDENT }
 
@@ -75,14 +65,6 @@ private data class BuilderMessage(
 )
 
 private data class BuilderStage(val title: String, val detail: String)
-
-private val RoadmapPrimary = EduNovaPrimary
-private val RoadmapPrimarySoft = EduNovaPrimaryContainer
-private val RoadmapSurface = EduNovaSurface
-private val RoadmapSurfaceWarm = EduNovaBackground
-private val RoadmapBorder = EduNovaBorder
-private val RoadmapSuccess = EduNovaSuccess
-private val RoadmapText = EduNovaTextPrimary
 
 private val builderStages = listOf(
     BuilderStage("Foundations", "Build the core concepts and vocabulary."),
@@ -115,6 +97,12 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
     var selectedGoal by remember { mutableStateOf("Get a job") }
     var selectedLevel by remember { mutableStateOf("Beginner") }
     var selectedTime by remember { mutableStateOf("1 hour/day") }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val outlineColor = MaterialTheme.colorScheme.outline
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
     fun answer(value: String) {
         if (isTyping || completed) return
@@ -195,7 +183,7 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
     }
 
     Scaffold(
-        containerColor = RoadmapSurfaceWarm,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Column(
                 modifier = Modifier
@@ -220,13 +208,13 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                         Text(
                             "Personalized learning mentor",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = onSurfaceVariant
                         )
                     }
                     Text(
                         "Step $step of 6",
                         style = MaterialTheme.typography.labelMedium,
-                        color = RoadmapPrimary,
+                        color = primaryColor,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(start = 12.dp)
                     )
@@ -236,8 +224,8 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 52.dp, top = 6.dp),
-                    color = RoadmapPrimary,
-                    trackColor = RoadmapPrimarySoft
+                    color = primaryColor,
+                    trackColor = primaryContainer
                 )
             }
         }
@@ -254,9 +242,9 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     .padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = RoadmapPrimarySoft
+                    containerColor = primaryContainer
                 ),
-                border = BorderStroke(1.dp, RoadmapBorder)
+                border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.4f))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
@@ -269,19 +257,19 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                         Text(
                             "Android Developer",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = onSurfaceVariant
                         )
                         Icon(
                             if (roadmapExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             "Toggle current roadmap",
-                            tint = RoadmapPrimary
+                            tint = primaryColor
                         )
                     }
                     if (roadmapExpanded) {
                         Text(
                             "Kotlin • Compose • UI fundamentals",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp)
                         )
                     }
@@ -296,32 +284,42 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(messages) { message ->
-                    MessageBubble(message)
+                items(
+                    items = messages,
+                    key = { "${it.speaker}_${it.text.hashCode()}_${messages.indexOf(it)}" }
+                ) { message ->
+                    MessageBubble(
+                        message = message,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        primaryContainer = primaryContainer
+                    )
                 }
                 if (isTyping) {
-                    item {
+                    item(key = "typing-indicator") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 2.dp,
-                                color = RoadmapPrimary
+                                color = primaryColor
                             )
                             Text(
                                 "EduNova is thinking...",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = onSurfaceVariant,
                                 modifier = Modifier.padding(start = 8.dp)
                             )
                         }
                     }
                 }
                 if (completed) {
-                    item {
+                    item(key = "roadmap-result") {
                         RoadmapResult(
                             goal = selectedGoal,
                             level = selectedLevel,
-                            time = selectedTime
+                            time = selectedTime,
+                            primaryColor = primaryColor,
+                            outlineColor = outlineColor
                         )
                     }
                 }
@@ -339,9 +337,9 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                             onClick = { answer(option) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, RoadmapBorder),
+                            border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.4f)),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = RoadmapPrimary
+                                contentColor = primaryColor
                             )
                         ) {
                             Text(option, fontSize = 12.sp)
@@ -366,9 +364,9 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     enabled = !isTyping && !completed,
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoadmapPrimary,
-                        unfocusedBorderColor = RoadmapBorder,
-                        cursorColor = RoadmapPrimary
+                        focusedBorderColor = primaryColor,
+                        unfocusedBorderColor = outlineColor.copy(alpha = 0.4f),
+                        cursorColor = primaryColor
                     )
                 )
                 IconButton(
@@ -378,7 +376,7 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     Icon(
                         Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send message",
-                        tint = RoadmapPrimary
+                        tint = primaryColor
                     )
                 }
             }
@@ -387,7 +385,12 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
 }
 
 @Composable
-private fun MessageBubble(message: BuilderMessage) {
+private fun MessageBubble(
+    message: BuilderMessage,
+    primaryColor: androidx.compose.ui.graphics.Color,
+    surfaceColor: androidx.compose.ui.graphics.Color,
+    primaryContainer: androidx.compose.ui.graphics.Color
+) {
     val mentor = message.speaker == BuilderSpeaker.MENTOR
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -402,26 +405,26 @@ private fun MessageBubble(message: BuilderMessage) {
                 bottomEnd = if (mentor) 18.dp else 4.dp
             ),
             colors = CardDefaults.cardColors(
-                containerColor = if (mentor) RoadmapSurface else RoadmapPrimarySoft
+                containerColor = if (mentor) surfaceColor else primaryContainer
             )
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
                     if (mentor) "EduNova Mentor" else "You",
                     style = MaterialTheme.typography.labelSmall,
-                    color = RoadmapPrimary,
+                    color = primaryColor,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     message.text,
-                    color = RoadmapText,
+                    style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 4.dp)
                 )
                 if (message.quiz) {
                     Text(
                         "Knowledge check",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (mentor) MaterialTheme.colorScheme.onSurfaceVariant else RoadmapPrimary,
+                        color = if (mentor) MaterialTheme.colorScheme.onSurfaceVariant else primaryColor,
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
@@ -431,12 +434,18 @@ private fun MessageBubble(message: BuilderMessage) {
 }
 
 @Composable
-private fun RoadmapResult(goal: String, level: String, time: String) {
+private fun RoadmapResult(
+    goal: String,
+    level: String,
+    time: String,
+    primaryColor: androidx.compose.ui.graphics.Color,
+    outlineColor: androidx.compose.ui.graphics.Color
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = RoadmapSurfaceWarm),
-        border = BorderStroke(1.dp, RoadmapBorder)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -446,7 +455,7 @@ private fun RoadmapResult(goal: String, level: String, time: String) {
             Text(
                 "$goal • $level • $time",
                 style = MaterialTheme.typography.bodyMedium,
-                color = RoadmapPrimary,
+                color = primaryColor,
                 fontWeight = FontWeight.SemiBold
             )
             builderStages.forEachIndexed { index, stage ->
@@ -454,10 +463,10 @@ private fun RoadmapResult(goal: String, level: String, time: String) {
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .background(RoadmapSuccess.copy(alpha = 0.14f), CircleShape),
+                            .background(EduNovaSuccess.copy(alpha = 0.14f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("${index + 1}", color = RoadmapSuccess, fontWeight = FontWeight.Bold)
+                        Text("${index + 1}", color = EduNovaSuccess, fontWeight = FontWeight.Bold)
                     }
                     Column(modifier = Modifier.padding(start = 10.dp)) {
                         Text(stage.title, fontWeight = FontWeight.SemiBold)
@@ -473,7 +482,7 @@ private fun RoadmapResult(goal: String, level: String, time: String) {
                 onClick = {},
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = RoadmapPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
             ) {
                 Text("Start learning")
             }

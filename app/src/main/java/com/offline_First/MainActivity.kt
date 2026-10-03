@@ -20,20 +20,8 @@ import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
+import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.theme.OfflineFirstTheme
-
-private enum class AppDestination {
-    LANDING,
-    LOGIN,
-    REGISTER,
-    FORGOT_PASSWORD,
-    AI_WORKSPACE,
-    ROADMAP,
-    ROADMAP_BUILDER,
-    MY_LEARNING,
-    PROFILE,
-    SETTINGS
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

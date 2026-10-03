@@ -1,7 +1,7 @@
 package com.offline_First.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,26 +25,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FactCheck
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
@@ -56,22 +54,21 @@ import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -91,22 +88,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import com.offline_First.ui.theme.EduNovaAccent
-import com.offline_First.ui.theme.EduNovaBackground
 import com.offline_First.ui.theme.EduNovaBorder
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSecondaryContainer
 import com.offline_First.ui.theme.EduNovaSuccess
-import com.offline_First.ui.theme.EduNovaTextPrimary
-import com.offline_First.ui.theme.EduNovaTextSecondary
-
-private val PageBackground = EduNovaBackground
-private val Ink = EduNovaTextPrimary
-private val MutedInk = EduNovaTextSecondary
-private val Primary = EduNovaPrimary
-private val Border = EduNovaBorder
+import kotlinx.coroutines.delay
 
 private enum class AITool(
     val title: String,
@@ -114,7 +102,7 @@ private enum class AITool(
     val icon: ImageVector,
     val accent: Color
 ) {
-    CHAT("AI Chat", "Ask anything and learn with AI", Icons.Default.ChatBubbleOutline, Primary),
+    CHAT("AI Chat", "Ask anything and learn with AI", Icons.Default.ChatBubbleOutline, EduNovaPrimary),
     PLANNER("Study Planner", "Build a smarter learning routine", Icons.Default.CalendarMonth, EduNovaAccent),
     MIND_MAP("Mind Map", "Turn a topic into a visual structure", Icons.Default.AccountTree, EduNovaSecondary),
     IMAGE_ANALYSIS("Image Analysis", "Understand diagrams, notes, and images", Icons.Default.Image, EduNovaSecondary),
@@ -122,16 +110,23 @@ private enum class AITool(
     FLASHCARDS("Flashcards", "Revise concepts quickly", Icons.Default.Style, EduNovaAccent),
     VIDEO("AI Visual Video", "Turn a topic into a visual explanation", Icons.Default.SmartDisplay, EduNovaSecondary),
     REPORTS("Reports", "Track your learning progress", Icons.Default.Analytics, EduNovaAccent),
-    ONLINE_LEARNING("Online Learning", "Continue with curated learning", Icons.Default.School, Primary),
+    ONLINE_LEARNING("Online Learning", "Continue with curated learning", Icons.Default.School, EduNovaPrimary),
     AUDIO_LEARNING("Audio Learning", "Learn while listening", Icons.Default.Headphones, EduNovaSecondary),
-    PYQ("PYQ", "Practice previous year questions", Icons.Default.MenuBook, Primary),
-    EXAM_MODE("Exam Mode", "Practice under exam conditions", Icons.Default.Timer, Primary),
-    EXAM_REVIEW("Exam Review", "Review performance in depth", Icons.Default.FactCheck, EduNovaSecondary)
+    PYQ("PYQ", "Practice previous year questions", Icons.AutoMirrored.Filled.MenuBook, EduNovaPrimary),
+    EXAM_MODE("Exam Mode", "Practice under exam conditions", Icons.Default.Timer, EduNovaPrimary),
+    EXAM_REVIEW("Exam Review", "Review performance in depth", Icons.AutoMirrored.Filled.FactCheck, EduNovaSecondary)
 }
 
 private data class ChatMessage(val text: String, val fromUser: Boolean)
 
 private data class ToolGroup(val title: String, val tools: List<AITool>)
+
+private val chatSuggestions = listOf(
+    "Explain a topic",
+    "Help me understand this concept",
+    "Create a quiz",
+    "Make flashcards"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,6 +147,8 @@ fun AIWorkspaceScreen(
         showTools = false
     }
 
+    val ink = MaterialTheme.colorScheme.onBackground
+
     BackHandler {
         when {
             showAttachments -> showAttachments = false
@@ -162,7 +159,7 @@ fun AIWorkspaceScreen(
     }
 
     Scaffold(
-        containerColor = PageBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
@@ -199,9 +196,9 @@ fun AIWorkspaceScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,
-                    titleContentColor = Ink,
-                    navigationIconContentColor = Ink,
-                    actionIconContentColor = Ink
+                    titleContentColor = ink,
+                    navigationIconContentColor = ink,
+                    actionIconContentColor = ink
                 )
             )
         }
@@ -269,7 +266,9 @@ private fun ChatWorkspace(
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val suggestions = listOf("Explain a topic", "Help me understand this concept", "Create a quiz", "Make flashcards")
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -288,7 +287,7 @@ private fun ChatWorkspace(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (messages.isEmpty()) {
-                item {
+                item(key = "empty-welcome") {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -297,29 +296,32 @@ private fun ChatWorkspace(
                         Surface(
                             modifier = Modifier.size(66.dp),
                             shape = CircleShape,
-                            color = Primary.copy(alpha = 0.11f)
+                            color = primaryColor.copy(alpha = 0.11f)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Lightbulb, null, tint = Primary, modifier = Modifier.size(30.dp))
+                                Icon(Icons.Default.Lightbulb, null, tint = primaryColor, modifier = Modifier.size(30.dp))
                             }
                         }
-                        Text("EduNova AI", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
-                        Text("Learn smarter.\nUnderstand faster.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 17.sp, color = MutedInk)
+                        Text("EduNova AI", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = ink)
+                        Text("Learn smarter.\nUnderstand faster.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 17.sp, color = mutedInk)
                         Text(
                             "Ask questions, understand difficult topics,\nrevise concepts, and study with AI tools.",
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            color = MutedInk,
+                            color = mutedInk,
                             fontSize = 13.sp
                         )
                         Spacer(Modifier.size(10.dp))
-                        suggestions.forEach { suggestion ->
+                        chatSuggestions.forEach { suggestion ->
                             SuggestionChip(text = suggestion, onClick = { draft = suggestion })
                         }
                     }
                 }
             } else {
-                items(messages) { message ->
-                    MessageBubble(message)
+                items(
+                    items = messages,
+                    key = { "${messages.indexOf(it)}_${it.fromUser}_${it.text.hashCode()}" }
+                ) { message ->
+                    MessageBubble(message, primaryColor = primaryColor, ink = ink)
                 }
             }
         }
@@ -332,20 +334,20 @@ private fun ChatWorkspace(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
                 color = Color.White,
-                border = BorderStroke(1.dp, Border)
+                border = BorderStroke(1.dp, EduNovaBorder)
             ) {
                 Row(
                     modifier = Modifier.padding(start = 4.dp, end = 6.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
                     IconButton(onClick = onOpenAttachments) {
-                        Icon(Icons.Default.Add, "Add attachment", tint = MutedInk)
+                        Icon(Icons.Default.Add, "Add attachment", tint = mutedInk)
                     }
                     OutlinedTextField(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message EduNova AI...", color = MutedInk) },
+                        placeholder = { Text("Message EduNova AI...", color = mutedInk) },
                         maxLines = 4,
                         shape = RoundedCornerShape(18.dp),
                         colors = androidx.compose.material3.TextFieldDefaults.colors(
@@ -356,7 +358,7 @@ private fun ChatWorkspace(
                         )
                     )
                     IconButton(onClick = { }) {
-                        Icon(Icons.Default.Mic, "Voice input", tint = MutedInk)
+                        Icon(Icons.Default.Mic, "Voice input", tint = mutedInk)
                     }
                     IconButton(
                         onClick = {
@@ -370,7 +372,7 @@ private fun ChatWorkspace(
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             "Send message",
-                            tint = if (draft.isNotBlank()) Primary else MutedInk.copy(alpha = 0.45f)
+                            tint = if (draft.isNotBlank()) primaryColor else mutedInk.copy(alpha = 0.45f)
                         )
                     }
                 }
@@ -392,29 +394,29 @@ private fun SuggestionChip(text: String, onClick: () -> Unit) {
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
         color = Color.White,
-        border = BorderStroke(1.dp, Border),
+        border = BorderStroke(1.dp, EduNovaBorder),
         modifier = Modifier.fillMaxWidth(0.82f)
     ) {
-        Text(text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = Ink, fontSize = 14.sp)
+        Text(text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
     }
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, primaryColor: Color, ink: Color) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
-            color = if (message.fromUser) Primary else Color.White,
+            color = if (message.fromUser) primaryColor else Color.White,
             shape = RoundedCornerShape(18.dp),
-            border = if (message.fromUser) null else BorderStroke(1.dp, Border),
+            border = if (message.fromUser) null else BorderStroke(1.dp, EduNovaBorder),
             modifier = Modifier.fillMaxWidth(0.86f)
         ) {
             Text(
                 message.text,
                 modifier = Modifier.padding(14.dp),
-                color = if (message.fromUser) Color.White else Ink,
+                color = if (message.fromUser) Color.White else ink,
                 fontSize = 14.sp,
                 lineHeight = 20.sp
             )
@@ -441,6 +443,9 @@ private fun ToolsSheet(
         emptyList()
     }
 
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -453,16 +458,16 @@ private fun ToolsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("AI Tools", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text("AI Tools", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = ink)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close AI Tools") }
             }
-            Text("Choose a focused way to learn.", color = MutedInk, fontSize = 14.sp)
+            Text("Choose a focused way to learn.", color = mutedInk, fontSize = 14.sp)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Preview user type", color = MutedInk, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("Preview user type", color = mutedInk, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 FilterChip(
                     selected = !isClass912Student,
                     onClick = { onToggleStudentType(false) },
@@ -476,7 +481,7 @@ private fun ToolsSheet(
                 )
             }
             groups.forEach { group ->
-                Text(group.title, color = MutedInk, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                Text(group.title, color = mutedInk, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                 group.tools.forEach { tool ->
                     ToolMenuItem(
                         tool = tool,
@@ -492,11 +497,15 @@ private fun ToolsSheet(
 
 @Composable
 private fun ToolMenuItem(tool: AITool, selected: Boolean, onClick: () -> Unit) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
     Surface(
         onClick = onClick,
-        color = if (selected) Primary.copy(alpha = 0.07f) else Color.White,
+        color = if (selected) primaryColor.copy(alpha = 0.07f) else Color.White,
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, if (selected) Primary.copy(alpha = 0.45f) else Border),
+        border = BorderStroke(1.dp, if (selected) primaryColor.copy(alpha = 0.45f) else EduNovaBorder),
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Open ${tool.title}" }
     ) {
         Row(
@@ -510,8 +519,8 @@ private fun ToolMenuItem(tool: AITool, selected: Boolean, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text(tool.title, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text(tool.description, color = MutedInk, fontSize = 12.sp)
+                Text(tool.title, color = ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(tool.description, color = mutedInk, fontSize = 12.sp)
             }
         }
     }
@@ -520,21 +529,24 @@ private fun ToolMenuItem(tool: AITool, selected: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AttachmentSheet(onDismiss: () -> Unit, onAction: () -> Unit) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val ink = MaterialTheme.colorScheme.onBackground
+
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Add to your question", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("Add to your question", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink)
             listOf(
                 "Image" to Icons.Default.AddPhotoAlternate,
                 "PDF" to Icons.Default.PictureAsPdf,
                 "Document" to Icons.Default.Description,
                 "Camera" to Icons.Default.CameraAlt,
                 "Analyze Image" to Icons.Default.Image,
-                "Summarize Document" to Icons.Default.MenuBook
+                "Summarize Document" to Icons.AutoMirrored.Filled.MenuBook
             ).forEach { (label, icon) ->
                 TextButton(onClick = onAction, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(12.dp)) {
-                    Icon(icon, null, tint = Primary)
+                    Icon(icon, null, tint = primaryColor)
                     Spacer(Modifier.width(10.dp))
-                    Text(label, color = Ink, modifier = Modifier.weight(1f))
+                    Text(label, color = ink, modifier = Modifier.weight(1f))
                 }
             }
             Spacer(Modifier.navigationBarsPadding())
@@ -547,6 +559,9 @@ private fun VideoTool() {
     var topic by rememberSaveable { mutableStateOf("") }
     var isGenerating by rememberSaveable { mutableStateOf(false) }
     var isReady by rememberSaveable { mutableStateOf(false) }
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
     LaunchedEffect(isGenerating) {
         if (isGenerating) {
             delay(1400)
@@ -556,7 +571,7 @@ private fun VideoTool() {
     }
     ToolPage(title = "AI Visual Video", subtitle = "Turn a difficult topic into a visual explanation.") {
         OutlinedTextField(topic, { topic = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Topic or study material") }, placeholder = { Text("Explain the water cycle") }, minLines = 3)
-        Text("Explanation level", color = MutedInk, fontSize = 13.sp)
+        Text("Explanation level", color = mutedInk, fontSize = 13.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(true, {}, { Text("Simple") })
             FilterChip(false, {}, { Text("Detailed") })
@@ -569,12 +584,12 @@ private fun VideoTool() {
         if (isReady) {
             Card(colors = CardDefaults.cardColors(containerColor = EduNovaSecondaryContainer), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(topic, color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(topic, color = ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("AI Visual Explanation", color = EduNovaSecondary)
-                    Surface(color = EduNovaTextPrimary, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().size(150.dp)) {
+                    Surface(color = ink, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().size(150.dp)) {
                         Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, "Play video preview", tint = Color.White, modifier = Modifier.size(42.dp)) }
                     }
-                    Text("Water evaporates from Earth's surface and rises into the atmosphere...", color = MutedInk, fontSize = 13.sp)
+                    Text("Water evaporates from Earth's surface and rises into the atmosphere...", color = mutedInk, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { isReady = false }) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(4.dp)); Text("Regenerate") }
                         OutlinedButton(onClick = { }) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(4.dp)); Text("Save") }
@@ -589,8 +604,8 @@ private fun VideoTool() {
 private fun MockProgress() {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("Creating your visual lesson...", color = Ink, fontWeight = FontWeight.Bold)
-            Text("✓ Understanding topic\n✓ Planning visual scenes\n✓ Preparing explanation\n○ Rendering video", color = MutedInk, fontSize = 13.sp, lineHeight = 21.sp)
+            Text("Creating your visual lesson...", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+            Text("✓ Understanding topic\n✓ Planning visual scenes\n✓ Preparing explanation\n○ Rendering video", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 21.sp)
         }
     }
 }
@@ -606,20 +621,23 @@ private fun FormTool(title: String, subtitle: String, prompt: String) {
         }
         Button(onClick = { }, modifier = Modifier.fillMaxWidth()) { Text(if (title == "Quiz") "Generate Quiz" else "Create $title") }
         Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
-            Text("Your mock $title will appear here. This frontend preview is ready for a future AI connection.", Modifier.padding(16.dp), color = MutedInk, fontSize = 13.sp)
+            Text("Your mock $title will appear here. This frontend preview is ready for a future AI connection.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
     }
 }
 
 @Composable
 private fun FlashcardsTool() {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
     ToolPage("Create Flashcards", "Revise key concepts quickly.") {
         OutlinedTextField("", {}, modifier = Modifier.fillMaxWidth(), label = { Text("Topic") }, placeholder = { Text("Operating Systems") })
         Button(onClick = { }, modifier = Modifier.fillMaxWidth()) { Text("Create Flashcards") }
         Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("What is a process?", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("Tap to reveal answer", color = MutedInk, fontSize = 13.sp)
+                Text("What is a process?", color = ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("Tap to reveal answer", color = mutedInk, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     TextButton({}) { Text("Previous") }
                     Button({}) { Text("Flip") }
@@ -633,6 +651,9 @@ private fun FlashcardsTool() {
 @Composable
 private fun ReportsTool(isClass912Student: Boolean) {
     val progressLabel = if (isClass912Student) "Revision progress" else "Learning progress"
+    val ink = MaterialTheme.colorScheme.onBackground
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     ToolPage("Reports", "A calm snapshot of your learning progress.") {
         listOf(
             "Course completion" to "68%",
@@ -644,8 +665,8 @@ private fun ReportsTool(isClass912Student: Boolean) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CheckCircle, null, tint = EduNovaSuccess)
                     Spacer(Modifier.width(12.dp))
-                    Text(label, color = Ink, modifier = Modifier.weight(1f))
-                    Text(value, color = Primary, fontWeight = FontWeight.Bold)
+                    Text(label, color = ink, modifier = Modifier.weight(1f))
+                    Text(value, color = primaryColor, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -654,17 +675,21 @@ private fun ReportsTool(isClass912Student: Boolean) {
 
 @Composable
 private fun AudioLearningTool() {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     ToolPage("Audio Learning", "Learn while listening.") {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Photosynthesis", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("A short audio lesson for your next revision session.", color = MutedInk)
+                Text("Photosynthesis", color = ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("A short audio lesson for your next revision session.", color = mutedInk)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(onClick = {}, shape = CircleShape, color = Primary, modifier = Modifier.size(48.dp)) {
+                    Surface(onClick = {}, shape = CircleShape, color = primaryColor, modifier = Modifier.size(48.dp)) {
                         Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, "Play audio", tint = Color.White) }
                     }
                     Spacer(Modifier.width(12.dp))
-                    Text("━━━━━━──────  02:18", color = Primary, fontSize = 13.sp)
+                    Text("━━━━━━──────  02:18", color = primaryColor, fontSize = 13.sp)
                 }
             }
         }
@@ -673,12 +698,21 @@ private fun AudioLearningTool() {
 
 @Composable
 private fun ReviewTool() {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
     ToolPage("Exam Performance Review", "Turn practice results into your next revision plan.") {
-        listOf("Overall Performance" to "82%", "Strong Areas" to "Mechanics, algebra", "Needs Revision" to "Optics, electricity", "Question Analysis" to "4 concepts to revisit", "Recommended Revision" to "30 minutes today").forEach { (title, detail) ->
+        listOf(
+            "Overall Performance" to "82%",
+            "Strong Areas" to "Mechanics, algebra",
+            "Needs Revision" to "Optics, electricity",
+            "Question Analysis" to "4 concepts to revisit",
+            "Recommended Revision" to "30 minutes today"
+        ).forEach { (title, detail) ->
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(title, color = Ink, fontWeight = FontWeight.Bold)
-                    Text(detail, color = MutedInk, fontSize = 13.sp)
+                    Text(title, color = ink, fontWeight = FontWeight.Bold)
+                    Text(detail, color = mutedInk, fontSize = 13.sp)
                 }
             }
         }
@@ -687,12 +721,16 @@ private fun ReviewTool() {
 
 @Composable
 private fun SimpleTool(title: String, subtitle: String, icon: ImageVector) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     ToolPage(title, subtitle) {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(icon, null, tint = Primary, modifier = Modifier.size(42.dp))
-                Text("Your next lesson is ready.", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("This learning entry point is a frontend preview and does not change the existing course system.", color = MutedInk, fontSize = 13.sp)
+                Icon(icon, null, tint = primaryColor, modifier = Modifier.size(42.dp))
+                Text("Your next lesson is ready.", color = ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("This learning entry point is a frontend preview and does not change the existing course system.", color = mutedInk, fontSize = 13.sp)
                 Button({}) { Text("Explore learning") }
             }
         }
@@ -705,8 +743,8 @@ private fun ToolPage(title: String, subtitle: String, content: @Composable Colum
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         content = {
-            Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Text(subtitle, color = MutedInk, fontSize = 14.sp)
+            Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             content()
         }
     )
