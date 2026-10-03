@@ -8,17 +8,17 @@ import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
     primary = EduNovaPrimaryDark,
-    onPrimary = Color(0xFF382343),
+    onPrimary = Color(0xFF123638),
     primaryContainer = EduNovaPrimaryContainerDark,
-    onPrimaryContainer = Color(0xFFF1DDF8),
+    onPrimaryContainer = Color(0xFFDDF2EE),
     secondary = EduNovaSecondaryDark,
-    onSecondary = Color(0xFF392C43),
+    onSecondary = Color(0xFF163638),
     secondaryContainer = EduNovaSecondaryContainerDark,
-    onSecondaryContainer = Color(0xFFEEDFF3),
+    onSecondaryContainer = Color(0xFFDDF2EE),
     tertiary = EduNovaAccentDark,
-    onTertiary = Color(0xFF163727),
-    tertiaryContainer = Color(0xFF315342),
-    onTertiaryContainer = Color(0xFFC4EBD2),
+    onTertiary = Color(0xFF183A38),
+    tertiaryContainer = Color(0xFF275B58),
+    onTertiaryContainer = Color(0xFFDDF2EE),
     background = EduNovaBackgroundDark,
     onBackground = EduNovaTextPrimaryDark,
     surface = EduNovaSurfaceDark,
@@ -27,7 +27,7 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = EduNovaTextSecondaryDark,
     outline = EduNovaBorderDark,
     error = EduNovaErrorDark,
-    onError = Color(0xFF690005)
+    onError = Color(0xFF4A1718)
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -40,9 +40,9 @@ private val LightColorScheme = lightColorScheme(
     secondaryContainer = EduNovaSecondaryContainer,
     onSecondaryContainer = EduNovaTextPrimary,
     tertiary = EduNovaAccent,
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFDCEFE3),
-    onTertiaryContainer = Color(0xFF173A29),
+    onTertiary = EduNovaTextPrimary,
+    tertiaryContainer = EduNovaPrimaryContainer,
+    onTertiaryContainer = EduNovaTextPrimary,
     background = EduNovaBackground,
     onBackground = EduNovaTextPrimary,
     surface = EduNovaSurface,
