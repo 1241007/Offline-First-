@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -31,15 +32,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -100,7 +106,12 @@ fun LandingScreen(
     isLoggedIn: Boolean = false,
     onAskAI: () -> Unit = {},
     onOpenAITools: () -> Unit = onAskAI,
-    onRoadmap: () -> Unit = {}
+    onRoadmap: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
+    onOpenMyLearning: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onLanguageSelected: (String) -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -127,7 +138,11 @@ fun LandingScreen(
                     onSearch = { showMessage("Course search will be available soon.") },
                     onLogin = onLogin,
                     isLoggedIn = isLoggedIn,
-                    onProfile = { showMessage("Your profile will be available soon.") }
+                    onProfile = onOpenProfile,
+                    onOpenMyLearning = onOpenMyLearning,
+                    onOpenSettings = onOpenSettings,
+                    onLanguageSelected = onLanguageSelected,
+                    onLogout = onLogout
                 )
                 FeaturedCourseSection(
                     onCourseClick = { showMessage("Course content will be available soon.") }
@@ -179,63 +194,127 @@ private fun TopBar(
     onSearch: () -> Unit,
     onLogin: () -> Unit,
     isLoggedIn: Boolean,
-    onProfile: () -> Unit
+    onProfile: () -> Unit,
+    onOpenMyLearning: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onLanguageSelected: (String) -> Unit,
+    onLogout: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        BrandMark()
-        Spacer(Modifier.width(9.dp))
-        Text("EduNova", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.weight(1f))
-        Surface(
-            onClick = onSearch,
-            shape = RoundedCornerShape(11.dp),
-            color = Color.White,
-            border = BorderStroke(1.dp, Border),
+    var menuExpanded by remember { mutableStateOf(false) }
+    var languageDialogVisible by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier
-                .size(42.dp)
-                .semantics { contentDescription = "Search courses" }
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                SearchIcon()
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        if (isLoggedIn) {
+            BrandMark()
+            Spacer(Modifier.width(9.dp))
+            Text("EduNova", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(Modifier.weight(1f))
             Surface(
-                onClick = onProfile,
-                shape = CircleShape,
+                onClick = onSearch,
+                shape = RoundedCornerShape(11.dp),
                 color = Color.White,
                 border = BorderStroke(1.dp, Border),
-                modifier = Modifier.size(42.dp)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.avatar_placeholder),
-                    contentDescription = "Open profile",
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                )
-            }
-        } else {
-            OutlinedButton(
-                onClick = onLogin,
-                shape = RoundedCornerShape(11.dp),
-                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 0.dp),
-                border = BorderStroke(1.dp, Border),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
                 modifier = Modifier
-                    .height(42.dp)
-                    .semantics { contentDescription = "Log in to EduNova" }
+                    .size(42.dp)
+                    .semantics { contentDescription = "Search courses" }
             ) {
-                Text("Login", fontWeight = FontWeight.SemiBold)
+                Box(contentAlignment = Alignment.Center) {
+                    SearchIcon()
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(modifier = Modifier.align(Alignment.Top)) {
+                if (isLoggedIn) {
+                    Surface(
+                        onClick = { menuExpanded = true },
+                        shape = CircleShape,
+                        color = Color.White,
+                        border = BorderStroke(1.dp, Border),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.avatar_placeholder),
+                            contentDescription = "Open profile",
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onLogin,
+                        shape = RoundedCornerShape(11.dp),
+                        contentPadding = PaddingValues(horizontal = 13.dp, vertical = 0.dp),
+                        border = BorderStroke(1.dp, Border),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
+                        modifier = Modifier
+                            .height(42.dp)
+                            .semantics { contentDescription = "Log in to EduNova" }
+                    ) {
+                        Text("Login", fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
+        DropdownMenu(
+            expanded = menuExpanded && isLoggedIn,
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier
+                .wrapContentWidth(Alignment.End)
+                .align(Alignment.TopEnd),
+            offset = androidx.compose.ui.unit.DpOffset(
+                x = (-8).dp,
+                y = 8.dp
+            )
+        ) {
+            DropdownMenuItem(
+                text = { Text("Profile") },
+                onClick = { menuExpanded = false; onProfile() }
+            )
+            DropdownMenuItem(
+                text = { Text("My Learning") },
+                onClick = { menuExpanded = false; onOpenMyLearning() }
+            )
+            DropdownMenuItem(
+                text = { Text("Setting") },
+                onClick = { menuExpanded = false; onOpenSettings() }
+            )
+            DropdownMenuItem(
+                text = { Text("Language") },
+                onClick = { menuExpanded = false; languageDialogVisible = true }
+            )
+            DropdownMenuItem(
+                text = { Text("Log out") },
+                onClick = { menuExpanded = false; onLogout() }
+            )
+        }
+    }
+    if (languageDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { languageDialogVisible = false },
+            title = { Text("Choose language") },
+            text = {
+                Column {
+                    listOf("English", "Hindi", "Marathi").forEach { language ->
+                        TextButton(
+                            onClick = {
+                                onLanguageSelected(language)
+                                languageDialogVisible = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(language, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
     }
 }
 
