@@ -16,6 +16,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.data.repository.RegistrationInput
 import com.offline_First.ui.components.AuthHeader
 import com.offline_First.ui.components.AuthTextField
 import com.offline_First.ui.components.PrimaryAuthButton
@@ -34,11 +38,30 @@ import kotlinx.coroutines.launch
 import com.offline_First.ui.theme.EduNovaBackground
 
 @Composable
-fun ForgotPasswordScreen(onLogin: () -> Unit) {
+fun ForgotPasswordScreen(
+    onLogin: () -> Unit,
+    viewModel: AuthViewModel = viewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
     var contact by rememberSaveable { mutableStateOf("") }
     var contactError by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                AuthEvent.LoginSucceeded -> Unit
+                is AuthEvent.Message -> snackbarHostState.showSnackbar(event.text)
+            }
+        }
+    }
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         containerColor = EduNovaBackground,
@@ -71,11 +94,7 @@ fun ForgotPasswordScreen(onLogin: () -> Unit) {
                     val nextError = validateLoginContact(contact)
                     contactError = nextError
                     if (nextError == null) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                "If an account exists with these details, password reset instructions will be sent."
-                            )
-                        }
+                        viewModel.requestPasswordReset(contact.trim())
                     }
                 }
             }

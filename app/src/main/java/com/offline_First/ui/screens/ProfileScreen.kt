@@ -22,14 +22,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,37 +39,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.offline_First.data.local.LocalProfileRepository
-import com.offline_First.data.repository.ProfileRepository
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offline_First.domain.model.EducationMode
 import com.offline_First.domain.model.UserProfile
 import com.offline_First.ui.components.EduNovaFilterChip
-import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
     onBack: () -> Unit = {},
     onLanguage: () -> Unit = {},
-    initialName: String = "Asha Learner",
-    initialEmail: String = "asha@example.com",
-    profileRepository: ProfileRepository = remember { LocalProfileRepository() }
+    viewModel: ProfileViewModel = viewModel()
 ) {
-    val scope = rememberCoroutineScope()
-    var name by rememberSaveable { mutableStateOf(initialName) }
-    var email by rememberSaveable { mutableStateOf(initialEmail) }
-    var mobile by rememberSaveable { mutableStateOf("+91 98765 43210") }
-    var interests by rememberSaveable { mutableStateOf("Android, UI design") }
-    var level by rememberSaveable { mutableStateOf("Intermediate") }
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var name by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var mobile by rememberSaveable { mutableStateOf("") }
+    var interests by rememberSaveable { mutableStateOf("") }
+    var level by rememberSaveable { mutableStateOf("") }
     var educationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
     var savedEducationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var savedName by rememberSaveable { mutableStateOf(initialName) }
-    var savedEmail by rememberSaveable { mutableStateOf(initialEmail) }
+    var savedName by rememberSaveable { mutableStateOf("") }
+    var savedEmail by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(profileRepository) {
-        val profileResult = profileRepository.getUserProfile()
-        profileResult.onSuccess { profile ->
+    LaunchedEffect(uiState.profile) {
+        uiState.profile?.let { profile ->
             name = profile.fullName
             savedName = profile.fullName
             email = profile.email
@@ -77,6 +75,13 @@ fun ProfileScreen(
             level = profile.level
             educationMode = profile.educationMode
             savedEducationMode = profile.educationMode
+            editing = false
+        }
+    }
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
         }
     }
 
@@ -85,6 +90,7 @@ fun ProfileScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Row(
                 modifier = Modifier.statusBarsPadding(),
@@ -180,23 +186,17 @@ fun ProfileScreen(
                             if (name.isBlank() || !email.contains("@")) {
                                 error = "Enter a valid name and email."
                             } else {
-                                savedName = name
-                                savedEmail = email
-                                savedEducationMode = educationMode
                                 error = null
-                                editing = false
-                                scope.launch {
-                                    profileRepository.updateUserProfile(
-                                        UserProfile(
-                                            fullName = savedName,
-                                            email = savedEmail,
-                                            mobile = mobile,
-                                            interests = interests,
-                                            level = level,
-                                            educationMode = savedEducationMode
-                                        )
+                                viewModel.saveProfile(
+                                    UserProfile(
+                                        fullName = name,
+                                        email = email,
+                                        mobile = mobile,
+                                        interests = interests,
+                                        level = level,
+                                        educationMode = educationMode
                                     )
-                                }
+                                )
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -206,6 +206,9 @@ fun ProfileScreen(
                         onClick = {
                             name = savedName
                             email = savedEmail
+                            mobile = uiState.profile?.mobile.orEmpty()
+                            interests = uiState.profile?.interests.orEmpty()
+                            level = uiState.profile?.level.orEmpty()
                             educationMode = savedEducationMode
                             error = null
                             editing = false

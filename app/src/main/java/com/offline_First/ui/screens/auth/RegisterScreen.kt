@@ -19,6 +19,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.data.repository.RegistrationInput
 import com.offline_First.ui.components.AuthHeader
 import com.offline_First.ui.components.AuthPasswordField
 import com.offline_First.ui.components.AuthTextField
@@ -45,7 +49,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RegisterScreen(onLogin: () -> Unit) {
+fun RegisterScreen(
+    onLogin: () -> Unit,
+    viewModel: AuthViewModel = viewModel()
+) {
     var fullName by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var mobile by rememberSaveable { mutableStateOf("") }
@@ -60,6 +67,22 @@ fun RegisterScreen(onLogin: () -> Unit) {
     var termsError by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                AuthEvent.LoginSucceeded -> Unit
+                is AuthEvent.Message -> snackbarHostState.showSnackbar(event.text)
+            }
+        }
+    }
+    val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         containerColor = EduNovaBackground,
@@ -187,7 +210,14 @@ fun RegisterScreen(onLogin: () -> Unit) {
                     if (nextNameError == null && nextEmailError == null && nextMobileError == null &&
                         nextPasswordError == null && nextConfirmError == null && nextTermsError == null
                     ) {
-                        scope.launch { snackbarHostState.showSnackbar("Account creation will be connected soon.") }
+                        viewModel.register(
+                            RegistrationInput(
+                                fullName = fullName.trim(),
+                                email = email.trim(),
+                                mobile = mobile.trim(),
+                                password = password
+                            )
+                        )
                     }
                 }
             }

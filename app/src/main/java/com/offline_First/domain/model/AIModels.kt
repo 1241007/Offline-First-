@@ -50,10 +50,10 @@ enum class OfflineAIStatus {
  * Displays only generic progress, file size, percentage, and time estimate.
  */
 data class OfflineAIDownloadProgress(
-    val stage: String = "Downloading...",
+    val stage: String = "",
     val progress: Int = 0,
-    val downloadSize: String = "1.8 GB",
-    val estimatedTimeRemaining: String = "~2 minutes remaining"
+    val downloadSize: String = "",
+    val estimatedTimeRemaining: String = ""
 )
 
 /**

@@ -37,6 +37,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +47,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +56,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import com.offline_First.ui.theme.EduNovaSuccess
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.domain.model.GeneratedRoadmapPreview
+import com.offline_First.ui.screens.roadmap.RoadmapViewModel
 
 private enum class BuilderSpeaker { MENTOR, STUDENT }
 
@@ -64,17 +69,13 @@ private data class BuilderMessage(
     val quiz: Boolean = false
 )
 
-private data class BuilderStage(val title: String, val detail: String)
-
-private val builderStages = listOf(
-    BuilderStage("Foundations", "Build the core concepts and vocabulary."),
-    BuilderStage("Guided practice", "Complete short exercises with mentor feedback."),
-    BuilderStage("Applied project", "Turn your new skills into a portfolio project."),
-    BuilderStage("Review and next steps", "Measure progress and keep momentum going.")
-)
-
 @Composable
-fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
+fun RoadmapBuilderScreen(
+    onBack: () -> Unit = {},
+    onStartLearning: () -> Unit = {},
+    viewModel: RoadmapViewModel = viewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
     val messages = remember {
         mutableStateListOf(
             BuilderMessage(
@@ -89,7 +90,6 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
         )
     }
     var step by remember { mutableStateOf(1) }
-    var isTyping by remember { mutableStateOf(false) }
     var currentOptions by remember { mutableStateOf(messages.last().options) }
     var draft by remember { mutableStateOf("") }
     var roadmapExpanded by remember { mutableStateOf(true) }
@@ -97,6 +97,28 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
     var selectedGoal by remember { mutableStateOf("Get a job") }
     var selectedLevel by remember { mutableStateOf("Beginner") }
     var selectedTime by remember { mutableStateOf("1 hour/day") }
+    val isTyping = uiState.isGenerating
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.generatedRoadmap) {
+        if (uiState.generatedRoadmap != null && !completed) {
+            completed = true
+            step = 6
+            messages.add(
+                BuilderMessage(
+                    BuilderSpeaker.MENTOR,
+                    "Your personalized roadmap is ready."
+                )
+            )
+        }
+    }
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            if (step == 5) currentOptions = listOf("Create my roadmap")
+            viewModel.clearError()
+        }
+    }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
@@ -111,67 +133,42 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
         selectedTime = if (step == 3) value else selectedTime
         messages.add(BuilderMessage(BuilderSpeaker.STUDENT, value))
         currentOptions = emptyList()
-        isTyping = true
-    }
-
-    LaunchedEffect(isTyping) {
-        if (!isTyping) return@LaunchedEffect
-        delay(650)
-        when (step) {
-            1 -> {
-                messages.add(
-                    BuilderMessage(
-                        BuilderSpeaker.MENTOR,
-                        "Great. What best describes your current level?",
-                        options = listOf("Beginner", "Some experience", "Advanced")
-                    )
-                )
-                step = 2
-            }
-            2 -> {
-                messages.add(
-                    BuilderMessage(
-                        BuilderSpeaker.MENTOR,
-                        "How much time can you make available for learning most days?",
-                        options = listOf("30 minutes", "1 hour", "2+ hours")
-                    )
-                )
-                step = 3
-            }
-            3 -> {
-                messages.add(
-                    BuilderMessage(
-                        BuilderSpeaker.MENTOR,
-                        "Quick knowledge check: which practice usually helps you retain a new concept best?",
-                        options = listOf("Explain it in my own words", "Read it once", "Skip practice"),
-                        quiz = true
-                    )
-                )
-                step = 4
-            }
-            4 -> {
-                messages.add(
-                    BuilderMessage(
-                        BuilderSpeaker.MENTOR,
-                        "Nice work. I’ll use your current roadmap as context and prioritize practical, bite-sized progress.",
-                        options = listOf("Create my roadmap")
-                    )
-                )
-                step = 5
-            }
-            else -> {
-                completed = true
-                messages.add(
-                    BuilderMessage(
-                        BuilderSpeaker.MENTOR,
-                        "Your personalized roadmap is ready. You can adjust it any time as your goals change."
-                    )
-                )
-                step = 6
-            }
+        if (step == 5) {
+            viewModel.clearGeneratedRoadmap()
+            viewModel.generatePersonalizedRoadmap(
+                goal = selectedGoal,
+                level = selectedLevel,
+                studyTime = selectedTime,
+                interest = "AI / ML"
+            )
+            return
         }
+        val nextStep = when (step) {
+            1 -> BuilderMessage(
+                BuilderSpeaker.MENTOR,
+                "What best describes your current level?",
+                options = listOf("Beginner", "Some experience", "Advanced")
+            )
+            2 -> BuilderMessage(
+                BuilderSpeaker.MENTOR,
+                "How much time can you make available for learning most days?",
+                options = listOf("30 minutes", "1 hour", "2+ hours")
+            )
+            3 -> BuilderMessage(
+                BuilderSpeaker.MENTOR,
+                "Quick knowledge check: which practice usually helps you retain a new concept best?",
+                options = listOf("Explain it in my own words", "Read it once", "Skip practice"),
+                quiz = true
+            )
+            else -> BuilderMessage(
+                BuilderSpeaker.MENTOR,
+                "Create a roadmap from your answers when you're ready.",
+                options = listOf("Create my roadmap")
+            )
+        }
+        step += 1
+        messages.add(nextStep)
         currentOptions = messages.last().options
-        isTyping = false
     }
 
     fun sendDraft() {
@@ -184,6 +181,7 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column(
                 modifier = Modifier
@@ -255,7 +253,7 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     ) {
                         Text("Current Roadmap", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         Text(
-                            "Android Developer",
+                            "No active roadmap",
                             style = MaterialTheme.typography.bodySmall,
                             color = onSurfaceVariant
                         )
@@ -267,7 +265,7 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                     }
                     if (roadmapExpanded) {
                         Text(
-                            "Kotlin • Compose • UI fundamentals",
+                            "Create a roadmap to start learning.",
                             style = MaterialTheme.typography.bodySmall,
                             color = onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp)
@@ -315,11 +313,24 @@ fun RoadmapBuilderScreen(onBack: () -> Unit = {}) {
                 if (completed) {
                     item(key = "roadmap-result") {
                         RoadmapResult(
-                            goal = selectedGoal,
-                            level = selectedLevel,
-                            time = selectedTime,
+                            generated = uiState.generatedRoadmap!!,
                             primaryColor = primaryColor,
-                            outlineColor = outlineColor
+                            outlineColor = outlineColor,
+                            onStartLearning = onStartLearning,
+                            onAdjustAnswers = {
+                                completed = false
+                                step = 1
+                                messages.clear()
+                                messages.add(
+                                    BuilderMessage(
+                                        BuilderSpeaker.MENTOR,
+                                        "What would you like to achieve next?",
+                                        options = listOf("Get a job", "Build a project", "Prepare for an exam")
+                                    )
+                                )
+                                currentOptions = messages.last().options
+                                viewModel.clearGeneratedRoadmap()
+                            }
                         )
                     }
                 }
@@ -435,11 +446,11 @@ private fun MessageBubble(
 
 @Composable
 private fun RoadmapResult(
-    goal: String,
-    level: String,
-    time: String,
+    generated: GeneratedRoadmapPreview,
     primaryColor: androidx.compose.ui.graphics.Color,
-    outlineColor: androidx.compose.ui.graphics.Color
+    outlineColor: androidx.compose.ui.graphics.Color,
+    onStartLearning: () -> Unit,
+    onAdjustAnswers: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -453,40 +464,38 @@ private fun RoadmapResult(
         ) {
             Text("Your personalized roadmap", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                "$goal • $level • $time",
+                "${generated.goal} • ${generated.level} • ${generated.studyTime}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = primaryColor,
                 fontWeight = FontWeight.SemiBold
             )
-            builderStages.forEachIndexed { index, stage ->
+            Text(
+                "Estimated journey: ${generated.duration}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            generated.stages.forEachIndexed { index, stage ->
                 Row(verticalAlignment = Alignment.Top) {
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .background(EduNovaSuccess.copy(alpha = 0.14f), CircleShape),
+                            .background(primaryColor.copy(alpha = 0.14f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("${index + 1}", color = EduNovaSuccess, fontWeight = FontWeight.Bold)
+                        Text("${index + 1}", color = primaryColor, fontWeight = FontWeight.Bold)
                     }
-                    Column(modifier = Modifier.padding(start = 10.dp)) {
-                        Text(stage.title, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            stage.detail,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(stage, modifier = Modifier.padding(start = 10.dp), fontWeight = FontWeight.SemiBold)
                 }
             }
             Button(
-                onClick = {},
+                onClick = onStartLearning,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
             ) {
                 Text("Start learning")
             }
-            TextButton(onClick = {}) {
+            TextButton(onClick = onAdjustAnswers) {
                 Text("Adjust my answers")
             }
         }

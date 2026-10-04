@@ -2,7 +2,7 @@ package com.offline_First.ui.screens.roadmap
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.offline_First.data.local.LocalRoadmapRepository
+import com.offline_First.data.AppContainer
 import com.offline_First.data.repository.RoadmapRepository
 import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.RoadmapOption
@@ -17,11 +17,12 @@ data class RoadmapUiState(
     val categories: List<String> = emptyList(),
     val selectedCategory: String = "All",
     val isGenerating: Boolean = false,
-    val generatedRoadmap: GeneratedRoadmapPreview? = null
+    val generatedRoadmap: GeneratedRoadmapPreview? = null,
+    val errorMessage: String? = null
 )
 
 class RoadmapViewModel(
-    private val repository: RoadmapRepository = LocalRoadmapRepository()
+    private val repository: RoadmapRepository = AppContainer.roadmapRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RoadmapUiState())
@@ -33,7 +34,10 @@ class RoadmapViewModel(
 
     fun loadData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(roadmaps = UiState.Loading)
+            _uiState.value = _uiState.value.copy(
+                roadmaps = UiState.Loading,
+                errorMessage = null
+            )
             val categories = repository.getCategories()
             val result = repository.getRoadmaps()
             result.fold(
@@ -46,7 +50,8 @@ class RoadmapViewModel(
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         roadmaps = UiState.Error(error.localizedMessage ?: "Failed to load roadmaps"),
-                        categories = categories
+                        categories = categories,
+                        errorMessage = error.localizedMessage ?: "Failed to load roadmaps."
                     )
                 }
             )
@@ -64,7 +69,7 @@ class RoadmapViewModel(
         interest: String
     ) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isGenerating = true)
+            _uiState.value = _uiState.value.copy(isGenerating = true, errorMessage = null)
             val result = repository.generatePersonalizedRoadmap(goal, level, studyTime, interest)
             result.fold(
                 onSuccess = { generated ->
@@ -74,7 +79,10 @@ class RoadmapViewModel(
                     )
                 },
                 onFailure = {
-                    _uiState.value = _uiState.value.copy(isGenerating = false)
+                    _uiState.value = _uiState.value.copy(
+                        isGenerating = false,
+                        errorMessage = it.localizedMessage ?: "Unable to generate a roadmap."
+                    )
                 }
             )
         }
@@ -82,5 +90,9 @@ class RoadmapViewModel(
 
     fun clearGeneratedRoadmap() {
         _uiState.value = _uiState.value.copy(generatedRoadmap = null)
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 }

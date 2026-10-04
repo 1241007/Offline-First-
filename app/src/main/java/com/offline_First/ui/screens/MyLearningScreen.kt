@@ -25,9 +25,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,26 +41,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.offline_First.data.local.LocalLearningRepository
-import com.offline_First.data.repository.LearningRepository
-import com.offline_First.domain.model.LearningCourse
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.domain.model.UiState
 
 @Composable
 fun MyLearningScreen(
     onBack: () -> Unit = {},
-    userName: String = "Asha Learner",
-    learningRepository: LearningRepository = remember { LocalLearningRepository() }
+    userName: String = "",
+    viewModel: MyLearningViewModel = viewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = remember { listOf("In Progress", "Completed", "Certificates & Badges") }
-
-    var inProgressCourses by remember { mutableStateOf<List<LearningCourse>>(emptyList()) }
-    var completedCourses by remember { mutableStateOf<List<LearningCourse>>(emptyList()) }
-
-    LaunchedEffect(learningRepository) {
-        inProgressCourses = learningRepository.getInProgressCourses().getOrDefault(emptyList())
-        completedCourses = learningRepository.getCompletedCourses().getOrDefault(emptyList())
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
+    val inProgressCourses = (uiState.inProgressCourses as? UiState.Success)?.data.orEmpty()
+    val completedCourses = (uiState.completedCourses as? UiState.Success)?.data.orEmpty()
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
@@ -65,6 +66,7 @@ fun MyLearningScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Row(
                 modifier = Modifier

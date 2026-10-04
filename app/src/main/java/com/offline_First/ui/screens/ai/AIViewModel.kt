@@ -2,7 +2,7 @@ package com.offline_First.ui.screens.ai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.AppContainer
 import com.offline_First.data.repository.AIRepository
 import com.offline_First.domain.model.ChatMessage
 import com.offline_First.domain.model.ChatSession
@@ -38,9 +38,9 @@ data class AIUiState(
     val explanationMode: ExplanationMode = ExplanationMode.GENERAL,
     val offlineAIStatus: OfflineAIStatus = OfflineAIStatus.NOT_DOWNLOADED,
     val downloadProgress: Int = 0,
-    val downloadSize: String = "1.8 GB",
-    val estimatedTimeRemaining: String = "~2 minutes remaining",
-    val downloadStage: String = "Downloading...",
+    val downloadSize: String = "",
+    val estimatedTimeRemaining: String = "",
+    val downloadStage: String = "",
     val sessions: List<ChatSession> = emptyList(),
     val currentSession: ChatSession? = null,
     val isDrawerOpen: Boolean = false,
@@ -52,11 +52,12 @@ data class AIUiState(
     val showAttachmentsSheet: Boolean = false,
     val renameTargetSessionId: String? = null,
     val renameDraftText: String = "",
-    val previousScreen: AIScreen = AIScreen.LANDING
+    val previousScreen: AIScreen = AIScreen.LANDING,
+    val errorMessage: String? = null
 )
 
 class AIViewModel(
-    private val aiRepository: AIRepository = LocalAIRepository(),
+    private val aiRepository: AIRepository = AppContainer.aiRepository,
     private val coroutineContext: CoroutineContext = Dispatchers.IO
 ) : ViewModel() {
 
@@ -125,21 +126,24 @@ class AIViewModel(
 
     fun setConnectionMode(mode: ConnectionMode) {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.setConnectionMode(mode)
+            aiRepository.setConnectionMode(mode).onFailure(::reportError)
         }
     }
 
     fun setExplanationMode(mode: ExplanationMode) {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.setExplanationMode(mode)
+            aiRepository.setExplanationMode(mode).onFailure(::reportError)
         }
     }
 
     fun startOfflineDownload(navigateToDownloadState: Boolean = false) {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.startOfflineAIDownload()
-            if (navigateToDownloadState) {
-                setScreen(AIScreen.DOWNLOAD_STATE)
+            aiRepository.startOfflineAIDownload().fold(
+                onSuccess = {
+                    if (navigateToDownloadState) setScreen(AIScreen.DOWNLOAD_STATE)
+                },
+                onFailure = ::reportError
+            )
             }
         }
     }
@@ -150,8 +154,12 @@ class AIViewModel(
 
     fun confirmDeleteOfflineAI() {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.deleteOfflineAI()
-            _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = false)
+            aiRepository.deleteOfflineAI().fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = false)
+                },
+                onFailure = ::reportError
+            )
         }
     }
 
@@ -161,22 +169,30 @@ class AIViewModel(
 
     fun createNewChat() {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.createNewChat()
-            _uiState.value = _uiState.value.copy(
-                isDrawerOpen = false,
-                currentScreen = AIScreen.CHAT,
-                activeToolName = null
+            aiRepository.createNewChat().fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        isDrawerOpen = false,
+                        currentScreen = AIScreen.CHAT,
+                        activeToolName = null
+                    )
+                },
+                onFailure = ::reportError
             )
         }
     }
 
     fun selectChat(sessionId: String) {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.selectChat(sessionId)
-            _uiState.value = _uiState.value.copy(
-                isDrawerOpen = false,
-                currentScreen = AIScreen.CHAT,
-                activeToolName = null
+            aiRepository.selectChat(sessionId).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        isDrawerOpen = false,
+                        currentScreen = AIScreen.CHAT,
+                        activeToolName = null
+                    )
+                },
+                onFailure = ::reportError
             )
         }
     }
@@ -196,10 +212,14 @@ class AIViewModel(
         val targetId = _uiState.value.renameTargetSessionId ?: return
         val newTitle = _uiState.value.renameDraftText
         viewModelScope.launch(coroutineContext) {
-            aiRepository.renameChat(targetId, newTitle)
-            _uiState.value = _uiState.value.copy(
-                renameTargetSessionId = null,
-                renameDraftText = ""
+            aiRepository.renameChat(targetId, newTitle).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        renameTargetSessionId = null,
+                        renameDraftText = ""
+                    )
+                },
+                onFailure = ::reportError
             )
         }
     }
@@ -213,7 +233,7 @@ class AIViewModel(
 
     fun deleteChat(sessionId: String) {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.deleteChat(sessionId)
+            aiRepository.deleteChat(sessionId).onFailure(::reportError)
         }
     }
 
@@ -226,15 +246,27 @@ class AIViewModel(
         if (promptToSend.isBlank()) return
 
         _uiState.value = _uiState.value.copy(
-            draftMessage = "",
+            draftMessage = promptToSend,
             isGeneratingResponse = true,
             currentScreen = AIScreen.CHAT,
             activeToolName = null
         )
 
         viewModelScope.launch(coroutineContext) {
-            aiRepository.sendMessage(promptToSend)
-            _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+            aiRepository.sendMessage(promptToSend).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        draftMessage = "",
+                        isGeneratingResponse = false
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isGeneratingResponse = false,
+                        errorMessage = error.localizedMessage ?: "Unable to send the message."
+                    )
+                }
+            )
         }
     }
 
@@ -255,5 +287,15 @@ class AIViewModel(
 
     fun setAttachmentsSheetVisible(visible: Boolean) {
         _uiState.value = _uiState.value.copy(showAttachmentsSheet = visible)
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    private fun reportError(error: Throwable) {
+        _uiState.value = _uiState.value.copy(
+            errorMessage = error.localizedMessage ?: "The request could not be completed."
+        )
     }
 }

@@ -1,13 +1,12 @@
 package com.offline_First.ui.screens.ai
 
-import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.repository.BackendNotConfiguredRepositories
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -15,21 +14,18 @@ class AIViewModelTest {
 
     @Test
     fun initialStateHasExpectedDefaults() = runBlocking {
-        val repo = LocalAIRepository()
-        val viewModel = AIViewModel(aiRepository = repo)
-        delay(100)
+        val viewModel = newViewModel()
 
         val state = viewModel.uiState.value
         assertEquals(AIScreen.LANDING, state.currentScreen)
-        assertNotNull(state.sessions)
+        assertTrue(state.sessions.isEmpty())
         assertFalse(state.isDrawerOpen)
         assertFalse(state.showDeleteConfirmDialog)
     }
 
     @Test
     fun switchingScreenUpdatesState() = runBlocking {
-        val repo = LocalAIRepository()
-        val viewModel = AIViewModel(aiRepository = repo)
+        val viewModel = newViewModel()
 
         viewModel.setScreen(AIScreen.CHAT)
         assertEquals(AIScreen.CHAT, viewModel.uiState.value.currentScreen)
@@ -43,36 +39,30 @@ class AIViewModelTest {
 
     @Test
     fun switchingModesUpdatesUiState() = runBlocking {
-        val repo = LocalAIRepository()
-        val viewModel = AIViewModel(aiRepository = repo)
-        delay(100)
+        val viewModel = newViewModel()
 
         viewModel.setConnectionMode(ConnectionMode.OFFLINE)
-        delay(100)
         assertEquals(ConnectionMode.OFFLINE, viewModel.uiState.value.connectionMode)
 
         viewModel.setExplanationMode(ExplanationMode.TEACHER)
-        delay(100)
         assertEquals(ExplanationMode.TEACHER, viewModel.uiState.value.explanationMode)
     }
 
     @Test
     fun deleteOfflineAIConfirmationLifecycle() = runBlocking {
-        val repo = LocalAIRepository()
-        val viewModel = AIViewModel(aiRepository = repo)
+        val viewModel = newViewModel()
 
         viewModel.showDeleteConfirm(true)
         assertTrue(viewModel.uiState.value.showDeleteConfirmDialog)
 
         viewModel.confirmDeleteOfflineAI()
-        delay(100)
-        assertFalse(viewModel.uiState.value.showDeleteConfirmDialog)
+        assertTrue(viewModel.uiState.value.showDeleteConfirmDialog)
+        assertTrue(viewModel.uiState.value.errorMessage?.contains("Offline AI") == true)
     }
 
     @Test
     fun backNavigationNeverEntersDownloadStateLoop() = runBlocking {
-        val repo = LocalAIRepository()
-        val viewModel = AIViewModel(aiRepository = repo, coroutineContext = kotlinx.coroutines.Dispatchers.Unconfined)
+        val viewModel = newViewModel()
 
         // User starts at CHAT
         viewModel.setScreen(AIScreen.CHAT)
@@ -86,14 +76,16 @@ class AIViewModelTest {
 
         // User navigates into DOWNLOAD_STATE from SETTINGS
         viewModel.startOfflineDownload(navigateToDownloadState = true)
-        assertEquals(AIScreen.DOWNLOAD_STATE, viewModel.uiState.value.currentScreen)
-        // previousScreen should still remain CHAT, NOT SETTINGS or DOWNLOAD_STATE
+        assertEquals(AIScreen.SETTINGS, viewModel.uiState.value.currentScreen)
+        assertTrue(viewModel.uiState.value.errorMessage?.contains("Offline AI") == true)
         assertEquals(AIScreen.CHAT, viewModel.uiState.value.previousScreen)
 
-        // User clicks back from DOWNLOAD_STATE to SETTINGS
-        viewModel.setScreen(AIScreen.SETTINGS)
-        assertEquals(AIScreen.SETTINGS, viewModel.uiState.value.currentScreen)
-        // previousScreen must still be CHAT, NEVER DOWNLOAD_STATE
-        assertEquals(AIScreen.CHAT, viewModel.uiState.value.previousScreen)
+        viewModel.clearError()
+        assertEquals(null, viewModel.uiState.value.errorMessage)
     }
+
+    private fun newViewModel() = AIViewModel(
+        aiRepository = BackendNotConfiguredRepositories(),
+        coroutineContext = Dispatchers.Unconfined
+    )
 }

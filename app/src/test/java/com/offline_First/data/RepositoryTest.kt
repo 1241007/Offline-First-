@@ -1,87 +1,77 @@
 package com.offline_First.data
 
-import com.offline_First.data.local.LocalCourseRepository
-import com.offline_First.data.local.LocalLearningRepository
-import com.offline_First.data.local.LocalProfileRepository
-import com.offline_First.data.local.LocalRoadmapRepository
+import com.offline_First.data.repository.BackendNotConfiguredException
+import com.offline_First.data.repository.BackendNotConfiguredRepositories
+import com.offline_First.domain.model.EducationMode
 import com.offline_First.domain.model.UserProfile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 class RepositoryTest {
 
-    @Before
-    fun setUp() {
-        LocalProfileRepository.resetToDefault()
-    }
-
     @Test
-    fun localRoadmapRepositoryReturnsCategoriesAndRoadmaps() = runBlocking {
-        val repo = LocalRoadmapRepository()
-        val categories = repo.getCategories()
-        val roadmapsResult = repo.getRoadmaps()
+    fun dataRepositoriesFailClearlyUntilBackendIsConfigured() = runBlocking {
+        val repositories = BackendNotConfiguredRepositories()
 
-        assertTrue(categories.contains("All"))
-        assertTrue(categories.contains("Development"))
-        assertTrue(roadmapsResult.isSuccess)
-
-        val roadmaps = roadmapsResult.getOrThrow()
-        assertEquals(9, roadmaps.size)
-        assertTrue(roadmaps.any { it.title == "Frontend Developer" })
-        assertTrue(roadmaps.any { it.title == "Android Developer" })
-    }
-
-    @Test
-    fun localCourseRepositoryReturnsAllAndFeaturedCourses() = runBlocking {
-        val repo = LocalCourseRepository()
-        val allCoursesResult = repo.getCourses()
-        val featuredCoursesResult = repo.getFeaturedCourses()
-
-        assertTrue(allCoursesResult.isSuccess)
-        assertTrue(featuredCoursesResult.isSuccess)
-
-        val all = allCoursesResult.getOrThrow()
-        val featured = featuredCoursesResult.getOrThrow()
-
-        assertEquals(6, all.size)
-        assertEquals(3, featured.size)
-        assertEquals("Python", featured[0].name)
-    }
-
-    @Test
-    fun localLearningRepositoryReturnsInProgressAndCompleted() = runBlocking {
-        val repo = LocalLearningRepository()
-        val inProgress = repo.getInProgressCourses().getOrThrow()
-        val completed = repo.getCompletedCourses().getOrThrow()
-
-        assertEquals(3, inProgress.size)
-        assertEquals(2, completed.size)
-        assertEquals("Kotlin Fundamentals", inProgress[0].name)
-        assertEquals(1f, completed[0].progress, 0.001f)
-    }
-
-    @Test
-    fun localProfileRepositoryUpdatesAndRetrievesProfile() = runBlocking {
-        val repo = LocalProfileRepository()
-        val initialProfile = repo.getUserProfile().getOrThrow()
-        assertEquals("Asha Learner", initialProfile.fullName)
-
-        val updated = UserProfile(
-            fullName = "Rohan Sharma",
-            email = "rohan@edunova.org",
-            mobile = "+91 99999 88888",
-            interests = "Kotlin, Cloud",
-            level = "Advanced"
+        assertBackendNotConfigured(repositories.getCourses().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getFeaturedCourses().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getInProgressCourses().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getCompletedCourses().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getSubjects().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getContinueLearning().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getUpcomingExams().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getStudyFocus().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getRoadmaps().exceptionOrNull())
+        assertTrue(repositories.getCategories().isEmpty())
+        assertBackendNotConfigured(
+            repositories.generatePersonalizedRoadmap("goal", "level", "time", "interest").exceptionOrNull()
         )
-        val updateResult = repo.updateUserProfile(updated)
-        assertTrue(updateResult.isSuccess)
+    }
 
-        val retrieved = repo.getUserProfile().getOrThrow()
-        assertEquals("Rohan Sharma", retrieved.fullName)
-        assertEquals("rohan@edunova.org", retrieved.email)
+    @Test
+    fun profileRepositoryStartsWithoutFakeUserAndDoesNotClaimSaveSucceeded() = runBlocking {
+        val repositories = BackendNotConfiguredRepositories()
+        val profile = UserProfile(
+            fullName = "Learner",
+            email = "learner@example.com",
+            mobile = "",
+            interests = "",
+            level = "",
+            educationMode = EducationMode.GENERAL
+        )
+
+        assertNull(repositories.getUserProfile().getOrThrow())
+        assertNull(repositories.observeUserProfile().first())
+        assertBackendNotConfigured(repositories.updateUserProfile(profile).exceptionOrNull())
+    }
+
+    @Test
+    fun authenticationRequiresBackendImplementation() = runBlocking {
+        val repositories = BackendNotConfiguredRepositories()
+
+        assertBackendNotConfigured(repositories.signIn("learner@example.com", "password").exceptionOrNull())
+        assertBackendNotConfigured(
+            repositories.register(
+                com.offline_First.data.repository.RegistrationInput(
+                    fullName = "Learner",
+                    email = "learner@example.com",
+                    mobile = "",
+                    password = "password"
+                )
+            ).exceptionOrNull()
+        )
+        assertBackendNotConfigured(
+            repositories.requestPasswordReset("learner@example.com").exceptionOrNull()
+        )
+    }
+
+    private fun assertBackendNotConfigured(error: Throwable?) {
+        assertTrue(error is BackendNotConfiguredException)
+        assertFalse(error?.localizedMessage.isNullOrBlank())
     }
 }

@@ -88,6 +88,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -147,10 +149,18 @@ fun AIWorkspaceScreen(
     viewModel: AIViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(
         initialValue = if (uiState.isDrawerOpen) DrawerValue.Open else DrawerValue.Closed
     )
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     val handleExitToHome: () -> Unit = {
         if (uiState.currentScreen == AIScreen.DOWNLOAD_STATE || uiState.currentScreen == AIScreen.SETTINGS) {
@@ -384,6 +394,11 @@ fun AIWorkspaceScreen(
                     shape = RoundedCornerShape(18.dp)
                 )
             }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 }
