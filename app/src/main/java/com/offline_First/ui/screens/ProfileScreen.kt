@@ -39,7 +39,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.offline_First.data.local.LocalProfileRepository
 import com.offline_First.data.repository.ProfileRepository
+import com.offline_First.domain.model.EducationMode
 import com.offline_First.domain.model.UserProfile
+import com.offline_First.ui.components.EduNovaFilterChip
 import kotlinx.coroutines.launch
 
 @Composable
@@ -56,6 +58,8 @@ fun ProfileScreen(
     var mobile by rememberSaveable { mutableStateOf("+91 98765 43210") }
     var interests by rememberSaveable { mutableStateOf("Android, UI design") }
     var level by rememberSaveable { mutableStateOf("Intermediate") }
+    var educationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
+    var savedEducationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var savedName by rememberSaveable { mutableStateOf(initialName) }
     var savedEmail by rememberSaveable { mutableStateOf(initialEmail) }
@@ -71,6 +75,8 @@ fun ProfileScreen(
             mobile = profile.mobile
             interests = profile.interests
             level = profile.level
+            educationMode = profile.educationMode
+            savedEducationMode = profile.educationMode
         }
     }
 
@@ -119,6 +125,10 @@ fun ProfileScreen(
                 ProfileValue("Full Name", savedName)
                 ProfileValue("Email", savedEmail)
                 ProfileValue("Mobile Number", mobile)
+                ProfileValue(
+                    "Education Mode",
+                    if (savedEducationMode == EducationMode.SCHOOL) "School (Class 9–12)" else "General (College & Beyond)"
+                )
                 ProfileValue("Learning interests", interests)
                 ProfileValue("Current learning level", level)
                 Button(
@@ -143,6 +153,25 @@ fun ProfileScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(mobile, { mobile = it }, label = { Text("Mobile Number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Education Mode",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EduNovaFilterChip(
+                            text = "School (Class 9–12)",
+                            selected = educationMode == EducationMode.SCHOOL,
+                            onClick = { educationMode = EducationMode.SCHOOL }
+                        )
+                        EduNovaFilterChip(
+                            text = "General (College & Beyond)",
+                            selected = educationMode == EducationMode.GENERAL,
+                            onClick = { educationMode = EducationMode.GENERAL }
+                        )
+                    }
+                }
                 OutlinedTextField(interests, { interests = it }, label = { Text("Learning interests") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(level, { level = it }, label = { Text("Current learning level") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -153,6 +182,7 @@ fun ProfileScreen(
                             } else {
                                 savedName = name
                                 savedEmail = email
+                                savedEducationMode = educationMode
                                 error = null
                                 editing = false
                                 scope.launch {
@@ -162,7 +192,8 @@ fun ProfileScreen(
                                             email = savedEmail,
                                             mobile = mobile,
                                             interests = interests,
-                                            level = level
+                                            level = level,
+                                            educationMode = savedEducationMode
                                         )
                                     )
                                 }
@@ -175,6 +206,7 @@ fun ProfileScreen(
                         onClick = {
                             name = savedName
                             email = savedEmail
+                            educationMode = savedEducationMode
                             error = null
                             editing = false
                         },

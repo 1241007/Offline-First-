@@ -9,7 +9,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.offline_First.data.local.LocalProfileRepository
+import com.offline_First.domain.model.EducationMode
+import com.offline_First.domain.model.UserProfile
+import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.screens.AIWorkspaceScreen
 import com.offline_First.ui.screens.LandingScreen
 import com.offline_First.ui.screens.MyLearningScreen
@@ -20,7 +26,6 @@ import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
-import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.theme.OfflineFirstTheme
 
 class MainActivity : ComponentActivity() {
@@ -34,6 +39,17 @@ class MainActivity : ComponentActivity() {
                 var isLoggedIn by rememberSaveable { mutableStateOf(false) }
                 var openWorkspaceTools by rememberSaveable { mutableStateOf(false) }
                 var selectedLanguage by rememberSaveable { mutableStateOf("English") }
+                val profileRepository = remember { LocalProfileRepository() }
+                val profile by profileRepository.observeUserProfile().collectAsState(
+                    initial = UserProfile(
+                        fullName = "Asha Learner",
+                        email = "asha@example.com",
+                        mobile = "+91 98765 43210",
+                        interests = "Android, UI design",
+                        level = "Intermediate",
+                        educationMode = EducationMode.GENERAL
+                    )
+                )
 
                 val pushDestination: (AppDestination) -> Unit = { next ->
                     if (destination != next) {
@@ -93,7 +109,7 @@ class MainActivity : ComponentActivity() {
                         onLogin = { pushDestination(AppDestination.LOGIN) }
                     )
                     AppDestination.AI_WORKSPACE -> AIWorkspaceScreen(
-                        isClass912Student = true,
+                        isClass912Student = (profile.educationMode == EducationMode.SCHOOL),
                         onBack = { navigateBack() },
                         openToolsOnStart = openWorkspaceTools
                     )

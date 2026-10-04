@@ -5,7 +5,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,8 +29,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -44,7 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,11 +63,18 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offline_First.R
-import com.offline_First.data.local.LocalCourseRepository
-import com.offline_First.data.repository.CourseRepository
+import com.offline_First.domain.model.ContinueLearningItem
 import com.offline_First.domain.model.Course
 import com.offline_First.domain.model.CourseAccent
+import com.offline_First.domain.model.EducationMode
+import com.offline_First.domain.model.StudyFocusItem
+import com.offline_First.domain.model.Subject
+import com.offline_First.ui.components.EduNovaBottomNavItem
+import com.offline_First.ui.components.EduNovaBottomNavigation
+import com.offline_First.ui.screens.landing.LandingUiState
+import com.offline_First.ui.screens.landing.LandingViewModel
 import com.offline_First.ui.theme.EduNovaAccent
 import com.offline_First.ui.theme.EduNovaBorder
 import com.offline_First.ui.theme.EduNovaPrimary
@@ -96,22 +101,15 @@ fun LandingScreen(
     onOpenSettings: () -> Unit = {},
     onLanguageSelected: (String) -> Unit = {},
     onLogout: () -> Unit = {},
-    courseRepository: CourseRepository = remember { LocalCourseRepository() }
+    viewModel: LandingViewModel = viewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val catalogueRequester = remember { BringIntoViewRequester() }
+
     val showMessage: (String) -> Unit = { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
-    }
-
-    var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
-    var featuredCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
-
-    LaunchedEffect(courseRepository) {
-        courses = courseRepository.getCourses().getOrDefault(emptyList())
-        featuredCourses = courseRepository.getFeaturedCourses().getOrDefault(emptyList())
     }
 
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -126,11 +124,11 @@ fun LandingScreen(
                     .fillMaxSize()
                     .verticalScroll(scrollState)
                     .padding(padding)
-                    .padding(bottom = 84.dp)
+                    .padding(bottom = 96.dp)
                     .navigationBarsPadding()
             ) {
                 TopBar(
-                    onSearch = { showMessage("Course search will be available soon.") },
+                    onSearch = { showMessage("Search will be available soon.") },
                     onLogin = onLogin,
                     isLoggedIn = isLoggedIn,
                     onProfile = onOpenProfile,
@@ -139,52 +137,400 @@ fun LandingScreen(
                     onLanguageSelected = onLanguageSelected,
                     onLogout = onLogout
                 )
-                if (featuredCourses.isNotEmpty()) {
-                    FeaturedCourseSection(
-                        featured = featuredCourses,
-                        onCourseClick = { showMessage("Course content will be available soon.") }
-                    )
+
+                if (uiState.isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = primaryColor)
+                    }
+                } else {
+                    when (uiState.educationMode) {
+                        EducationMode.SCHOOL -> {
+                            SchoolHomeContent(
+                                uiState = uiState,
+                                onContinueLearning = onOpenMyLearning,
+                                onSubjectClick = { showMessage("${it.name} materials will be available soon.") },
+                                onNextStepClick = onOpenMyLearning
+                            )
+                        }
+                        EducationMode.GENERAL -> {
+                            GeneralHomeContent(
+                                uiState = uiState,
+                                onCourseClick = { showMessage("Course content will be available soon.") },
+                                onStartLearning = { showMessage("Your learning journey will be ready soon.") },
+                                onSupportAction = showMessage
+                            )
+                        }
+                    }
                 }
-                QuickActions(
-                    onCourses = { scope.launch { catalogueRequester.bringIntoView() } },
-                    onRoadmap = onRoadmap,
-                    onChatbot = onAskAI,
-                    onAITools = onOpenAITools
-                )
-                CourseCatalogue(
-                    courses = courses,
-                    onCourseClick = { showMessage("Course content will be available soon.") },
-                    modifier = Modifier.bringIntoViewRequester(catalogueRequester)
-                )
-                Button(
-                    onClick = { showMessage("Your learning journey will be ready soon.") },
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 22.dp)
-                        .semantics { contentDescription = "Start learning" },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                ) {
-                    Text("Start Learning", fontWeight = FontWeight.Bold)
-                }
-                SupportSection(onSupportAction = showMessage)
             }
+
+            // Ask AI Floating Action Button: sits cleanly above bottom navigation bar
             Button(
                 onClick = onAskAI,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
-                    .padding(end = 20.dp, bottom = 18.dp)
+                    .padding(end = 20.dp, bottom = 80.dp)
                     .semantics { contentDescription = "Ask AI" },
                 shape = RoundedCornerShape(18.dp),
-                contentPadding = PaddingValues(horizontal = 17.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
             ) {
                 Text("✦  Ask AI", fontWeight = FontWeight.Bold)
             }
+
+            // EduNova Persistent Bottom Navigation Bar
+            EduNovaBottomNavigation(
+                selectedItem = EduNovaBottomNavItem.HOME,
+                onNavigate = { item ->
+                    when (item) {
+                        EduNovaBottomNavItem.HOME -> {
+                            scope.launch { scrollState.animateScrollTo(0) }
+                        }
+                        EduNovaBottomNavItem.COURSES -> onOpenMyLearning()
+                        EduNovaBottomNavItem.ROADMAP -> onRoadmap()
+                        EduNovaBottomNavItem.CHAT -> onAskAI()
+                        EduNovaBottomNavItem.TOOLS -> onOpenAITools()
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
+    }
+}
+
+/**
+ * School Mode (Class 9-12):
+ * Prioritizes Greeting -> Continue Learning -> My Subjects -> Your Next Step.
+ * Academic school subjects, zero dashboard overload, no duplicate courses.
+ */
+@Composable
+private fun SchoolHomeContent(
+    uiState: LandingUiState,
+    onContinueLearning: () -> Unit,
+    onSubjectClick: (Subject) -> Unit,
+    onNextStepClick: () -> Unit
+) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp)
+    ) {
+        // 1. Personalized Greeting
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Good morning,",
+                color = mutedInk,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "${uiState.greetingName} 👋",
+                color = ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Let's continue your learning.",
+                color = mutedInk,
+                fontSize = 14.sp
+            )
+        }
+
+        // 2. Primary Hero Card: Continue Learning
+        uiState.continueLearning?.let { item ->
+            SchoolContinueLearningCard(
+                item = item,
+                onContinue = onContinueLearning
+            )
+        }
+
+        // 3. My Subjects: Academic Subjects Grid
+        SchoolSubjectsSection(
+            subjects = uiState.subjects,
+            onSubjectClick = onSubjectClick
+        )
+
+        // 4. Your Next Step
+        uiState.studyFocus?.let { nextStep ->
+            SchoolNextStepCard(
+                item = nextStep,
+                onContinue = onNextStepClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun SchoolContinueLearningCard(
+    item: ContinueLearningItem,
+    onContinue: () -> Unit
+) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = EduNovaPrimaryContainer),
+        border = BorderStroke(1.dp, EduNovaBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "CONTINUE LEARNING",
+                color = primaryColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = item.subjectName,
+                    color = ink,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = item.topicName,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.lessonInfo,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${(item.progress * 100).toInt()}%",
+                    color = primaryColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            LinearProgressIndicator(
+                progress = { item.progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = primaryColor,
+                trackColor = Color.White
+            )
+            Button(
+                onClick = onContinue,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Text("Continue  →", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SchoolSubjectsSection(
+    subjects: List<Subject>,
+    onSubjectClick: (Subject) -> Unit
+) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("My Subjects", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "See All",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { }
+            )
+        }
+
+        val rows = remember(subjects) { subjects.chunked(2) }
+        rows.forEach { rowSubjects ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                rowSubjects.forEach { subject ->
+                    SchoolSubjectCard(
+                        subject = subject,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSubjectClick(subject) }
+                    )
+                }
+                if (rowSubjects.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SchoolSubjectCard(
+    subject: Subject,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, EduNovaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(EduNovaPrimaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(subject.icon, fontSize = 22.sp)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = subject.name,
+                    color = ink,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                if (subject.progress != null) {
+                    Text(
+                        text = "${(subject.progress * 100).toInt()}% completed",
+                        color = primaryColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else {
+                    Text(
+                        text = "${subject.totalTopics} topics",
+                        color = mutedInk,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SchoolNextStepCard(
+    item: StudyFocusItem,
+    onContinue: () -> Unit
+) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Your Next Step", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = BorderStroke(1.dp, EduNovaBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(item.subjectName, color = primaryColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(item.actionTitle, color = ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(item.lessonInfo, color = mutedInk, fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    onClick = onContinue,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+                ) {
+                    Text("Continue  →", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * General Mode (College & Beyond):
+ * Preserves the approved Top Courses carousel, single Explore Courses grid,
+ * Start Learning button, and Help & Support section.
+ */
+@Composable
+private fun GeneralHomeContent(
+    uiState: LandingUiState,
+    onCourseClick: (Course) -> Unit,
+    onStartLearning: () -> Unit,
+    onSupportAction: (String) -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Column {
+        if (uiState.featuredCourses.isNotEmpty()) {
+            FeaturedCourseSection(
+                featured = uiState.featuredCourses,
+                onCourseClick = { onCourseClick(uiState.featuredCourses.first()) }
+            )
+        }
+
+        CourseCatalogue(
+            courses = uiState.exploreCourses,
+            onCourseClick = onCourseClick
+        )
+
+        Button(
+            onClick = onStartLearning,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 22.dp)
+                .semantics { contentDescription = "Start learning" },
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            Text("Start Learning", fontWeight = FontWeight.Bold)
+        }
+
+        SupportSection(onSupportAction = onSupportAction)
     }
 }
 
@@ -207,7 +553,6 @@ private fun TopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -416,7 +761,7 @@ private fun FeaturedCourseSection(
 @Composable
 private fun CourseCatalogue(
     courses: List<Course>,
-    onCourseClick: () -> Unit,
+    onCourseClick: (Course) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val ink = MaterialTheme.colorScheme.onBackground
@@ -436,7 +781,7 @@ private fun CourseCatalogue(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 rowCourses.forEach { course ->
-                    CourseCard(course, Modifier.weight(1f), onCourseClick)
+                    CourseCard(course, Modifier.weight(1f)) { onCourseClick(course) }
                 }
             }
         }
@@ -480,45 +825,6 @@ private fun CourseIcon(course: Course, large: Boolean = false) {
         contentAlignment = Alignment.Center
     ) {
         Text(course.icon, color = if (large) Color.White else courseColor, fontSize = if (large) 20.sp else 13.sp, fontWeight = FontWeight.Black)
-    }
-}
-
-@Composable
-private fun QuickActions(
-    onCourses: () -> Unit,
-    onRoadmap: () -> Unit,
-    onChatbot: () -> Unit,
-    onAITools: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        ActionButton("Courses", onCourses)
-        ActionButton("Roadmap", onRoadmap)
-        ActionButton("Chatbot", onChatbot)
-        ActionButton("AI Tools", onAITools)
-    }
-}
-
-@Composable
-private fun ActionButton(label: String, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .widthIn(min = 84.dp)
-            .height(48.dp)
-            .semantics { contentDescription = "Open $label" },
-        shape = RoundedCornerShape(10.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, EduNovaBorder)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(label, color = MaterialTheme.colorScheme.onBackground, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
     }
 }
 
