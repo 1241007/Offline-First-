@@ -29,6 +29,7 @@ import com.offline_First.ui.theme.OfflineFirstTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppContainer.initialize(applicationContext)
         enableEdgeToEdge()
         setContent {
             OfflineFirstTheme {

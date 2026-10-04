@@ -68,7 +68,7 @@ class AIViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     @Suppress("UNCHECKED_CAST")
                     return AIViewModel(
-                        aiRepository = com.offline_First.data.remote.OnlineAIRepository(application)
+                        aiRepository = com.offline_First.data.AppContainer.aiRepository
                     ) as T
                 }
             }
@@ -124,9 +124,9 @@ class AIViewModel(
             }
         }
 
-        if (aiRepository is com.offline_First.data.remote.OnlineAIRepository) {
+        if (aiRepository is com.offline_First.data.repository.ModeAwareAIRepository) {
             viewModelScope.launch(coroutineContext) {
-                aiRepository.errorFlow.collect { error ->
+                aiRepository.onlineErrorFlow.collect { error ->
                     if (error != null) {
                         _uiState.value = _uiState.value.copy(errorMessage = error)
                     }
@@ -298,9 +298,9 @@ class AIViewModel(
 
     fun refreshConversations() {
         val repo = aiRepository
-        if (repo is com.offline_First.data.remote.OnlineAIRepository) {
+        if (repo is com.offline_First.data.repository.ModeAwareAIRepository) {
             viewModelScope.launch(coroutineContext) {
-                repo.refreshConversations()
+                repo.refreshOnlineConversations()
             }
         }
     }

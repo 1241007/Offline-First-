@@ -1,5 +1,8 @@
 package com.offline_First.data.local
 
+import android.app.ActivityManager
+import android.content.Context
+import com.offline_First.BuildConfig
 import com.offline_First.data.repository.AIRepository
 import com.offline_First.domain.model.ChatMessage
 import com.offline_First.domain.model.ChatSession
@@ -7,392 +10,394 @@ import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
+import java.io.DataInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 
-/**
- * Local-first implementation of AIRepository.
- *
- * NOTE ON INTERNAL MODEL SELECTION:
- * All device capability checks, internal weights, and model profiles
- * are encapsulated strictly within this class. The UI and domain layers
- * never receive or display model names, parameter counts, RAM, or storage specs.
- */
+internal fun useLargeOfflineModel(totalRamBytes: Long): Boolean =
+    totalRamBytes >= 8L * 1024L * 1024L * 1024L
+
+internal fun isValidGgufFile(file: File, minimumValidBytes: Long): Boolean {
+    if (!file.isFile || file.length() < minimumValidBytes) return false
+    return runCatching {
+        DataInputStream(BufferedInputStream(file.inputStream())).use { input ->
+            val magic = ByteArray(4)
+            input.readFully(magic)
+            if (!magic.contentEquals(byteArrayOf(0x47, 0x47, 0x55, 0x46))) return@runCatching false
+            val header = ByteArray(20)
+            input.readFully(header)
+            val fields = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
+            val version = fields.int
+            val tensorCount = fields.long
+            val metadataCount = fields.long
+            version in 2..3 && tensorCount > 0L && metadataCount > 0L
+        }
+    }.getOrDefault(false)
+}
+
+/** Local GGUF downloader and llama.cpp-backed chat repository. */
 class LocalAIRepository(
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    private val context: Context? = null,
+    private val inferenceEngine: OfflineInferenceEngine? = context?.let { LlamaCppInferenceEngine() }
 ) : AIRepository {
 
-    // Internal model representation (strictly private)
-    private enum class InternalModelProfile(val packageSizeLabel: String) {
-        COMPACT("1.8 GB"),
-        ENHANCED("2.4 GB")
+    /** Device selection stays internal; the UI never asks the user to choose a model. */
+    private enum class InternalModelProfile(
+        val fileName: String,
+        val sizeLabel: String,
+        val minimumValidBytes: Long,
+        val minimumFreeBytes: Long
+    ) {
+        COMPACT("Qwen2.5-1.5B-Instruct-Q4_K_M.gguf", "Approx. 1.0 GB", 500_000_000L, 768_000_000L),
+        ENHANCED("Qwen2.5-3B-Instruct-Q4_K_M.gguf", "Approx. 2.0 GB", 1_000_000_000L, 1_300_000_000L)
     }
 
     companion object {
-        private val _connectionModeFlow = MutableStateFlow(ConnectionMode.ONLINE)
-        private val _explanationModeFlow = MutableStateFlow(ExplanationMode.GENERAL)
-        private val _offlineStatusFlow = MutableStateFlow(OfflineAIStatus.NOT_DOWNLOADED)
-        private val _downloadProgressFlow = MutableStateFlow(
-            OfflineAIDownloadProgress(
-                stage = "Downloading...",
-                progress = 0,
-                downloadSize = "1.8 GB",
-                estimatedTimeRemaining = "~2 minutes remaining"
-            )
-        )
+        private const val PREFS_NAME = "offline_ai_repository"
+        private const val STATUS_KEY = "offline_ai_status"
+        private const val CONNECTION_MODE_KEY = "connection_mode"
+        private const val EXPLANATION_MODE_KEY = "explanation_mode"
 
-        private val _sessionsFlow = MutableStateFlow<List<ChatSession>>(emptyList())
-        private val _currentSessionFlow = MutableStateFlow<ChatSession?>(null)
-
-        private var activeDownloadJob: Job? = null
+        private val connectionMode = MutableStateFlow(ConnectionMode.ONLINE)
+        private val explanationMode = MutableStateFlow(ExplanationMode.GENERAL)
+        private val offlineStatus = MutableStateFlow(OfflineAIStatus.NOT_DOWNLOADED)
+        private val downloadProgress = MutableStateFlow(OfflineAIDownloadProgress())
+        private val sessions = MutableStateFlow<List<ChatSession>>(emptyList())
+        private val currentSession = MutableStateFlow<ChatSession?>(null)
 
         fun resetState() {
-            _sessionsFlow.value = emptyList()
-            _currentSessionFlow.value = null
-            _connectionModeFlow.value = ConnectionMode.ONLINE
-            _explanationModeFlow.value = ExplanationMode.GENERAL
-            _offlineStatusFlow.value = OfflineAIStatus.NOT_DOWNLOADED
+            sessions.value = emptyList()
+            currentSession.value = null
+            connectionMode.value = ConnectionMode.ONLINE
+            explanationMode.value = ExplanationMode.GENERAL
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
         }
     }
 
-    // Silently determines the appropriate local profile based on device capabilities
-    private fun resolveAppropriateModel(): InternalModelProfile {
-        // Safe internal check without exposing hardware info to UI
-        val runtimeMemory = Runtime.getRuntime().maxMemory()
-        return if (runtimeMemory > 256 * 1024 * 1024) {
-            InternalModelProfile.COMPACT
+    private val preferences by lazy {
+        context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    private val modelDirectory: File
+        get() = requireNotNull(context) { "Offline AI requires an Android context." }
+            .getDir("offline_models", Context.MODE_PRIVATE)
+
+    init {
+        connectionMode.value = readEnum(CONNECTION_MODE_KEY, ConnectionMode.ONLINE)
+        explanationMode.value = readEnum(EXPLANATION_MODE_KEY, ExplanationMode.GENERAL)
+        val ready = runCatching { isValidModelFile(modelFile(selectModel()), selectModel()) }.getOrDefault(false)
+        offlineStatus.value = if (ready) OfflineAIStatus.READY else OfflineAIStatus.NOT_DOWNLOADED
+        downloadProgress.value = progressFor(selectModel(), ready)
+        if (!ready) preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+    }
+
+    private fun <T : Enum<T>> readEnum(key: String, default: T): T {
+        val raw = preferences?.getString(key, null) ?: return default
+        @Suppress("UNCHECKED_CAST")
+        val enumClass = default.javaClass as Class<T>
+        return runCatching { java.lang.Enum.valueOf(enumClass, raw) }.getOrDefault(default)
+    }
+
+    private fun selectModel(): InternalModelProfile {
+        val totalRam = runCatching {
+            val manager = context?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val memoryInfo = ActivityManager.MemoryInfo()
+            manager?.getMemoryInfo(memoryInfo)
+            memoryInfo.totalMem
+        }.getOrDefault(0L)
+        return if (useLargeOfflineModel(totalRam)) {
+            InternalModelProfile.ENHANCED
         } else {
             InternalModelProfile.COMPACT
         }
     }
 
-    override fun observeConnectionMode(): Flow<ConnectionMode> = _connectionModeFlow.asStateFlow()
+    private fun modelFile(profile: InternalModelProfile) = File(modelDirectory, profile.fileName)
+
+    private fun modelUrl(profile: InternalModelProfile): String = when (profile) {
+        InternalModelProfile.COMPACT -> BuildConfig.OFFLINE_MODEL_SMALL_URL
+        InternalModelProfile.ENHANCED -> BuildConfig.OFFLINE_MODEL_LARGE_URL
+    }
+
+    /** Checks the GGUF signature and header fields, and rejects files too small to be either model. */
+    private fun isValidModelFile(file: File, profile: InternalModelProfile): Boolean {
+        return isValidGgufFile(file, profile.minimumValidBytes)
+    }
+
+    override fun observeConnectionMode(): Flow<ConnectionMode> = connectionMode.asStateFlow()
+
+    internal fun currentConnectionMode(): ConnectionMode = connectionMode.value
 
     override suspend fun setConnectionMode(mode: ConnectionMode): Result<Unit> {
-        _connectionModeFlow.value = mode
+        connectionMode.value = mode
+        preferences?.edit()?.putString(CONNECTION_MODE_KEY, mode.name)?.apply()
         return Result.success(Unit)
     }
 
-    override fun observeExplanationMode(): Flow<ExplanationMode> = _explanationModeFlow.asStateFlow()
+    override fun observeExplanationMode(): Flow<ExplanationMode> = explanationMode.asStateFlow()
 
     override suspend fun setExplanationMode(mode: ExplanationMode): Result<Unit> {
-        _explanationModeFlow.value = mode
+        explanationMode.value = mode
+        preferences?.edit()?.putString(EXPLANATION_MODE_KEY, mode.name)?.apply()
         return Result.success(Unit)
     }
 
-    override fun observeOfflineAIStatus(): Flow<OfflineAIStatus> = _offlineStatusFlow.asStateFlow()
+    override fun observeOfflineAIStatus(): Flow<OfflineAIStatus> = offlineStatus.asStateFlow()
 
-    override fun observeDownloadProgress(): Flow<OfflineAIDownloadProgress> = _downloadProgressFlow.asStateFlow()
+    override fun observeDownloadProgress(): Flow<OfflineAIDownloadProgress> = downloadProgress.asStateFlow()
 
-    override suspend fun startOfflineAIDownload(): Result<Unit> {
-        if (_offlineStatusFlow.value == OfflineAIStatus.READY) {
-            return Result.success(Unit)
-        }
+    override suspend fun startOfflineAIDownload(): Result<Unit> = withContext(Dispatchers.IO) {
+        val profile = selectModel()
+        val destination = modelFile(profile)
 
-        activeDownloadJob?.cancel()
-        val selectedProfile = resolveAppropriateModel()
-        _offlineStatusFlow.value = OfflineAIStatus.DOWNLOADING
-
-        activeDownloadJob = scope.launch {
-            val totalSize = selectedProfile.packageSizeLabel
-
-            val stages = listOf(
-                Pair(0, "Downloading..."),
-                Pair(15, "Downloading..."),
-                Pair(34, "Downloading..."),
-                Pair(52, "Downloading..."),
-                Pair(64, "Downloading..."),
-                Pair(78, "Downloading..."),
-                Pair(88, "Verifying..."),
-                Pair(96, "Preparing..."),
-                Pair(100, "Ready")
-            )
-
-            for ((pct, stageName) in stages) {
-                if (_offlineStatusFlow.value != OfflineAIStatus.DOWNLOADING) break
-
-                val timeEstimate = when {
-                    pct < 40 -> "~2 minutes remaining"
-                    pct < 70 -> "~1 minute remaining"
-                    pct < 90 -> "~30 seconds remaining"
-                    pct < 100 -> "Almost done..."
-                    else -> "Ready"
-                }
-
-                _downloadProgressFlow.value = OfflineAIDownloadProgress(
-                    stage = stageName,
-                    progress = pct,
-                    downloadSize = totalSize,
-                    estimatedTimeRemaining = timeEstimate
-                )
-
-                delay(500)
-            }
-
-            if (_offlineStatusFlow.value == OfflineAIStatus.DOWNLOADING) {
-                _offlineStatusFlow.value = OfflineAIStatus.READY
+        // A valid model is kept and loaded. Never fetch the large file a second time.
+        if (isValidModelFile(destination, profile)) {
+            try {
+                requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
+                    .loadModel(destination)
+                markReady(profile)
+                return@withContext Result.success(Unit)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                return@withContext Result.failure(error)
             }
         }
 
-        return Result.success(Unit)
-    }
+        offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+        preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+        if (modelDirectory.usableSpace < profile.minimumFreeBytes) {
+            return@withContext Result.failure(IllegalStateException("There is not enough free storage for Offline AI."))
+        }
+        val address = modelUrl(profile)
+        if (address.isBlank()) {
+            return@withContext Result.failure(IllegalStateException("Offline AI model URL is not configured."))
+        }
 
-    override suspend fun deleteOfflineAI(): Result<Unit> {
-        activeDownloadJob?.cancel()
-        activeDownloadJob = null
-        _offlineStatusFlow.value = OfflineAIStatus.NOT_DOWNLOADED
-        _downloadProgressFlow.value = OfflineAIDownloadProgress(
-            stage = "Downloading...",
-            progress = 0,
-            downloadSize = resolveAppropriateModel().packageSizeLabel,
-            estimatedTimeRemaining = "~2 minutes remaining"
+        offlineStatus.value = OfflineAIStatus.DOWNLOADING
+        preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.DOWNLOADING.name)?.apply()
+        downloadProgress.value = OfflineAIDownloadProgress(
+            stage = "Downloading...", progress = 0, downloadSize = profile.sizeLabel,
+            estimatedTimeRemaining = "Preparing download..."
         )
-        return Result.success(Unit)
+        modelDirectory.mkdirs()
+        val partial = File(modelDirectory, profile.fileName + ".download")
+        val jobContext = coroutineContext
+
+        try {
+            val connection = (URL(address).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 30_000
+                readTimeout = 60_000
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+            }
+            try {
+                if (connection.responseCode !in 200..299) {
+                    throw IllegalStateException("The Offline AI model download failed (HTTP ${connection.responseCode}).")
+                }
+                val expectedBytes = connection.contentLengthLong
+                if (expectedBytes > 0L && modelDirectory.usableSpace < expectedBytes + 128L * 1024L * 1024L) {
+                    throw IllegalStateException("There is not enough free storage for Offline AI.")
+                }
+                connection.inputStream.use { input ->
+                    FileOutputStream(partial).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var downloaded = 0L
+                        while (true) {
+                            jobContext.ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            downloaded += count
+                            val percent = if (expectedBytes > 0) {
+                                ((downloaded * 100L) / expectedBytes).coerceIn(0L, 99L).toInt()
+                            } else 0
+                            downloadProgress.value = OfflineAIDownloadProgress(
+                                stage = "Downloading...", progress = percent,
+                                downloadSize = profile.sizeLabel,
+                                estimatedTimeRemaining = estimateRemainingTime(percent)
+                            )
+                        }
+                        output.fd.sync()
+                    }
+                }
+                if (expectedBytes > 0L && partial.length() != expectedBytes) {
+                    throw IllegalStateException("The Offline AI model download was incomplete.")
+                }
+            } finally {
+                connection.disconnect()
+            }
+
+            downloadProgress.value = OfflineAIDownloadProgress(
+                stage = "Verifying...", progress = 99, downloadSize = profile.sizeLabel,
+                estimatedTimeRemaining = "Almost done..."
+            )
+            if (!isValidModelFile(partial, profile)) {
+                throw IllegalStateException("The downloaded file is not a valid Qwen GGUF model.")
+            }
+            if (destination.exists() && !destination.delete()) {
+                throw IllegalStateException("Could not replace the existing Offline AI model file.")
+            }
+            if (!partial.renameTo(destination)) {
+                throw IllegalStateException("Could not store the downloaded Offline AI model.")
+            }
+            requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
+                .loadModel(destination)
+            markReady(profile)
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            partial.delete()
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            throw cancelled
+        } catch (error: Throwable) {
+            partial.delete()
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            downloadProgress.value = OfflineAIDownloadProgress(
+                stage = "Download failed", progress = 0, downloadSize = profile.sizeLabel,
+                estimatedTimeRemaining = "Retry later"
+            )
+            Result.failure(error)
+        }
     }
 
-    override fun observeChatSessions(): Flow<List<ChatSession>> = _sessionsFlow.asStateFlow()
+    private fun markReady(profile: InternalModelProfile) {
+        offlineStatus.value = OfflineAIStatus.READY
+        preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.READY.name)?.apply()
+        downloadProgress.value = OfflineAIDownloadProgress(
+            stage = "Ready", progress = 100, downloadSize = profile.sizeLabel,
+            estimatedTimeRemaining = "Ready"
+        )
+    }
 
-    override fun observeCurrentSession(): Flow<ChatSession?> = _currentSessionFlow.asStateFlow()
+    private fun progressFor(profile: InternalModelProfile, ready: Boolean) = if (ready) {
+        OfflineAIDownloadProgress("Ready", 100, profile.sizeLabel, "Ready")
+    } else {
+        OfflineAIDownloadProgress("Downloading...", 0, profile.sizeLabel, "")
+    }
+
+    private fun estimateRemainingTime(progress: Int) = when {
+        progress < 35 -> "Downloading..."
+        progress < 70 -> "More than a minute remaining"
+        progress < 90 -> "About a minute remaining"
+        else -> "Almost done..."
+    }
+
+    override suspend fun deleteOfflineAI(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            inferenceEngine?.unload()
+            val files = InternalModelProfile.entries.flatMap { profile ->
+                listOf(modelFile(profile), File(modelDirectory, profile.fileName + ".download"))
+            }
+            val failedDelete = files.firstOrNull { it.exists() && !it.delete() }
+            if (failedDelete != null) {
+                return@withContext Result.failure(IllegalStateException("Unable to remove the downloaded Offline AI model."))
+            }
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            downloadProgress.value = progressFor(selectModel(), ready = false)
+            Result.success(Unit)
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    override fun observeChatSessions(): Flow<List<ChatSession>> = sessions.asStateFlow()
+
+    override fun observeCurrentSession(): Flow<ChatSession?> = currentSession.asStateFlow()
 
     override suspend fun createNewChat(): Result<ChatSession> {
-        val newChat = ChatSession(
-            id = UUID.randomUUID().toString(),
-            title = "New Conversation",
-            lastUpdated = System.currentTimeMillis(),
-            messages = emptyList()
-        )
-        _sessionsFlow.value = listOf(newChat) + _sessionsFlow.value
-        _currentSessionFlow.value = newChat
-        return Result.success(newChat)
+        val chat = ChatSession(id = UUID.randomUUID().toString(), title = "New Conversation")
+        sessions.value = listOf(chat) + sessions.value
+        currentSession.value = chat
+        return Result.success(chat)
     }
 
     override suspend fun selectChat(sessionId: String): Result<Unit> {
-        val target = _sessionsFlow.value.find { it.id == sessionId }
-        if (target != null) {
-            _currentSessionFlow.value = target
-        }
+        val chat = sessions.value.firstOrNull { it.id == sessionId }
+        if (chat != null) currentSession.value = chat
         return Result.success(Unit)
     }
 
     override suspend fun renameChat(sessionId: String, newTitle: String): Result<Unit> {
-        _sessionsFlow.value = _sessionsFlow.value.map { session ->
-            if (session.id == sessionId) {
-                session.copy(title = newTitle.ifBlank { session.title })
-            } else {
-                session
-            }
+        sessions.value = sessions.value.map { chat ->
+            if (chat.id == sessionId) chat.copy(title = newTitle.ifBlank { chat.title }) else chat
         }
-        if (_currentSessionFlow.value?.id == sessionId) {
-            _currentSessionFlow.value = _currentSessionFlow.value?.copy(title = newTitle.ifBlank { _currentSessionFlow.value!!.title })
+        if (currentSession.value?.id == sessionId) {
+            currentSession.value = currentSession.value?.copy(title = newTitle.ifBlank { currentSession.value!!.title })
         }
         return Result.success(Unit)
     }
 
     override suspend fun deleteChat(sessionId: String): Result<Unit> {
-        val remaining = _sessionsFlow.value.filter { it.id != sessionId }
-        _sessionsFlow.value = remaining
-        if (_currentSessionFlow.value?.id == sessionId) {
-            _currentSessionFlow.value = remaining.firstOrNull() ?: createNewChat().getOrThrow()
+        val remaining = sessions.value.filterNot { it.id == sessionId }
+        sessions.value = remaining
+        if (currentSession.value?.id == sessionId) {
+            currentSession.value = remaining.firstOrNull()
         }
         return Result.success(Unit)
     }
 
-    override suspend fun sendMessage(prompt: String): Result<ChatMessage> {
-        val current = _currentSessionFlow.value ?: createNewChat().getOrThrow()
-        val userMsg = ChatMessage(
-            text = prompt,
-            fromUser = true,
-            timestamp = System.currentTimeMillis()
+    override suspend fun sendMessage(prompt: String): Result<ChatMessage> = withContext(Dispatchers.IO) {
+        val profile = selectModel()
+        val file = modelFile(profile)
+        if (!isValidModelFile(file, profile)) {
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            return@withContext Result.failure(
+                IllegalStateException("Offline AI model is missing or invalid. Download Offline AI before chatting.")
+            )
+        }
+        val engine = inferenceEngine ?: return@withContext Result.failure(
+            IllegalStateException("The Android llama.cpp runtime is unavailable.")
         )
-
-        val updatedMessagesWithUser = current.messages + userMsg
-
-        // Generate response based on ConnectionMode & ExplanationMode
-        val aiResponseText = generateResponseText(
-            prompt = prompt,
-            connectionMode = _connectionModeFlow.value,
-            explanationMode = _explanationModeFlow.value,
-            offlineStatus = _offlineStatusFlow.value
-        )
-
-        val aiMsg = ChatMessage(
-            text = aiResponseText,
-            fromUser = false,
-            timestamp = System.currentTimeMillis() + 100
-        )
-
-        val updatedMessages = updatedMessagesWithUser + aiMsg
-        val resolvedTitle = if (current.title == "New Conversation" && prompt.isNotBlank()) {
+        val current = currentSession.value ?: createNewChat().getOrThrow()
+        val userMessage = ChatMessage(text = prompt, fromUser = true)
+        val response = try {
+            engine.loadModel(file)
+            engine.generate(systemPromptFor(explanationMode.value), buildConversationPrompt(current.messages, prompt))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            return@withContext Result.failure(error)
+        }
+        val assistantMessage = ChatMessage(text = response, fromUser = false)
+        val title = if (current.title == "New Conversation" && prompt.isNotBlank()) {
             prompt.take(28).trim().replaceFirstChar { it.uppercase() }
-        } else {
-            current.title
-        }
-
-        val updatedSession = current.copy(
-            title = resolvedTitle,
+        } else current.title
+        val updated = current.copy(
+            title = title,
             lastUpdated = System.currentTimeMillis(),
-            messages = updatedMessages
+            messages = current.messages + userMessage + assistantMessage
         )
-
-        _currentSessionFlow.value = updatedSession
-        _sessionsFlow.value = _sessionsFlow.value.map {
-            if (it.id == updatedSession.id) updatedSession else it
-        }
-
-        return Result.success(aiMsg)
+        currentSession.value = updated
+        sessions.value = sessions.value.map { if (it.id == updated.id) updated else it }
+        Result.success(assistantMessage)
     }
 
-    private fun generateResponseText(
-        prompt: String,
-        connectionMode: ConnectionMode,
-        explanationMode: ExplanationMode,
-        offlineStatus: OfflineAIStatus
-    ): String {
-        // Offline validation guard
-        if (connectionMode == ConnectionMode.OFFLINE && offlineStatus != OfflineAIStatus.READY) {
-            return "⚠️ **Offline AI is not ready yet.**\n\n" +
-                    "To use offline inference without internet, please open **AI Settings** (⚙️) and tap **Set up Offline AI** to download the offline package, or switch back to **Online** mode."
+    private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildString {
+        history.takeLast(12).forEach { message ->
+            append(if (message.fromUser) "User" else "Assistant")
+            append(": ")
+            append(message.text)
+            append('\n')
         }
-
-        val lowerPrompt = prompt.lowercase()
-
-        return when (explanationMode) {
-            ExplanationMode.TEACHER -> {
-                buildTeacherResponse(prompt, lowerPrompt)
-            }
-            ExplanationMode.GENERAL -> {
-                buildGeneralResponse(prompt, lowerPrompt)
-            }
-            ExplanationMode.EXPLAINABLE -> {
-                buildExplainableResponse(prompt, lowerPrompt)
-            }
-        }
-    }
-
-    private fun buildTeacherResponse(prompt: String, lower: String): String {
-        return when {
-            "binary search" in lower -> {
-                "👨‍🏫 **Teacher's Explanation: Binary Search**\n\n" +
-                        "Let's imagine you're looking for a word in an English dictionary. You don't read page 1, then page 2, then page 3! You open to the middle. If your word starts with 'S', you ignore the first half entirely and look in the second half. That's Binary Search!\n\n" +
-                        "**Step-by-step Process**:\n" +
-                        "1. Ensure the array is sorted.\n" +
-                        "2. Find the middle index: `mid = (low + high) / 2`.\n" +
-                        "3. If `array[mid] == target`, congratulations! Found it.\n" +
-                        "4. If `target < array[mid]`, search the left half (`high = mid - 1`).\n" +
-                        "5. Otherwise, search the right half (`low = mid + 1`).\n\n" +
-                        "```kotlin\n" +
-                        "fun binarySearch(arr: IntArray, target: Int): Int {\n" +
-                        "    var low = 0; var high = arr.size - 1\n" +
-                        "    while (low <= high) {\n" +
-                        "        val mid = (low + high) ushr 1\n" +
-                        "        if (arr[mid] == target) return mid\n" +
-                        "        if (arr[mid] < target) low = mid + 1 else high = mid - 1\n" +
-                        "    }\n" +
-                        "    return -1\n" +
-                        "}\n" +
-                        "```\n\n" +
-                        "📝 **Quick Practice Question for You**:\n" +
-                        "If an array has 1,024 elements, what is the maximum number of comparisons Binary Search will ever make?"
-            }
-            "quadratic" in lower || "equation" in lower -> {
-                "👨‍🏫 **Teacher's Explanation: Quadratic Equations**\n\n" +
-                        "Think of a parabola in basketball—the ball rises, hits a peak, and drops. That curve is modeled by a quadratic equation!\n\n" +
-                        "**Standard Equation**:\n" +
-                        "ax² + bx + c = 0\n\n" +
-                        "**How to solve step-by-step**:\n" +
-                        "1. Identify coefficients a, b, and c.\n" +
-                        "2. Calculate the Discriminant: D = b² - 4ac.\n" +
-                        "3. Apply the Quadratic Formula:\n" +
-                        "x = (-b ± √D) / (2a)\n\n" +
-                        "📝 **Practice Question**:\n" +
-                        "Solve x² - 5x + 6 = 0. Can you factor it into two linear terms?"
-            }
-            "quiz" in lower -> {
-                "👨‍🏫 **Quick Quiz Time!**\n\n" +
-                "Here are 2 rapid-fire questions to check your concept:\n\n" +
-                "1. Which data structure follows First-In, First-Out (FIFO)?\n" +
-                "   A) Stack  B) Queue  C) Tree  D) Heap\n\n" +
-                "2. What is the time complexity of looking up a key in a standard Hash Table on average?\n" +
-                "   A) O(N)  B) O(log N)  C) O(1)  D) O(N²)\n\n" +
-                "Reply with your answers and let's check them together!"
-            }
-            else -> {
-                "👨‍🏫 **Teacher's Explanation for: \"$prompt\"**\n\n" +
-                        "Let's break this down into digestible concepts so you can master it.\n\n" +
-                        "**1. Core Principle**\n" +
-                        "Every complex idea starts with a simple fundamental rule. In this case, focus on the input, the transformation, and the expected outcome.\n\n" +
-                        "**2. Example in Practice**\n" +
-                        "When applying this in real projects or exam problems, observe how changing one parameter impacts the entire result.\n\n" +
-                        "**3. Practice Question**:\n" +
-                        "How would you explain the core goal of this topic in your own words?"
-            }
-        }
-    }
-
-    private fun buildGeneralResponse(prompt: String, lower: String): String {
-        return when {
-            "binary search" in lower -> {
-                "**Binary Search** is a search algorithm that finds the position of a target value within a sorted array. It compares the target value to the middle element and cuts the search space in half each step.\n\n" +
-                        "• **Prerequisite**: The list must already be sorted.\n" +
-                        "• **Time Complexity**: Best: O(1), Average/Worst: O(log N).\n" +
-                        "• **Space Complexity**: O(1) iterative, O(log N) recursive.\n\n" +
-                        "Would you like to see a recursive implementation or explore edge cases with duplicates?"
-            }
-            "quadratic" in lower || "equation" in lower -> {
-                "A **quadratic equation** is a second-order polynomial equation in a single variable x:\n\n" +
-                        "ax² + bx + c = 0\n\n" +
-                        "The solutions are given by the quadratic formula:\n" +
-                        "x = (-b ± √(b² - 4ac)) / (2a)\n\n" +
-                        "The term b² - 4ac indicates whether roots are real (>0), equal (=0), or complex (<0)."
-            }
-            else -> {
-                "Here is a clear answer for **\"$prompt\"**:\n\n" +
-                        "• **Overview**: This topic focuses on structured problem solving, foundational concepts, and practical applications.\n" +
-                        "• **Key Insight**: Always verify baseline assumptions before moving forward.\n\n" +
-                        "Let me know if you would like practice questions, code snippets, or a summary!"
-            }
-        }
-    }
-
-    private fun buildExplainableResponse(prompt: String, lower: String): String {
-        return when {
-            "binary search" in lower -> {
-                "📖 **Detailed Explanation & Reasoning: Binary Search**\n\n" +
-                        "**1. The Mathematical Rationale**:\n" +
-                        "Linear search inspects N elements one-by-one. Binary search cuts the search space in half at each iteration (N, N/2, N/4, ..., 1). The number of divisions needed to reach 1 is log₂ N. Hence, an array of 1,000,000 items takes at most ~20 steps.\n\n" +
-                        "**2. Invariants & Proof of Correctness**:\n" +
-                        "At every step, the loop invariant holds: if the target exists, it must reside in the index range `[low, high]`. When `low > high`, the range is empty, proving the target is not present.\n\n" +
-                        "**3. Critical Edge Cases & Traps**:\n" +
-                        "• Integer overflow: Writing `(low + high) / 2` can overflow in 32-bit signed integers when both values are large. Prefer `low + (high - low) / 2` or `(low + high) ushr 1`.\n" +
-                        "• Unsorted data: If the array is unsorted, the invariant is invalidated and results are undefined."
-            }
-            "quadratic" in lower || "equation" in lower -> {
-                "📖 **Detailed Explanation & Reasoning: Quadratic Roots**\n\n" +
-                        "**1. Why the formula works (Completing the Square)**:\n" +
-                        "Starting with ax² + bx + c = 0, dividing by a:\n" +
-                        "x² + (b/a)x = -c/a\n\n" +
-                        "Add (b / 2a)² to both sides:\n" +
-                        "(x + b/(2a))² = (b² - 4ac) / (4a²)\n\n" +
-                        "Taking square roots and isolating x yields the famous formula!\n\n" +
-                        "**2. Geometric Interpretation**:\n" +
-                        "The vertex of the parabola lies at x = -b / (2a), and the ± √(D) / (2a) represents the horizontal offset to the x-intercepts."
-            }
-            else -> {
-                "📖 **Detailed Explanation & Reasoning for: \"$prompt\"**\n\n" +
-                        "**1. Theoretical Foundation**\n" +
-                        "This concept is grounded in deterministic behavior and modular design principles.\n\n" +
-                        "**2. Cause and Effect Analysis**\n" +
-                        "Understanding why this happens requires tracing how state changes propagate through the system.\n\n" +
-                        "**3. Trade-offs & Nuances**\n" +
-                        "Every approach carries trade-offs between speed, simplicity, and flexibility."
-            }
-        }
+        append("User: ")
+        append(prompt)
     }
 }
