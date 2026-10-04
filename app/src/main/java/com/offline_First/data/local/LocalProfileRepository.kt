@@ -16,7 +16,7 @@ class LocalProfileRepository : ProfileRepository {
             mobile = "+91 98765 43210",
             interests = "Android, UI design",
             level = "Intermediate",
-            educationMode = EducationMode.GENERAL
+            educationMode = EducationMode.SCHOOL
         )
 
         private val _profileFlow = MutableStateFlow(defaultProfile())

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Home
@@ -48,18 +49,39 @@ enum class EduNovaBottomNavItem(
     val destination: AppDestination
 ) {
     HOME("Home", Icons.Default.Home, AppDestination.LANDING),
+    SUBJECTS("Subjects", Icons.AutoMirrored.Filled.MenuBook, AppDestination.MY_LEARNING),
+    PRACTICE("Practice", Icons.AutoMirrored.Filled.Assignment, AppDestination.ROADMAP),
     COURSES("Courses", Icons.AutoMirrored.Filled.MenuBook, AppDestination.MY_LEARNING),
     ROADMAP("Roadmap", Icons.Default.AccountTree, AppDestination.ROADMAP),
-    CHAT("Chat", Icons.Default.ChatBubbleOutline, AppDestination.AI_WORKSPACE),
+    CHAT("AI Chat", Icons.Default.ChatBubbleOutline, AppDestination.AI_WORKSPACE),
     TOOLS("Tools", Icons.Default.Build, AppDestination.AI_WORKSPACE)
 }
 
 @Composable
 fun EduNovaBottomNavigation(
     selectedItem: EduNovaBottomNavItem = EduNovaBottomNavItem.HOME,
+    isSchoolMode: Boolean = false,
     onNavigate: (EduNovaBottomNavItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val items = if (isSchoolMode) {
+        listOf(
+            EduNovaBottomNavItem.HOME,
+            EduNovaBottomNavItem.SUBJECTS,
+            EduNovaBottomNavItem.PRACTICE,
+            EduNovaBottomNavItem.CHAT,
+            EduNovaBottomNavItem.TOOLS
+        )
+    } else {
+        listOf(
+            EduNovaBottomNavItem.HOME,
+            EduNovaBottomNavItem.COURSES,
+            EduNovaBottomNavItem.ROADMAP,
+            EduNovaBottomNavItem.CHAT,
+            EduNovaBottomNavItem.TOOLS
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -75,7 +97,7 @@ fun EduNovaBottomNavigation(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            EduNovaBottomNavItem.entries.forEach { item ->
+            items.forEach { item ->
                 val isSelected = item == selectedItem
                 val interactionSource = remember { MutableInteractionSource() }
 

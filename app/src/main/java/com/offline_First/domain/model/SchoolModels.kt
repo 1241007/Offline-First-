@@ -8,7 +8,10 @@ data class Subject(
     val name: String,
     val icon: String,
     val progress: Float? = null,
-    val totalTopics: Int = 0
+    val totalTopics: Int = 0,
+    val gradeLevel: String = "Class 10 • CBSE",
+    val completedChapters: Int = 8,
+    val totalChapters: Int = 12
 )
 
 /**
@@ -18,7 +21,32 @@ data class ContinueLearningItem(
     val subjectName: String,
     val topicName: String,
     val lessonInfo: String,
-    val progress: Float
+    val progress: Float,
+    val estimatedMinutes: Int = 10,
+    val practiceQuestionsCount: Int = 5
+)
+
+/**
+ * Domain model representing upcoming school exams.
+ */
+data class UpcomingExam(
+    val id: String,
+    val title: String,
+    val daysRemaining: Int,
+    val className: String
+)
+
+enum class ChapterStatus {
+    COMPLETED,
+    IN_PROGRESS,
+    NOT_STARTED
+}
+
+data class ChapterItem(
+    val number: Int,
+    val title: String,
+    val status: ChapterStatus,
+    val progressPercentage: Int = 0
 )
 
 /**

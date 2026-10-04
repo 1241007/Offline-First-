@@ -11,6 +11,7 @@ import com.offline_First.domain.model.Course
 import com.offline_First.domain.model.EducationMode
 import com.offline_First.domain.model.StudyFocusItem
 import com.offline_First.domain.model.Subject
+import com.offline_First.domain.model.UpcomingExam
 import com.offline_First.domain.model.UserProfile
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ data class LandingUiState(
     val greetingName: String = "",
     val continueLearning: ContinueLearningItem? = null,
     val subjects: List<Subject> = emptyList(),
+    val upcomingExams: List<UpcomingExam> = emptyList(),
     val studyFocus: StudyFocusItem? = null,
     val featuredCourses: List<Course> = emptyList(),
     val exploreCourses: List<Course> = emptyList(),
@@ -81,17 +83,60 @@ class LandingViewModel(
 
         // Backend-ready school subject model list
         val schoolSubjects = listOf(
-            Subject(id = "sub-math", name = "Mathematics", icon = "🧮", progress = 0.80f, totalTopics = 12),
-            Subject(id = "sub-phy", name = "Physics", icon = "⚛", progress = 0.65f, totalTopics = 10),
-            Subject(id = "sub-chem", name = "Chemistry", icon = "🧪", progress = 0.45f, totalTopics = 8),
-            Subject(id = "sub-bio", name = "Biology", icon = "🧬", progress = 0.90f, totalTopics = 14)
+            Subject(
+                id = "sub-math",
+                name = "Mathematics",
+                icon = "🧮",
+                progress = 0.80f,
+                totalTopics = 12,
+                completedChapters = 8,
+                totalChapters = 12
+            ),
+            Subject(
+                id = "sub-phy",
+                name = "Physics",
+                icon = "⚛",
+                progress = 0.65f,
+                totalTopics = 10,
+                completedChapters = 6,
+                totalChapters = 10
+            ),
+            Subject(
+                id = "sub-chem",
+                name = "Chemistry",
+                icon = "🧪",
+                progress = 0.45f,
+                totalTopics = 8,
+                completedChapters = 4,
+                totalChapters = 8
+            ),
+            Subject(
+                id = "sub-bio",
+                name = "Biology",
+                icon = "🧬",
+                progress = 0.90f,
+                totalTopics = 14,
+                completedChapters = 12,
+                totalChapters = 14
+            )
         )
 
         val continueItem = ContinueLearningItem(
             subjectName = "Mathematics",
             topicName = "Quadratic Equations",
             lessonInfo = "Lesson 8 of 12",
-            progress = 0.80f
+            progress = 0.80f,
+            estimatedMinutes = 10,
+            practiceQuestionsCount = 5
+        )
+
+        val upcomingExams = listOf(
+            UpcomingExam(
+                id = "exam-1",
+                title = "Mathematics – Unit Test",
+                daysRemaining = 3,
+                className = "Class 10"
+            )
         )
 
         val nextStep = StudyFocusItem(
@@ -107,6 +152,7 @@ class LandingViewModel(
             greetingName = name,
             continueLearning = continueItem,
             subjects = schoolSubjects,
+            upcomingExams = upcomingExams,
             studyFocus = nextStep,
             featuredCourses = featured,
             exploreCourses = courses
