@@ -52,6 +52,7 @@ data class AIUiState(
     val showToolsSheet: Boolean = false,
     val showAttachmentsSheet: Boolean = false,
     val renameTargetSessionId: String? = null,
+    val renameDraftText: String = "",
     val previousScreen: AIScreen = AIScreen.LANDING,
     val errorMessage: String? = null
 )
@@ -167,7 +168,6 @@ class AIViewModel(
                 },
                 onFailure = ::reportError
             )
-            }
         }
     }
 
@@ -296,10 +296,6 @@ class AIViewModel(
         }
     }
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-    }
-
     fun refreshConversations() {
         val repo = aiRepository
         if (repo is com.offline_First.data.remote.OnlineAIRepository) {
@@ -307,7 +303,6 @@ class AIViewModel(
                 repo.refreshConversations()
             }
         }
-    }
     }
 
     fun openTool(toolName: String) {
