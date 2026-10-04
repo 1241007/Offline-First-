@@ -113,6 +113,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import android.app.Application
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -146,7 +148,9 @@ fun AIWorkspaceScreen(
     isClass912Student: Boolean = true,
     onBack: () -> Unit = {},
     openToolsOnStart: Boolean = false,
-    viewModel: AIViewModel = viewModel()
+    viewModel: AIViewModel = viewModel(
+        factory = AIViewModel.provideFactory(LocalContext.current.applicationContext as Application)
+    )
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -170,6 +174,7 @@ fun AIWorkspaceScreen(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.refreshConversations()
         if (uiState.currentScreen == AIScreen.DOWNLOAD_STATE) {
             viewModel.setScreen(if (uiState.currentSession?.messages?.isNotEmpty() == true) AIScreen.CHAT else AIScreen.LANDING)
         }
@@ -280,6 +285,8 @@ fun AIWorkspaceScreen(
                             explanationMode = uiState.explanationMode,
                             isGenerating = uiState.isGeneratingResponse,
                             draft = uiState.draftMessage,
+                            errorMessage = uiState.errorMessage,
+                            onClearError = { viewModel.clearError() },
                             onDraftChanged = { viewModel.onDraftMessageChanged(it) },
                             onSendMessage = { viewModel.sendMessage() },
                             onOpenHistory = {
@@ -305,13 +312,9 @@ fun AIWorkspaceScreen(
                             },
                             onSelectConnectionMode = { mode ->
                                 viewModel.setConnectionMode(mode)
-                                if (mode == ConnectionMode.OFFLINE) {
-                                    if (uiState.offlineAIStatus != OfflineAIStatus.READY) {
-                                        viewModel.startOfflineDownload(navigateToDownloadState = true)
-                                    } else {
-                                        viewModel.setScreen(AIScreen.DOWNLOAD_STATE)
-                                    }
-                                }
+                                // Offline AI is not yet implemented.
+                                // Do not navigate to download state or start fake download.
+                                // The UI will show "Offline - Not downloaded" state in settings.
                             },
                             onSelectExplanationMode = { viewModel.setExplanationMode(it) },
                             onSetupOfflineAI = { viewModel.startOfflineDownload(navigateToDownloadState = true) },
@@ -1153,6 +1156,8 @@ private fun CleanChatScreenView(
     explanationMode: ExplanationMode,
     isGenerating: Boolean,
     draft: String,
+    errorMessage: String?,
+    onClearError: () -> Unit,
     onDraftChanged: (String) -> Unit,
     onSendMessage: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -1360,6 +1365,41 @@ private fun CleanChatScreenView(
                 }
             }
 
+            // Error banner (shown when there's a network/backend error)
+            if (errorMessage != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clickable { onClearError() },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
             // Bottom Input Row
             AIChatBottomBar(
                 draft = draft,
@@ -1408,7 +1448,7 @@ private fun ChatBubbleItem(message: ChatMessage) {
 
 @Composable
 private fun FormattedMarkdownChatText(text: String, isFromUser: Boolean) {
-    val parts = text.split("```")
+    val parts = remember(text) { text.split("```") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEachIndexed { index, part ->
             if (index % 2 == 1) {
@@ -1522,21 +1562,24 @@ private fun ChatHistoryDrawerContent(
     onDeleteChat: (String) -> Unit,
     onBackToHome: () -> Unit = {}
 ) {
-    val now = Calendar.getInstance()
-    val todayStart = (now.clone() as Calendar).apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    val (todayChats, yesterdayChats, last7DaysChats, olderChats) = remember(sessions) {
+        val now = Calendar.getInstance()
+        val todayStart = (now.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
 
-    val yesterdayStart = todayStart - (24L * 60 * 60 * 1000)
-    val sevenDaysAgo = todayStart - (7L * 24 * 60 * 60 * 1000)
+        val yesterdayStart = todayStart - (24L * 60 * 60 * 1000)
+        val sevenDaysAgo = todayStart - (7L * 24 * 60 * 60 * 1000)
 
-    val todayChats = sessions.filter { it.lastUpdated >= todayStart }
-    val yesterdayChats = sessions.filter { it.lastUpdated in yesterdayStart until todayStart }
-    val last7DaysChats = sessions.filter { it.lastUpdated in sevenDaysAgo until yesterdayStart }
-    val olderChats = sessions.filter { it.lastUpdated < sevenDaysAgo }
+        val today = sessions.filter { it.lastUpdated >= todayStart }
+        val yesterday = sessions.filter { it.lastUpdated in yesterdayStart until todayStart }
+        val last7Days = sessions.filter { it.lastUpdated in sevenDaysAgo until yesterdayStart }
+        val older = sessions.filter { it.lastUpdated < sevenDaysAgo }
+        listOf(today, yesterday, last7Days, older)
+    }
 
     Column(
         modifier = Modifier

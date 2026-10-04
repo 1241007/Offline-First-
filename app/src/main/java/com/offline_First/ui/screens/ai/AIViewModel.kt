@@ -1,6 +1,7 @@
 package com.offline_First.ui.screens.ai
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.offline_First.data.AppContainer
 import com.offline_First.data.repository.AIRepository
@@ -51,7 +52,6 @@ data class AIUiState(
     val showToolsSheet: Boolean = false,
     val showAttachmentsSheet: Boolean = false,
     val renameTargetSessionId: String? = null,
-    val renameDraftText: String = "",
     val previousScreen: AIScreen = AIScreen.LANDING,
     val errorMessage: String? = null
 )
@@ -60,6 +60,19 @@ class AIViewModel(
     private val aiRepository: AIRepository = AppContainer.aiRepository,
     private val coroutineContext: CoroutineContext = Dispatchers.IO
 ) : ViewModel() {
+
+    companion object {
+        fun provideFactory(application: android.app.Application): ViewModelProvider.Factory {
+            return object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    @Suppress("UNCHECKED_CAST")
+                    return AIViewModel(
+                        aiRepository = com.offline_First.data.remote.OnlineAIRepository(application)
+                    ) as T
+                }
+            }
+        }
+    }
 
     private val _uiState = MutableStateFlow(AIUiState())
     val uiState: StateFlow<AIUiState> = _uiState.asStateFlow()
@@ -107,6 +120,16 @@ class AIViewModel(
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeCurrentSession().collect { session ->
                 _uiState.value = _uiState.value.copy(currentSession = session)
+            }
+        }
+
+        if (aiRepository is com.offline_First.data.remote.OnlineAIRepository) {
+            viewModelScope.launch(coroutineContext) {
+                aiRepository.errorFlow.collect { error ->
+                    if (error != null) {
+                        _uiState.value = _uiState.value.copy(errorMessage = error)
+                    }
+                }
             }
         }
     }
@@ -242,6 +265,7 @@ class AIViewModel(
     }
 
     fun sendMessage(promptOverride: String? = null) {
+        if (_uiState.value.isGeneratingResponse) return
         val promptToSend = (promptOverride ?: _uiState.value.draftMessage).trim()
         if (promptToSend.isBlank()) return
 
@@ -249,7 +273,8 @@ class AIViewModel(
             draftMessage = promptToSend,
             isGeneratingResponse = true,
             currentScreen = AIScreen.CHAT,
-            activeToolName = null
+            activeToolName = null,
+            errorMessage = null
         )
 
         viewModelScope.launch(coroutineContext) {
@@ -257,7 +282,8 @@ class AIViewModel(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
                         draftMessage = "",
-                        isGeneratingResponse = false
+                        isGeneratingResponse = false,
+                        errorMessage = null
                     )
                 },
                 onFailure = { error ->
@@ -268,6 +294,20 @@ class AIViewModel(
                 }
             )
         }
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun refreshConversations() {
+        val repo = aiRepository
+        if (repo is com.offline_First.data.remote.OnlineAIRepository) {
+            viewModelScope.launch(coroutineContext) {
+                repo.refreshConversations()
+            }
+        }
+    }
     }
 
     fun openTool(toolName: String) {
