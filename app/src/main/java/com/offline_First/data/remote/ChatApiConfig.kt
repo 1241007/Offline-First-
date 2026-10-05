@@ -1,20 +1,22 @@
 package com.offline_First.data.remote
 
+import com.offline_First.BuildConfig
+
 /**
  * EduNova AI Chat backend base URL.
  *
- * CONFIGURATION:
- * - Android Emulator: Use http://10.0.2.2:8000 (maps to host machine's localhost)
- * - Physical device on same WiFi: Use your machine's LAN IP, e.g. http://192.168.1.x:8000
- *   To find your LAN IP on Windows: run `ipconfig` and look for IPv4 Address
+ * CONFIGURATION (via gradle.properties):
+ * - Production (Render):  backendBaseUrl=https://edunova-backend-9waj.onrender.com
+ * - Android Emulator:     backendBaseUrl=http://10.0.2.2:8000
+ * - Physical device WiFi: backendBaseUrl=http://192.168.x.x:8000  (use `ipconfig` to find your LAN IP)
  *
- * Do NOT hardcode production URLs in source code. Change this constant for your environment.
+ * The value is injected at compile time via BuildConfig.BACKEND_BASE_URL.
+ * Do NOT hardcode URLs directly in source code.
  */
 object ChatApiConfig {
-    // For Android Emulator - points to host machine's localhost:8000
-    const val BASE_URL = "http://10.0.2.2:8000"
-    
-    const val CONNECT_TIMEOUT_MS = 10_000
-    const val READ_TIMEOUT_MS = 60_000
+    val BASE_URL: String = BuildConfig.BACKEND_BASE_URL
+
+    const val CONNECT_TIMEOUT_MS = 60_000   // Render free-tier cold-start can take ~50 s
+    const val READ_TIMEOUT_MS = 90_000
     const val API_PREFIX = "/api/v1"
 }

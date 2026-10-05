@@ -12,6 +12,7 @@ import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
+import okhttp3.Request
+import com.offline_First.data.remote.ChatApiClient
 import java.nio.ByteOrder
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
@@ -93,8 +96,8 @@ class LocalAIRepository(
     }
 
     private val modelDirectory: File
-        get() = requireNotNull(context) { "Offline AI requires an Android context." }
-            .getDir("offline_models", Context.MODE_PRIVATE)
+        get() = context?.getDir("offline_models", Context.MODE_PRIVATE)
+            ?: File(System.getProperty("java.io.tmpdir"), "offline_models")
 
     init {
         connectionMode.value = readEnum(CONNECTION_MODE_KEY, ConnectionMode.ONLINE)
@@ -191,7 +194,7 @@ class LocalAIRepository(
         offlineStatus.value = OfflineAIStatus.DOWNLOADING
         preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.DOWNLOADING.name)?.apply()
         downloadProgress.value = OfflineAIDownloadProgress(
-            stage = "Downloading...", progress = 0, downloadSize = profile.sizeLabel,
+            stage = "Connecting...", progress = 0, downloadSize = profile.sizeLabel,
             estimatedTimeRemaining = "Preparing download..."
         )
         modelDirectory.mkdirs()
@@ -199,21 +202,21 @@ class LocalAIRepository(
         val jobContext = coroutineContext
 
         try {
-            val connection = (URL(address).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                requestMethod = "GET"
-                instanceFollowRedirects = true
-            }
-            try {
-                if (connection.responseCode !in 200..299) {
-                    throw IllegalStateException("The Offline AI model download failed (HTTP ${connection.responseCode}).")
+            val request = Request.Builder()
+                .url(address)
+                .build()
+
+            val response = ChatApiClient.okHttpClient.newCall(request).execute()
+            response.use { res ->
+                if (!res.isSuccessful) {
+                    throw IllegalStateException("The Offline AI model download failed (HTTP ${res.code}).")
                 }
-                val expectedBytes = connection.contentLengthLong
+                val body = res.body ?: throw IllegalStateException("Empty response body from model download.")
+                val expectedBytes = body.contentLength()
                 if (expectedBytes > 0L && modelDirectory.usableSpace < expectedBytes + 128L * 1024L * 1024L) {
                     throw IllegalStateException("There is not enough free storage for Offline AI.")
                 }
-                connection.inputStream.use { input ->
+                body.byteStream().use { input ->
                     FileOutputStream(partial).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var downloaded = 0L
@@ -238,8 +241,6 @@ class LocalAIRepository(
                 if (expectedBytes > 0L && partial.length() != expectedBytes) {
                     throw IllegalStateException("The Offline AI model download was incomplete.")
                 }
-            } finally {
-                connection.disconnect()
             }
 
             downloadProgress.value = OfflineAIDownloadProgress(
@@ -268,8 +269,17 @@ class LocalAIRepository(
             partial.delete()
             offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
             preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            val userMessage = when (error) {
+                is java.net.UnknownHostException ->
+                    "No internet connection. Connect to the internet and retry."
+                is java.net.SocketTimeoutException ->
+                    "Connection timed out. Check your internet connection and retry."
+                is java.net.ConnectException ->
+                    "Could not reach the download server. Check your internet connection and retry."
+                else -> "Download failed: ${error.message ?: "Unknown error"}"
+            }
             downloadProgress.value = OfflineAIDownloadProgress(
-                stage = "Download failed", progress = 0, downloadSize = profile.sizeLabel,
+                stage = userMessage, progress = 0, downloadSize = profile.sizeLabel,
                 estimatedTimeRemaining = "Retry later"
             )
             Result.failure(error)
