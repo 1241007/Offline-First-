@@ -36,11 +36,10 @@ class AuthValidationTest {
     }
 
     @Test
-    fun loginContactDispatchesCorrectly() {
-        assertEquals("Please enter your email or mobile number.", validateLoginContact(""))
-        assertNull(validateLoginContact("user@example.com"))
-        assertNull(validateLoginContact("9876543210"))
-        assertEquals("Please enter a valid email address.", validateLoginContact("user@incomplete"))
-        assertEquals("Please enter a valid mobile number.", validateLoginContact("1234"))
+    fun loginRequiresAnEmailAddress() {
+        assertEquals("Please enter your email address.", validateLoginEmail(""))
+        assertNull(validateLoginEmail("user@example.com"))
+        assertEquals("Please enter a valid email address.", validateLoginEmail("9876543210"))
+        assertEquals("Please enter a valid email address.", validateLoginEmail("user@incomplete"))
     }
 }

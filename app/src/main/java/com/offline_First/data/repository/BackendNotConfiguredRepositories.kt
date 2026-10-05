@@ -33,6 +33,11 @@ class BackendNotConfiguredRepositories :
 
     private val connectionMode = MutableStateFlow(ConnectionMode.ONLINE)
     private val explanationMode = MutableStateFlow(ExplanationMode.GENERAL)
+    private val authSession = MutableStateFlow(false)
+
+    override fun observeSession(): Flow<Boolean> = authSession.asStateFlow()
+
+    override suspend fun restoreSession(): Result<Unit> = Result.success(Unit)
 
     override fun observeConnectionMode(): Flow<ConnectionMode> = connectionMode.asStateFlow()
 
@@ -81,6 +86,11 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun requestPasswordReset(contact: String): Result<Unit> =
         unavailable("Authentication")
+
+    override suspend fun signOut(): Result<Unit> {
+        authSession.value = false
+        return Result.success(Unit)
+    }
 
     override suspend fun getCourses(): Result<List<Course>> = unavailable("Course catalog")
 

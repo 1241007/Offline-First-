@@ -84,13 +84,13 @@ fun LoginScreen(
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AuthTextField(
-                    label = "Email or mobile number",
-                    placeholder = "Email or mobile number",
+                    label = "Email",
+                    placeholder = "Enter your email",
                     value = contact,
                     onValueChange = { contact = it; contactError = null },
                     error = contactError,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text
+                        keyboardType = KeyboardType.Email
                     )
                 )
                 AuthPasswordField(
@@ -110,7 +110,7 @@ fun LoginScreen(
                     }
                 }
                 PrimaryAuthButton(text = "Login") {
-                    val nextContactError = validateLoginContact(contact)
+                    val nextContactError = validateLoginEmail(contact)
                     val nextPasswordError = when {
                         password.isBlank() -> "Password cannot be empty."
                         password.length < 6 -> "Password must contain at least 6 characters."

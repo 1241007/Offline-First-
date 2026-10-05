@@ -79,19 +79,19 @@ fun ForgotPasswordScreen(
         ) {
             AuthHeader(
                 title = "Forgot password?",
-                subtitle = "Enter your email or mobile number and we'll help you reset your password."
+                subtitle = "Enter your email and we'll help you reset your password."
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AuthTextField(
-                    label = "Email or mobile number",
-                    placeholder = "Email or mobile number",
+                    label = "Email",
+                    placeholder = "Enter your email",
                     value = contact,
                     onValueChange = { contact = it; contactError = null },
                     error = contactError,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
                 PrimaryAuthButton(text = "Send reset link") {
-                    val nextError = validateLoginContact(contact)
+                    val nextError = validateLoginEmail(contact)
                     contactError = nextError
                     if (nextError == null) {
                         viewModel.requestPasswordReset(contact.trim())

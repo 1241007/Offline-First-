@@ -20,6 +20,14 @@ android {
         .orElse(providers.environmentVariable("OFFLINE_MODEL_3B_URL"))
         .orElse("https://huggingface.co/buckets/PatilKrish/Qwen_Models2/resolve/Qwen2.5-3B-Instruct-Q4_K_M.gguf?download=true")
         .get()
+    val supabaseUrl = providers.gradleProperty("supabaseUrl")
+        .orElse(providers.environmentVariable("SUPABASE_URL"))
+        .orElse("")
+        .get()
+    val supabaseAnonKey = providers.gradleProperty("supabaseAnonKey")
+        .orElse(providers.environmentVariable("SUPABASE_ANON_KEY"))
+        .orElse("")
+        .get()
 
     defaultConfig {
         applicationId = "com.offline_First"
@@ -32,6 +40,16 @@ android {
 
         buildConfigField("String", "OFFLINE_MODEL_SMALL_URL", "\"$smallOfflineModelUrl\"")
         buildConfigField("String", "OFFLINE_MODEL_LARGE_URL", "\"$largeOfflineModelUrl\"")
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            "\"${supabaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_ANON_KEY",
+            "\"${supabaseAnonKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

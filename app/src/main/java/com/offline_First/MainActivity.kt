@@ -1,16 +1,19 @@
 package com.offline_First
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.offline_First.data.AppContainer
 import com.offline_First.ui.navigation.AppDestination
@@ -25,6 +28,9 @@ import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
 import com.offline_First.ui.theme.OfflineFirstTheme
+import kotlinx.coroutines.launch
+
+private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,11 +41,19 @@ class MainActivity : ComponentActivity() {
             OfflineFirstTheme {
                 var destination by rememberSaveable { mutableStateOf(AppDestination.LANDING) }
                 val navigationStack = rememberSaveable { mutableStateListOf<AppDestination>() }
-                var isLoggedIn by rememberSaveable { mutableStateOf(false) }
                 var openWorkspaceTools by rememberSaveable { mutableStateOf(false) }
                 var selectedLanguage by rememberSaveable { mutableStateOf("English") }
+                val coroutineScope = rememberCoroutineScope()
+                val authRepository = remember { AppContainer.authRepository }
+                val isLoggedIn by authRepository.observeSession().collectAsState(initial = false)
                 val profileRepository = remember { AppContainer.profileRepository }
                 val profile by profileRepository.observeUserProfile().collectAsState(initial = null)
+
+                LaunchedEffect(authRepository) {
+                    authRepository.restoreSession().onFailure { error ->
+                        Log.e(TAG, "Could not restore the Supabase session.", error)
+                    }
+                }
 
                 val pushDestination: (AppDestination) -> Unit = { next ->
                     if (destination != next) {
@@ -80,17 +94,18 @@ class MainActivity : ComponentActivity() {
                         onOpenSettings = { pushDestination(AppDestination.SETTINGS) },
                         onLanguageSelected = { selectedLanguage = it },
                         onLogout = {
-                            isLoggedIn = false
-                            pushDestination(AppDestination.LOGIN)
+                            coroutineScope.launch {
+                                authRepository.signOut().onFailure { error ->
+                                    Log.e(TAG, "Could not revoke the Supabase session.", error)
+                                }
+                                pushDestination(AppDestination.LOGIN)
+                            }
                         }
                     )
                     AppDestination.LOGIN -> LoginScreen(
                         onRegister = { pushDestination(AppDestination.REGISTER) },
                         onForgotPassword = { pushDestination(AppDestination.FORGOT_PASSWORD) },
-                        onLoginSuccess = {
-                            isLoggedIn = true
-                            pushDestination(AppDestination.LANDING)
-                        }
+                        onLoginSuccess = { pushDestination(AppDestination.LANDING) }
                     )
                     AppDestination.REGISTER -> RegisterScreen(
                         onLogin = { pushDestination(AppDestination.LOGIN) }
