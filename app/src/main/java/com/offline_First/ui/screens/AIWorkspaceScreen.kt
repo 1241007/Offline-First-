@@ -1971,6 +1971,14 @@ private fun ActiveToolScreen(
     isClass912: Boolean,
     onBack: () -> Unit
 ) {
+    if (toolName.equals("Quiz", ignoreCase = true) || toolName.contains("Quiz", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveQuizTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
     Scaffold(
         containerColor = EduNovaBackground,
         contentWindowInsets = WindowInsets(0),
@@ -2023,3 +2031,4 @@ private fun ActiveToolScreen(
         }
     }
 }
+
