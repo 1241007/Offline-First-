@@ -30,7 +30,10 @@ class LearningRepository:
         )
         
         if status:
-            query = query.where(UserCourseProgress.status == status)
+            if status == "in_progress":
+                query = query.where(UserCourseProgress.status.in_(["in_progress", "not_started"]))
+            else:
+                query = query.where(UserCourseProgress.status == status)
         
         query = query.order_by(UserCourseProgress.last_accessed.desc())
         
@@ -63,7 +66,7 @@ class LearningRepository:
             enrollment_date=date.today(),
             last_accessed=datetime.now(timezone.utc),
             completion_percentage=0.0,
-            status="not_started"
+            status="in_progress"
         )
         
         self.db.add(progress)

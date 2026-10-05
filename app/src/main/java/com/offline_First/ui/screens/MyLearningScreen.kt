@@ -1,12 +1,14 @@
 package com.offline_First.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import com.offline_First.domain.model.LearningCourse
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -118,35 +120,182 @@ fun MyLearningScreen(
                 }
             }
             when (selectedTab) {
-                0 -> items(
-                    items = inProgressCourses,
-                    key = { it.id }
-                ) { course ->
-                    LearningCourseCard(
-                        course = course,
-                        actionLabel = "Continue Learning",
-                        primaryColor = primaryColor,
-                        primaryContainer = primaryContainer,
-                        onSurfaceVariant = onSurfaceVariant
-                    )
+                0 -> {
+                    when (val state = uiState.inProgressCourses) {
+                        is UiState.Loading -> item(key = "loading-in-progress") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    CircularProgressIndicator(color = primaryColor)
+                                    Text("Loading your learning...", color = onSurfaceVariant)
+                                }
+                            }
+                        }
+                        is UiState.Error -> item(key = "error-in-progress") {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(state.message, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    Button(onClick = { viewModel.retry() }, colors = ButtonDefaults.buttonColors(containerColor = primaryColor)) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                        }
+                        is UiState.Empty -> item(key = "empty-in-progress") {
+                            EmptyLearningCard(
+                                title = "You haven't started any courses yet.",
+                                subtitle = "Explore our wide range of courses and start learning today.",
+                                buttonLabel = "Explore courses",
+                                primaryColor = primaryColor,
+                                onSurfaceVariant = onSurfaceVariant
+                            )
+                        }
+                        is UiState.Success -> {
+                            if (state.data.isEmpty()) {
+                                item(key = "empty-in-progress-list") {
+                                    EmptyLearningCard(
+                                        title = "You haven't started any courses yet.",
+                                        subtitle = "Explore our wide range of courses and start learning today.",
+                                        buttonLabel = "Explore courses",
+                                        primaryColor = primaryColor,
+                                        onSurfaceVariant = onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                items(
+                                    items = state.data,
+                                    key = { it.id }
+                                ) { course ->
+                                    LearningCourseCard(
+                                        course = course,
+                                        actionLabel = "Continue Learning",
+                                        primaryColor = primaryColor,
+                                        primaryContainer = primaryContainer,
+                                        onSurfaceVariant = onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-                1 -> items(
-                    items = completedCourses,
-                    key = { it.id }
-                ) { course ->
-                    LearningCourseCard(
-                        course = course,
-                        actionLabel = "View Course",
-                        primaryColor = primaryColor,
-                        primaryContainer = primaryContainer,
-                        onSurfaceVariant = onSurfaceVariant
-                    )
+                1 -> {
+                    when (val state = uiState.completedCourses) {
+                        is UiState.Loading -> item(key = "loading-completed") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    CircularProgressIndicator(color = primaryColor)
+                                    Text("Loading your completed courses...", color = onSurfaceVariant)
+                                }
+                            }
+                        }
+                        is UiState.Error -> item(key = "error-completed") {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(state.message, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    Button(onClick = { viewModel.retry() }, colors = ButtonDefaults.buttonColors(containerColor = primaryColor)) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                        }
+                        is UiState.Empty -> item(key = "empty-completed") {
+                            EmptyLearningCard(
+                                title = "No completed courses yet.",
+                                subtitle = "Keep building momentum on your active courses to see them here!",
+                                buttonLabel = "View active courses",
+                                onClick = { selectedTab = 0 },
+                                primaryColor = primaryColor,
+                                onSurfaceVariant = onSurfaceVariant
+                            )
+                        }
+                        is UiState.Success -> {
+                            if (state.data.isEmpty()) {
+                                item(key = "empty-completed-list") {
+                                    EmptyLearningCard(
+                                        title = "No completed courses yet.",
+                                        subtitle = "Keep building momentum on your active courses to see them here!",
+                                        buttonLabel = "View active courses",
+                                        onClick = { selectedTab = 0 },
+                                        primaryColor = primaryColor,
+                                        onSurfaceVariant = onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                items(
+                                    items = state.data,
+                                    key = { it.id }
+                                ) { course ->
+                                    LearningCourseCard(
+                                        course = course,
+                                        actionLabel = "View Course",
+                                        primaryColor = primaryColor,
+                                        primaryContainer = primaryContainer,
+                                        onSurfaceVariant = onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 else -> item(key = "empty-certificates") {
                     EmptyCertificatesCard(onSurfaceVariant = onSurfaceVariant)
                 }
             }
             item(key = "bottom-spacer") { Spacer(Modifier.height(12.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLearningCard(
+    title: String,
+    subtitle: String,
+    buttonLabel: String,
+    onClick: () -> Unit = {},
+    primaryColor: androidx.compose.ui.graphics.Color,
+    onSurfaceVariant: androidx.compose.ui.graphics.Color
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onClick, shape = RoundedCornerShape(10.dp)) {
+                Text(buttonLabel)
+            }
         }
     }
 }

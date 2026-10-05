@@ -28,8 +28,21 @@ class MyLearningViewModel(
         loadCourses()
     }
 
+    fun retry() {
+        loadCourses()
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
     private fun loadCourses() {
         viewModelScope.launch {
+            _uiState.value = MyLearningUiState(
+                inProgressCourses = UiState.Loading,
+                completedCourses = UiState.Loading,
+                errorMessage = null
+            )
             val inProgress = repository.getInProgressCourses()
             val completed = repository.getCompletedCourses()
             val error = inProgress.exceptionOrNull() ?: completed.exceptionOrNull()

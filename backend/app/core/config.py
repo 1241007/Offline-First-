@@ -33,6 +33,15 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+    email_provider: str = "dev"  # "resend", "smtp", or "dev"
+    email_api_key: Optional[str] = None  # Resend API key
+    email_from: str = "EduNova <onboarding@resend.dev>"
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+    backend_public_url: str = "http://localhost:8000"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

@@ -14,11 +14,25 @@ class ProfileService:
         self.repo = ProfileRepository(db)
     
     async def get_profile(self, user_id: str) -> Optional[ProfileResponse]:
-        """Get user profile"""
+        """Get user profile, auto-creating a default one if needed for an active user."""
         profile = await self.repo.get_by_user_id(user_id)
         
         if not profile:
-            return None
+            from app.models.user import User
+            from sqlalchemy import select
+            user = await self.db.scalar(select(User).where(User.id == user_id))
+            if not user:
+                return None
+            profile = await self.repo.create_profile(
+                user_id=user_id,
+                full_name=user.email.split("@")[0],
+                email=user.email,
+                mobile=user.mobile,
+                interests=None,
+                level="Beginner",
+                education_mode="general"
+            )
+            await self.db.commit()
         
         return ProfileResponse(
             full_name=profile.full_name,
@@ -34,12 +48,10 @@ class ProfileService:
         user_id: str,
         data: ProfileUpdateRequest
     ) -> ProfileResponse:
-        """Update or create user profile"""
-        # Check if profile exists
+        """Update or create user profile and synchronize user contact info"""
         existing = await self.repo.get_by_user_id(user_id)
         
         if existing:
-            # Update existing
             profile = await self.repo.update_profile(
                 user_id=user_id,
                 full_name=data.full_name,
@@ -50,7 +62,6 @@ class ProfileService:
                 education_mode=data.education_mode
             )
         else:
-            # Create new
             profile = await self.repo.create_profile(
                 user_id=user_id,
                 full_name=data.full_name,
@@ -61,6 +72,12 @@ class ProfileService:
                 education_mode=data.education_mode
             )
         
+        # Keep user mobile in sync if changed
+        from app.models.user import User
+        from sqlalchemy import update
+        await self.db.execute(
+            update(User).where(User.id == user_id).values(mobile=data.mobile)
+        )
         await self.db.commit()
         
         return ProfileResponse(

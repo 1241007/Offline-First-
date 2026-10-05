@@ -23,6 +23,8 @@ object AppContainer {
     private var _authApiClient: AuthApiClient? = null
     private var _authenticatedApiClient: AuthenticatedApiClient? = null
     private var _authRepository: AuthRepository? = null
+    private var _profileRepository: com.offline_First.data.repository.ProfileRepository? = null
+    private var _learningRepository: com.offline_First.data.repository.LearningRepository? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -41,12 +43,21 @@ object AppContainer {
             sessionManager = sessionManager,
             tokenStorage = tokenStorage
         )
+        val remoteProfileRepo = com.offline_First.data.remote.RemoteProfileRepository(
+            context = appContext,
+            authenticatedApiClient = authenticatedApiClient
+        )
+        val remoteLearningRepo = com.offline_First.data.remote.RemoteLearningRepository(
+            authenticatedApiClient = authenticatedApiClient
+        )
 
         _tokenStorage = tokenStorage
         _sessionManager = sessionManager
         _authApiClient = authApiClient
         _authenticatedApiClient = authenticatedApiClient
         _authRepository = remoteAuthRepo
+        _profileRepository = remoteProfileRepo
+        _learningRepository = remoteLearningRepo
 
         val localRepository = LocalAIRepository(appContext)
         val onlineRepository = OnlineAIRepository(appContext, localRepository)
@@ -70,7 +81,9 @@ object AppContainer {
 
     val aiRepository get() = aiRepoOverride ?: defaultRepositories
     val courseRepository = OnlineCourseRepository()
-    val learningRepository get() = defaultRepositories
-    val profileRepository get() = defaultRepositories
+    val learningRepository: com.offline_First.data.repository.LearningRepository
+        get() = _learningRepository ?: defaultRepositories
+    val profileRepository: com.offline_First.data.repository.ProfileRepository
+        get() = _profileRepository ?: defaultRepositories
     val roadmapRepository = OnlineRoadmapRepository()
 }
