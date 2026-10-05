@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     gemini_max_output_tokens: int = 1024
     db_pool_size: int = 5
     db_max_overflow: int = 10
+    allow_dev_user_id: bool = False  # DEVELOPMENT ONLY: Allow user_id query parameter
 
     model_config = SettingsConfigDict(
         env_file=str(_ROOT_ENV),

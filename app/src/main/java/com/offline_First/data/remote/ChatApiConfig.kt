@@ -11,7 +11,8 @@ package com.offline_First.data.remote
  * Do NOT hardcode production URLs in source code. Change this constant for your environment.
  */
 object ChatApiConfig {
-    const val BASE_URL = "https://edunova-backend-9waj.onrender.com"
+    // For Android Emulator - points to host machine's localhost:8000
+    const val BASE_URL = "http://10.0.2.2:8000"
     
     const val CONNECT_TIMEOUT_MS = 10_000
     const val READ_TIMEOUT_MS = 60_000
