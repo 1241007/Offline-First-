@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
-from typing import Optional
-from pydantic import model_validator
+from typing import Any, Optional, Union
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Root .env is three directories above backend/app/core/config.py (i.e. E:\Offline First\.env)
@@ -28,11 +28,26 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     reset_token_expire_minutes: int = 15
     redis_url: Optional[str] = None  # Optional: Redis for distributed rate limiting
-    cors_origins: list[str] = [
+    cors_origins: Union[list[str], str] = [
         "http://10.0.2.2:8000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            if v.strip().startswith("["):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
+        return [str(v)]
 
     model_config = SettingsConfigDict(
         env_file=(str(_ROOT_ENV), str(_BACKEND_ENV)),
