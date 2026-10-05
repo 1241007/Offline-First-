@@ -112,4 +112,39 @@ object ChatApiClient {
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<SendMessageResponseDto>(body)
     }
+
+    // --- Courses API ---
+
+    suspend fun getCourses(featured: Boolean? = null): Result<List<CourseDto>> = runCatching {
+        val path = if (featured == true) "/courses?featured=true" else "/courses"
+        val (code, body) = get(path)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<CourseDto>>(body)
+    }
+
+    suspend fun getCourseDetail(courseId: String): Result<CourseDetailDto> = runCatching {
+        val (code, body) = get("/courses/$courseId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<CourseDetailDto>(body)
+    }
+
+    // --- Roadmaps API ---
+
+    suspend fun getRoadmaps(): Result<List<RoadmapDto>> = runCatching {
+        val (code, body) = get("/roadmaps")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<RoadmapDto>>(body)
+    }
+
+    suspend fun getRoadmapDetail(roadmapId: String): Result<RoadmapDetailDto> = runCatching {
+        val (code, body) = get("/roadmaps/$roadmapId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<RoadmapDetailDto>(body)
+    }
+
+    suspend fun getRoadmapCategories(): Result<List<String>> = runCatching {
+        val (code, body) = get("/roadmaps/categories")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<String>>(body)
+    }
 }

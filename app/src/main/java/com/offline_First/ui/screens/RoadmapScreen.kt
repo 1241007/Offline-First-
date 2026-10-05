@@ -70,6 +70,7 @@ import com.offline_First.ui.theme.EduNovaAccent
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSuccess
+import com.offline_First.ui.utils.IconResolver
 
 private fun RoadmapAccentTheme.toColor(): Color = when (this) {
     RoadmapAccentTheme.PRIMARY -> EduNovaPrimary
@@ -688,10 +689,11 @@ private fun FeaturedRoadmapCard(
                     .background(accent.copy(alpha = 0.12f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = roadmap.icon,
-                    color = accent,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    imageVector = IconResolver.resolve(roadmap.icon),
+                    contentDescription = "${roadmap.title} icon",
+                    tint = accent,
+                    modifier = Modifier.size(24.dp)
                 )
             }
             Text(
@@ -748,11 +750,11 @@ private fun StandardRoadmapCard(
                         .background(accent.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = roadmap.icon,
-                        fontWeight = FontWeight.Bold,
-                        color = accent,
-                        fontSize = 13.sp
+                    Icon(
+                        imageVector = IconResolver.resolve(roadmap.icon),
+                        contentDescription = "${roadmap.title} icon",
+                        tint = accent,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(10.dp))

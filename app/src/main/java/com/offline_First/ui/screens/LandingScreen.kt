@@ -118,6 +118,7 @@ import com.offline_First.ui.screens.landing.LandingViewModel
 import com.offline_First.ui.theme.EduNovaAccent
 import com.offline_First.ui.theme.EduNovaBorder
 import com.offline_First.ui.theme.EduNovaPrimary
+import com.offline_First.ui.utils.IconResolver
 import com.offline_First.ui.theme.EduNovaPrimaryContainer
 import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSurface
@@ -2105,14 +2106,8 @@ private fun CourseIcon(course: Course, large: Boolean = false) {
             .background(EduNovaPrimaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        val courseIcon = when (course.name.lowercase()) {
-            "data science" -> Icons.Default.Analytics
-            "dsa" -> Icons.Default.Hub
-            "full stack" -> Icons.Default.Web
-            else -> Icons.Default.Code
-        }
         Icon(
-            imageVector = courseIcon,
+            imageVector = IconResolver.resolve(course.icon),
             contentDescription = "${course.name} course",
             tint = courseColor,
             modifier = Modifier.size(if (large) 34.dp else 24.dp)

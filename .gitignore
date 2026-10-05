@@ -1,50 +1,239 @@
-# Gradle & Build
+# ============================================
+# Android / Gradle
+# ============================================
 *.iml
 .gradle/
+.gradle
 build/
-app/build/
 /build
+/*/build/
+app/build/
 /captures
 .externalNativeBuild
 .cxx
 local.properties
 /local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
 
+# Gradle wrapper (keep the jar)
+!gradle-wrapper.jar
+
+# ============================================
 # IDE & Editor
+# ============================================
+# Android Studio / IntelliJ IDEA
 .idea/
+/.idea/
+.idea/*
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+/.idea/sonarlint/
+/.idea/dictionaries
+*.iws
+*.ipr
+
+# VSCode
 .vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Vim
 *.swp
 *.swo
+*.swn
+*~
 
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
 # OS
+# ============================================
+# macOS
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
 
 # Markdown
 *.md
 
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+# ============================================
+# ============================================
 # Secrets & Environment Files
+# ============================================
 .env
 .env.*
+!.env.example
 *.env
 *.env.*
+!*.env.example
 *.pem
 *.key
+*.p12
+*.jks
+keystore.properties
+google-services.json
+secrets.xml
+secrets.properties
+*.credentials
 
+# ============================================
 # Python & Backend
+# ============================================
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+*.pyd
 .pytest_cache/
-backend/.venv/
-backend/.pytest_cache/
-backend/__pycache__/
-backend/**/__pycache__/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+*.log
+.tox/
+.hypothesis/
+instance/
+.webassets-cache
+
+# Virtual environments
 venv/
 .venv/
+env/
+ENV/
+backend/.venv/
+backend/venv/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+*.sql
+
+# Alembic
+backend/alembic.ini.local
+
+# ============================================
+# Node.js (if ever used)
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+package-lock.json
+yarn.lock
+
+# ============================================
+# Logs & Temporary Files
+# ============================================
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+logs/
+log/
+temp/
+tmp/
+
+# ============================================
+# Testing & Coverage
+# ============================================
+coverage/
+test-results/
+junit/
+.pytest_cache/
+*.cover
+.hypothesis/
+
+# ============================================
+# Documentation Build Artifacts
+# ============================================
+site/
+_build/
+.doctrees/
+
+# ============================================
+# Kiro IDE
+# ============================================
+# Only exclude Kiro internal/cache/temp directories
+.kiro/.internal/
+.kiro/cache/
+.kiro/tmp/
+.kiro/logs/
+
+# Note: .kiro/specs/, .kiro/steering/, and .kiro/settings/ are tracked
+
+# ============================================
+# Kotlin
+# ============================================
+.kotlin/
+*.kotlin_module
+
+# ============================================
+# Miscellaneous
+# ============================================
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Compiled files
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Package files
+*.jar
+!gradle-wrapper.jar
+*.war
+*.nar
+*.ear
