@@ -26,6 +26,9 @@ local.properties
 .DS_Store
 Thumbs.db
 
+# Markdown
+*.md
+
 # Secrets & Environment Files
 .env
 .env.*
@@ -45,4 +48,3 @@ backend/__pycache__/
 backend/**/__pycache__/
 venv/
 .venv/
-
