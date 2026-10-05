@@ -74,8 +74,6 @@ release/
 .Spotlight-V100
 .Trashes
 
-# Markdown
-*.md
 
 # Windows
 Thumbs.db
@@ -103,6 +101,7 @@ $RECYCLE.BIN/
 *.key
 *.p12
 *.jks
+*.keystore
 keystore.properties
 google-services.json
 secrets.xml
@@ -212,6 +211,18 @@ _build/
 # ============================================
 .kotlin/
 *.kotlin_module
+
+# ============================================
+# AI / LLM Models & Weights (Large Files)
+# ============================================
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.bin
+*.model
+/models/
 
 # ============================================
 # Miscellaneous

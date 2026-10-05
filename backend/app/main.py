@@ -1,12 +1,21 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.courses import router as courses_router
 from app.api.routes.roadmaps import router as roadmaps_router
 from app.api.routes.learning import router as learning_router
 from app.api.routes.profile import router as profile_router
 from app.core.config import settings
+from app.core.errors import AuthException
+from app.core.rate_limit import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from app.middleware.correlation import CorrelationIdMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,23 +29,60 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS: allow Android emulator (10.0.2.2) and localhost for development
+# Attach rate-limiter to app state and add middleware
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"code": "RATE_LIMITED", "message": "Too many requests. Please try again later."},
+    )
+
+# CORS — loaded from settings so production origins are configurable via env var
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://10.0.2.2:8000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "X-Correlation-ID"],
 )
 
 
+# ── Exception handlers ────────────────────────────────────────────────────────
+
+@app.exception_handler(AuthException)
+async def auth_exception_handler(request: Request, exc: AuthException):
+    """Return structured auth errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.code, "message": exc.auth_message},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Return structured validation errors without raw Pydantic internals."""
+    errors = exc.errors()
+    # Produce a single readable message from all field errors
+    messages = []
+    for err in errors:
+        loc = " → ".join(str(p) for p in err.get("loc", []) if p != "body")
+        msg = err.get("msg", "Invalid value")
+        messages.append(f"{loc}: {msg}" if loc else msg)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"code": "VALIDATION_ERROR", "message": "; ".join(messages)},
+    )
+
+
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
+
 @app.on_event("startup")
 async def startup_event():
-    """Log startup information"""
     logger.info("EduNova Backend API started")
     logger.info(f"Environment: {settings.environment}")
     if settings.allow_dev_user_id:
@@ -50,11 +96,13 @@ async def health():
         "status": "ok",
         "service": "EduNova Backend API",
         "version": "2.0.0",
-        "environment": settings.environment
+        "environment": settings.environment,
     }
 
 
-# Register routers
+# ── Routers ───────────────────────────────────────────────────────────────────
+
+app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(courses_router)
 app.include_router(roadmaps_router)

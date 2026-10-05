@@ -82,6 +82,17 @@ class BackendNotConfiguredRepositories :
     override suspend fun requestPasswordReset(contact: String): Result<Unit> =
         unavailable("Authentication")
 
+    override suspend fun logout(refreshToken: String?): Result<Unit> =
+        unavailable("Authentication")
+
+    override suspend fun restoreSession(): Result<Boolean> = Result.success(false)
+
+    override fun observeAuthState(): Flow<com.offline_First.data.AuthState> =
+        flowOf(com.offline_First.data.AuthState.Unauthenticated)
+
+    override suspend fun fetchMe(): Result<com.offline_First.data.remote.UserDto> =
+        Result.failure(UnsupportedOperationException("Backend not configured"))
+
     override suspend fun getCourses(): Result<List<Course>> = unavailable("Course catalog")
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> =

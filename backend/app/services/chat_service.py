@@ -20,28 +20,29 @@ class ChatService:
     def __init__(self, db: AsyncSession):
         self.repo = ChatRepository(db)
 
-    async def create_conversation(self) -> Conversation:
-        return await self.repo.create_conversation(title="New Conversation")
+    async def create_conversation(self, user_id: str) -> Conversation:
+        return await self.repo.create_conversation(user_id=user_id, title="New Conversation")
 
-    async def list_conversations(self) -> list[Conversation]:
-        return await self.repo.list_conversations(limit=50)
+    async def list_conversations(self, user_id: str) -> list[Conversation]:
+        return await self.repo.list_conversations(user_id=user_id, limit=50)
 
-    async def get_conversation(self, conversation_id: str) -> Conversation:
+    async def get_conversation(self, conversation_id: str, user_id: str) -> Conversation:
         conv = await self.repo.get_conversation(conversation_id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
+        if conv.user_id is not None and conv.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden: conversation does not belong to user")
         return conv
 
     async def send_message(
         self,
         conversation_id: str,
+        user_id: str,
         content: str,
         explanation_mode: str = "general",
     ) -> tuple[Message, Message]:
-        # 1. Validate conversation exists
-        conv = await self.repo.get_conversation(conversation_id)
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation not found")
+        # 1. Validate conversation exists and belongs to user
+        conv = await self.get_conversation(conversation_id, user_id)
 
         # 2. Save user message
         user_msg = await self.repo.save_message(
