@@ -13,7 +13,9 @@ import kotlinx.coroutines.launch
 data class ProfileUiState(
     val profile: UserProfile? = null,
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null,
+    val saveSuccess: Boolean = false
 )
 
 class ProfileViewModel(
@@ -24,18 +26,31 @@ class ProfileViewModel(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            repository.observeUserProfile().collect { cached ->
+                if (cached != null && _uiState.value.profile == null) {
+                    _uiState.value = _uiState.value.copy(profile = cached, isLoading = false)
+                }
+            }
+        }
         loadProfile()
     }
 
     fun saveProfile(profile: UserProfile) {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSaving = true, errorMessage = null, saveSuccess = false)
             repository.updateUserProfile(profile).fold(
                 onSuccess = {
-                    _uiState.value = ProfileUiState(profile = profile, isLoading = false)
+                    _uiState.value = ProfileUiState(
+                        profile = profile,
+                        isLoading = false,
+                        isSaving = false,
+                        saveSuccess = true
+                    )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
-                        isLoading = false,
+                        isSaving = false,
                         errorMessage = error.localizedMessage ?: "Unable to save profile."
                     )
                 }
@@ -43,18 +58,27 @@ class ProfileViewModel(
         }
     }
 
+    fun reload() {
+        loadProfile()
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun resetSaveSuccess() {
+        _uiState.value = _uiState.value.copy(saveSuccess = false)
+    }
+
     private fun loadProfile() {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             repository.getUserProfile().fold(
                 onSuccess = { profile ->
                     _uiState.value = ProfileUiState(profile = profile, isLoading = false)
                 },
                 onFailure = { error ->
-                    _uiState.value = ProfileUiState(
+                    _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         errorMessage = error.localizedMessage ?: "Unable to load profile."
                     )

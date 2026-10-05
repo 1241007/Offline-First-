@@ -41,6 +41,9 @@ class RemoteAuthRepository(
                         email = dto.user.email,
                         fullName = dto.user.fullName
                     )
+                    try {
+                        com.offline_First.data.AppContainer.profileRepository.getUserProfile()
+                    } catch (_: Exception) {}
                     Result.success(Unit)
                 },
                 onFailure = { Result.failure(it) }
@@ -66,6 +69,9 @@ class RemoteAuthRepository(
                         email = dto.user.email,
                         fullName = dto.user.fullName
                     )
+                    try {
+                        com.offline_First.data.AppContainer.profileRepository.getUserProfile()
+                    } catch (_: Exception) {}
                     Result.success(Unit)
                 },
                 onFailure = { Result.failure(it) }
@@ -87,6 +93,9 @@ class RemoteAuthRepository(
             } catch (_: Exception) {
                 // Ignore network errors on logout
             }
+            try {
+                (com.offline_First.data.AppContainer.profileRepository as? com.offline_First.data.remote.RemoteProfileRepository)?.clearCachedProfile()
+            } catch (_: Exception) {}
             sessionManager.logout(refreshToken)
             Result.success(Unit)
         }
@@ -140,6 +149,9 @@ class RemoteAuthRepository(
             email = user.email,
             fullName = user.fullName
         )
+        try {
+            com.offline_First.data.AppContainer.profileRepository.getUserProfile()
+        } catch (_: Exception) {}
         Result.success(true)
     }
 
