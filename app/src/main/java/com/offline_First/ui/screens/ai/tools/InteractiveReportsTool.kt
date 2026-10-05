@@ -2,8 +2,10 @@ package com.offline_First.ui.screens.ai.tools
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,30 +28,25 @@ import com.offline_First.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun InteractiveReportsTool(
-    studentName: String = "Student",
+    initialTopic: String = "",
     onBack: () -> Unit
 ) {
+    var topicInput by remember { mutableStateOf(initialTopic) }
     var isGenerating by remember { mutableStateOf(false) }
-    var activeReport by remember { mutableStateOf<StudentLearningReport?>(null) }
+    var activeReport by remember { mutableStateOf<TopicReport?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Auto load or generate on launch
-    LaunchedEffect(Unit) {
-        isGenerating = true
-        delay(800)
-        activeReport = DemoReportsProvider.getStudentReport(studentName)
-        isGenerating = false
-    }
-
-    fun refreshReport() {
+    fun generateReport(topic: String) {
+        val targetTopic = topic.ifBlank { "Newton's Laws of Motion" }
         isGenerating = true
         activeReport = null
+
         coroutineScope.launch {
-            delay(1000)
-            activeReport = DemoReportsProvider.getStudentReport(studentName)
+            delay(1300)
+            activeReport = DemoTopicReportsProvider.getReportForTopic(targetTopic)
             isGenerating = false
         }
     }
@@ -72,9 +69,9 @@ fun InteractiveReportsTool(
                         }
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text("AI Learning Report", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = EduNovaTextPrimary)
+                            Text("AI Topic Report", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = EduNovaTextPrimary)
                             Text(
-                                if (activeReport != null) activeReport!!.academicPeriod else "Performance & Diagnostics",
+                                if (activeReport != null) activeReport!!.subject else "Curriculum Intelligence",
                                 fontSize = 12.sp,
                                 color = EduNovaTextSecondary
                             )
@@ -87,8 +84,10 @@ fun InteractiveReportsTool(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { refreshReport() }) {
-                        Icon(Icons.Default.Refresh, "Refresh Report", tint = EduNovaTextPrimary)
+                    if (activeReport != null) {
+                        IconButton(onClick = { activeReport = null }) {
+                            Icon(Icons.Default.Refresh, "New Topic", tint = EduNovaTextPrimary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = EduNovaBackground)
@@ -103,7 +102,89 @@ fun InteractiveReportsTool(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Generating / Loading State
+            // Topic Input Card
+            if (activeReport == null && !isGenerating) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, EduNovaBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoAwesome, null, tint = EduNovaPrimary, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Generate Comprehensive Topic Report",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                color = EduNovaTextPrimary
+                            )
+                        }
+                        Text(
+                            "Get an in-depth AI breakdown of any curriculum topic: exam weightage, core derivations, pitfalls, and high-frequency exam questions.",
+                            fontSize = 13.sp,
+                            color = EduNovaTextSecondary
+                        )
+
+                        OutlinedTextField(
+                            value = topicInput,
+                            onValueChange = { topicInput = it },
+                            placeholder = { Text("e.g. Newton's Laws, Photosynthesis, Python asyncio...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = EduNovaPrimary,
+                                unfocusedBorderColor = EduNovaBorder
+                            )
+                        )
+
+                        Text("Sample report topics:", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = EduNovaTextSecondary)
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            DemoTopicReportsProvider.sampleTopics.forEach { topic ->
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (topicInput == topic) EduNovaPrimaryContainer else EduNovaBackground,
+                                    border = BorderStroke(1.dp, if (topicInput == topic) EduNovaPrimary else EduNovaBorder),
+                                    modifier = Modifier.clickable {
+                                        topicInput = topic
+                                        generateReport(topic)
+                                    }
+                                ) {
+                                    Text(
+                                        text = topic,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (topicInput == topic) EduNovaPrimary else EduNovaTextPrimary,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { generateReport(topicInput) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Generate Full Topic Report", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            // Generating State
             if (isGenerating) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
@@ -120,13 +201,13 @@ fun InteractiveReportsTool(
                     ) {
                         CircularProgressIndicator(color = EduNovaPrimary, strokeWidth = 3.dp)
                         Text(
-                            "Synthesizing Learning Analytics...",
+                            "AI is compiling Topic Intelligence Report...",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = EduNovaTextPrimary
                         )
                         Text(
-                            "Analyzing quiz scores, retention curves, and concept gaps.",
+                            "Synthesizing marking schemes, past year patterns, derivations, and common pitfalls.",
                             fontSize = 13.sp,
                             color = EduNovaTextSecondary,
                             textAlign = TextAlign.Center
@@ -135,8 +216,9 @@ fun InteractiveReportsTool(
                 }
             }
 
+            // Topic Report Result
             activeReport?.let { report ->
-                // Hero Overall Score Card
+                // Header Hero Summary Card
                 Card(
                     colors = CardDefaults.cardColors(containerColor = EduNovaPrimary),
                     shape = RoundedCornerShape(22.dp),
@@ -151,118 +233,111 @@ fun InteractiveReportsTool(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color.White.copy(alpha = 0.2f)
+                            ) {
                                 Text(
-                                    text = "LEARNER PROFILE",
-                                    fontSize = 11.sp,
+                                    text = report.subject.uppercase(),
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                                Text(
-                                    text = report.studentName,
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
                             }
 
                             Surface(
-                                shape = CircleShape,
-                                color = Color.White.copy(alpha = 0.2f),
-                                modifier = Modifier.size(56.dp)
+                                shape = RoundedCornerShape(50),
+                                color = Color.White.copy(alpha = 0.2f)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = "${report.overallScore}%",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = "INDEX",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White.copy(alpha = 0.8f)
-                                        )
-                                    }
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Timer, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(report.estimatedStudyTime, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
+
+                        Text(
+                            text = report.topicTitle,
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+
+                        Text(
+                            text = report.executiveSummary,
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.92f),
+                            lineHeight = 19.sp
+                        )
 
                         HorizontalDivider(color = Color.White.copy(alpha = 0.2f), thickness = 1.dp)
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Study Hours", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
-                                Text("${report.studyHoursTotal} hrs", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                            Column {
-                                Text("Quizzes Done", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
-                                Text("${report.quizzesCompleted}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                            Column {
-                                Text("Cards Mastered", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
-                                Text("${report.flashcardsMastered}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Exam Importance", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
+                                Text(report.examImportance, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
                     }
                 }
 
-                // 2x2 Key Diagnostic Metrics Grid
-                Text("Key Performance Metrics", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = EduNovaTextPrimary)
+                // Prerequisites Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, EduNovaBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.BookmarkBorder, null, tint = EduNovaSecondary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Essential Prerequisites", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = EduNovaTextPrimary)
+                        }
 
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    report.metrics.chunked(2).forEach { rowMetrics ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            rowMetrics.forEach { metric ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, EduNovaBorder),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text(metric.label, fontSize = 12.sp, color = EduNovaTextSecondary)
-                                        Text(metric.value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = EduNovaTextPrimary)
-                                        Text(
-                                            text = metric.change,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (metric.isPositive) EduNovaSuccess else EduNovaAccent
-                                        )
-                                    }
-                                }
-                            }
-                            if (rowMetrics.size == 1) {
-                                Spacer(Modifier.weight(1f))
+                        report.prerequisites.forEach { prereq ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(EduNovaSecondary)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(prereq, fontSize = 13.sp, color = EduNovaTextPrimary)
                             }
                         }
                     }
                 }
 
-                // Subject-by-Subject Mastery Breakdown
-                Text("Subject Diagnostic Breakdown", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = EduNovaTextPrimary)
+                // Detailed Chapter Sections
+                Text("Concept Deconstruction", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = EduNovaTextPrimary)
 
-                report.subjectMastery.forEach { mastery ->
+                report.sections.forEach { section ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(18.dp),
                         border = BorderStroke(1.dp, EduNovaBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -270,59 +345,95 @@ fun InteractiveReportsTool(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = mastery.subject,
+                                    text = section.sectionTitle,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
-                                    color = EduNovaTextPrimary
+                                    color = EduNovaTextPrimary,
+                                    modifier = Modifier.weight(1f)
                                 )
-
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
                                     color = EduNovaPrimaryContainer
                                 ) {
                                     Text(
-                                        text = "${mastery.grade} • ${mastery.scorePercentage}%",
+                                        text = section.weightage,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
                                         color = EduNovaPrimary,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
                             }
 
-                            LinearProgressIndicator(
-                                progress = { mastery.scorePercentage / 100f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = if (mastery.scorePercentage >= 80) EduNovaPrimary else EduNovaAccent,
-                                trackColor = EduNovaBorder
+                            Text(
+                                text = section.summary,
+                                fontSize = 13.sp,
+                                color = EduNovaTextSecondary,
+                                lineHeight = 18.sp
                             )
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Strong Area", fontSize = 11.sp, color = EduNovaTextSecondary)
-                                    Text(mastery.strongArea, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = EduNovaTextPrimary)
+                            // Key Concepts & Formula Boxes
+                            section.keyConcepts.forEach { concept ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = EduNovaBackground,
+                                    border = BorderStroke(1.dp, EduNovaBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(concept.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = EduNovaTextPrimary)
+                                        Text(concept.definition, fontSize = 12.sp, color = EduNovaTextSecondary, lineHeight = 16.sp)
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = EduNovaPrimary.copy(alpha = 0.08f),
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Key: ${concept.formulaOrFact}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = EduNovaPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
                                 }
-                                Spacer(Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Focus Needed", fontSize = 11.sp, color = EduNovaTextSecondary)
-                                    Text(mastery.focusArea, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = EduNovaAccent)
+                            }
+
+                            // Pitfalls / Mistakes
+                            if (section.commonMistakes.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFFFFEBEE), // Light warning red
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Warning, null, tint = Color(0xFFD32F2F), modifier = Modifier.size(15.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Common Exam Pitfalls:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFFD32F2F))
+                                        }
+                                        section.commonMistakes.forEach { mistake ->
+                                            Text("• $mistake", fontSize = 11.sp, color = Color(0xFFB71C1C), lineHeight = 15.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // AI Actionable Recommendations
+                // High Frequency Exam Questions
                 Card(
                     colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
                     shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, EduNovaAccent.copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -330,18 +441,47 @@ fun InteractiveReportsTool(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AutoAwesome, null, tint = EduNovaPrimary, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.AssignmentTurnedIn, null, tint = EduNovaAccent, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("AI Study Recommendations", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = EduNovaTextPrimary)
+                            Text("High-Frequency Past Exam Questions", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = EduNovaTextPrimary)
                         }
 
-                        report.aiRecommendations.forEach { rec ->
+                        report.frequentExamQuestions.forEachIndexed { idx, question ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                Text("• ", color = EduNovaPrimary, fontWeight = FontWeight.Bold)
-                                Text(rec, fontSize = 13.sp, color = EduNovaTextPrimary, lineHeight = 18.sp)
+                                Text("${idx + 1}. ", fontWeight = FontWeight.Bold, color = EduNovaAccent, fontSize = 13.sp)
+                                Text(question, fontSize = 13.sp, color = EduNovaTextPrimary, lineHeight = 18.sp)
+                            }
+                        }
+                    }
+                }
+
+                // AI Study Strategy Recommendations
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Lightbulb, null, tint = EduNovaPrimary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("AI Study Recommendations", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = EduNovaTextPrimary)
+                        }
+
+                        report.aiStudyStrategy.forEach { tip ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text("• ", fontWeight = FontWeight.Bold, color = EduNovaPrimary)
+                                Text(tip, fontSize = 13.sp, color = EduNovaTextPrimary, lineHeight = 18.sp)
                             }
                         }
                     }

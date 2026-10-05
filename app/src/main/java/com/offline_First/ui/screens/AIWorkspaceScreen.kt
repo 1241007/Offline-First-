@@ -1997,7 +1997,7 @@ private fun ActiveToolScreen(
 
     if (toolName.equals("Reports", ignoreCase = true) || toolName.contains("Report", ignoreCase = true)) {
         com.offline_First.ui.screens.ai.tools.InteractiveReportsTool(
-            studentName = "Krish Patil",
+            initialTopic = "",
             onBack = onBack
         )
         return
