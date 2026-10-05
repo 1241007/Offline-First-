@@ -1979,6 +1979,14 @@ private fun ActiveToolScreen(
         return
     }
 
+    if (toolName.equals("Flashcards", ignoreCase = true) || toolName.contains("Flashcard", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveFlashcardTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
     Scaffold(
         containerColor = EduNovaBackground,
         contentWindowInsets = WindowInsets(0),
