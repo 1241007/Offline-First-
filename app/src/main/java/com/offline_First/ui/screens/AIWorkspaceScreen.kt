@@ -1885,16 +1885,11 @@ private fun ToolsSheet(
                 Pair("Study Planner", Icons.Default.CalendarMonth to EduNovaAccent),
                 Pair("Mind Map", Icons.Default.AccountTree to EduNovaSecondary),
                 Pair("Image Analysis", Icons.Default.Image to EduNovaSecondary),
-                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
+                Pair("PYQ (Exam Vault)", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
                 Pair("Reports", Icons.Default.Analytics to EduNovaAccent),
+                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
                 Pair("Audio Learning", Icons.Default.Headphones to EduNovaSecondary)
-            ) + if (isClass912Student) {
-                listOf(
-                    Pair("PYQ", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
-                    Pair("Exam Mode", Icons.Default.Timer to EduNovaPrimary),
-                    Pair("Exam Review", Icons.AutoMirrored.Filled.FactCheck to EduNovaSecondary)
-                )
-            } else emptyList()
+            )
 
             tools.forEach { (name, iconAccent) ->
                 Surface(
@@ -1998,6 +1993,30 @@ private fun ActiveToolScreen(
     if (toolName.equals("Reports", ignoreCase = true) || toolName.contains("Report", ignoreCase = true)) {
         com.offline_First.ui.screens.ai.tools.InteractiveReportsTool(
             initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Planner", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveStudyPlannerTool(
+            initialGoal = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Image", ignoreCase = true) || toolName.contains("Analysis", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveImageAnalysisTool(
+            initialQuery = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("PYQ", ignoreCase = true) || toolName.contains("Exam", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractivePyqExamTool(
+            initialChapter = "",
             onBack = onBack
         )
         return
