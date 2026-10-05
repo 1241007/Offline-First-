@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.deps import get_dev_user_id
+from app.core.deps import get_current_user_id
 from app.services.learning_service import LearningService
 from app.schemas.learning import LearningCourseResponse, EnrollmentResponse, LessonCompleteResponse
 
@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/v1/learning", tags=["learning"])
 
 @router.get("/courses/in-progress", response_model=List[LearningCourseResponse])
 async def get_in_progress_courses(
-    user_id: str = Depends(get_dev_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's in-progress courses.
     
-    Requires: user_id (query parameter in dev mode)
+    Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
     return await service.get_in_progress_courses(user_id)
@@ -27,13 +27,13 @@ async def get_in_progress_courses(
 
 @router.get("/courses/completed", response_model=List[LearningCourseResponse])
 async def get_completed_courses(
-    user_id: str = Depends(get_dev_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's completed courses.
     
-    Requires: user_id (query parameter in dev mode)
+    Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
     return await service.get_completed_courses(user_id)
@@ -42,13 +42,13 @@ async def get_completed_courses(
 @router.post("/courses/{course_id}/enroll", response_model=EnrollmentResponse)
 async def enroll_in_course(
     course_id: str,
-    user_id: str = Depends(get_dev_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Enroll user in a course.
     
-    Requires: user_id (query parameter in dev mode)
+    Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
     success = await service.enroll_in_course(user_id, course_id)
@@ -62,13 +62,13 @@ async def enroll_in_course(
 @router.post("/lessons/{lesson_id}/complete", response_model=LessonCompleteResponse)
 async def complete_lesson(
     lesson_id: str,
-    user_id: str = Depends(get_dev_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Mark a lesson as complete and update course progress.
     
-    Requires: user_id (query parameter in dev mode)
+    Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
     success = await service.complete_lesson(user_id, lesson_id)

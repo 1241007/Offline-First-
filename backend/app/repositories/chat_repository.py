@@ -14,9 +14,10 @@ class ChatRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_conversation(self, title: str = "New Conversation") -> Conversation:
+    async def create_conversation(self, user_id: str, title: str = "New Conversation") -> Conversation:
         conv = Conversation(
             id=str(uuid.uuid4()),
+            user_id=user_id,
             title=title,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
@@ -24,7 +25,7 @@ class ChatRepository:
         self.db.add(conv)
         await self.db.commit()
         await self.db.refresh(conv)
-        logger.info(f"Created conversation id={conv.id}")
+        logger.info(f"Created conversation id={conv.id} for user_id={user_id}")
         return conv
 
     async def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
@@ -35,9 +36,10 @@ class ChatRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_conversations(self, limit: int = 50) -> list[Conversation]:
+    async def list_conversations(self, user_id: str, limit: int = 50) -> list[Conversation]:
         result = await self.db.execute(
             select(Conversation)
+            .where(Conversation.user_id == user_id)
             .order_by(Conversation.updated_at.desc())
             .limit(limit)
         )

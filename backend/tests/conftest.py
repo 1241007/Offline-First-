@@ -34,7 +34,12 @@ async def client(db_session):
     async def override_get_db():
         yield db_session
 
+    async def override_get_current_user_id():
+        return "test-user-id"
+
+    from app.core.deps import get_current_user_id
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user_id] = override_get_current_user_id
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

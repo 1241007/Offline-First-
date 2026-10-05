@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.database import Base
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.models.user import User, RefreshToken, PasswordResetToken  # noqa: F401
 
 config = context.config
 
