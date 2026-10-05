@@ -1987,6 +1987,22 @@ private fun ActiveToolScreen(
         return
     }
 
+    if (toolName.equals("Mind Map", ignoreCase = true) || toolName.contains("Mind Map", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveMindMapTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Reports", ignoreCase = true) || toolName.contains("Report", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveReportsTool(
+            studentName = "Krish Patil",
+            onBack = onBack
+        )
+        return
+    }
+
     Scaffold(
         containerColor = EduNovaBackground,
         contentWindowInsets = WindowInsets(0),
