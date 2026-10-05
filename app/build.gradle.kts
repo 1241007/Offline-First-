@@ -4,6 +4,57 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// --- Load .env file at build time (top-level scope) ---
+// providers.environmentVariable() only reads OS-level env vars; .env files
+// are never automatically sourced by Gradle. This block parses the .env file
+// at the top level where all standard Kotlin/Java APIs are available.
+fun loadDotEnv(): Map<String, String> {
+    val envFile = rootProject.file(".env")
+    if (!envFile.exists()) return emptyMap()
+    return envFile.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
+        .associate { line ->
+            val idx = line.indexOf('=')
+            line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+        }
+}
+
+val dotEnv = loadDotEnv()
+
+val smallOfflineModelUrl: String =
+    (System.getenv("OFFLINE_MODEL_1_5B_URL")
+        ?: dotEnv["OFFLINE_MODEL_1_5B_URL"]
+        ?: providers.gradleProperty("offlineModelSmallUrl").orNull
+        ?: "https://huggingface.co/buckets/PatilKrish/Qwen_Models2/resolve/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf?download=true")
+
+val largeOfflineModelUrl: String =
+    (System.getenv("OFFLINE_MODEL_3B_URL")
+        ?: dotEnv["OFFLINE_MODEL_3B_URL"]
+        ?: providers.gradleProperty("offlineModelLargeUrl").orNull
+        ?: "https://huggingface.co/buckets/PatilKrish/Qwen_Models2/resolve/Qwen2.5-3B-Instruct-Q4_K_M.gguf?download=true")
+
+val backendBaseUrl: String =
+    (System.getenv("BACKEND_BASE_URL")
+        ?: dotEnv["BACKEND_BASE_URL"]
+        ?: providers.gradleProperty("backendBaseUrl").orNull
+        ?: "https://edunova-backend-9waj.onrender.com")
+
+val supabaseUrl: String =
+    (System.getenv("SUPABASE_URL")
+        ?: dotEnv["SUPABASE_URL"]
+        ?: providers.gradleProperty("supabaseUrl").orNull
+        ?: "")
+
+val supabaseAnonKey: String =
+    (System.getenv("SUPABASE_ANON_KEY")
+        ?: dotEnv["SUPABASE_ANON_KEY"]
+        ?: providers.gradleProperty("supabaseAnonKey").orNull
+        ?: "")
+
+fun quotedBuildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
     namespace = "com.offline_First"
     ndkVersion = "27.2.12479018"
@@ -11,23 +62,6 @@ android {
     compileSdk {
         version = release(37)
     }
-
-    val smallOfflineModelUrl = providers.gradleProperty("offlineModelSmallUrl")
-        .orElse(providers.environmentVariable("OFFLINE_MODEL_1_5B_URL"))
-        .orElse("https://huggingface.co/buckets/PatilKrish/Qwen_Models2/resolve/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf?download=true")
-        .get()
-    val largeOfflineModelUrl = providers.gradleProperty("offlineModelLargeUrl")
-        .orElse(providers.environmentVariable("OFFLINE_MODEL_3B_URL"))
-        .orElse("https://huggingface.co/buckets/PatilKrish/Qwen_Models2/resolve/Qwen2.5-3B-Instruct-Q4_K_M.gguf?download=true")
-        .get()
-    val supabaseUrl = providers.gradleProperty("supabaseUrl")
-        .orElse(providers.environmentVariable("SUPABASE_URL"))
-        .orElse("")
-        .get()
-    val supabaseAnonKey = providers.gradleProperty("supabaseAnonKey")
-        .orElse(providers.environmentVariable("SUPABASE_ANON_KEY"))
-        .orElse("")
-        .get()
 
     defaultConfig {
         applicationId = "com.offline_First"
@@ -38,18 +72,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "OFFLINE_MODEL_SMALL_URL", "\"$smallOfflineModelUrl\"")
-        buildConfigField("String", "OFFLINE_MODEL_LARGE_URL", "\"$largeOfflineModelUrl\"")
-        buildConfigField(
-            "String",
-            "SUPABASE_URL",
-            "\"${supabaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-        )
-        buildConfigField(
-            "String",
-            "SUPABASE_ANON_KEY",
-            "\"${supabaseAnonKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-        )
+        buildConfigField("String", "OFFLINE_MODEL_SMALL_URL", quotedBuildConfigString(smallOfflineModelUrl))
+        buildConfigField("String", "OFFLINE_MODEL_LARGE_URL", quotedBuildConfigString(largeOfflineModelUrl))
+        buildConfigField("String", "BACKEND_BASE_URL", quotedBuildConfigString(backendBaseUrl))
+        buildConfigField("String", "SUPABASE_URL", quotedBuildConfigString(supabaseUrl))
+        buildConfigField("String", "SUPABASE_ANON_KEY", quotedBuildConfigString(supabaseAnonKey))
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -79,6 +106,13 @@ android {
             version = "3.31.6"
         }
     }
+
+    // Package the prebuilt llama.cpp .so files alongside our JNI bridge
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs(setOf(file("src/main/jniLibs")))
+        }
+    }
 }
 
 dependencies {
@@ -94,6 +128,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

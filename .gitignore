@@ -216,6 +216,9 @@ _build/
 # ============================================
 # Miscellaneous
 # ============================================
+# Temporary llama.cpp prebuilt work directory (created by build_llama_prebuilt.sh)
+.llama_build/
+
 # Archives
 *.zip
 *.tar
@@ -227,6 +230,8 @@ _build/
 *.o
 *.a
 *.so
+# Allow prebuilt Android native libraries committed to the repo
+!app/src/main/jniLibs/**/*.so
 *.dylib
 *.dll
 *.exe

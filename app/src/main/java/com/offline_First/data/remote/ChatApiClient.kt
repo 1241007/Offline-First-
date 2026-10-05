@@ -1,14 +1,16 @@
 package com.offline_First.data.remote
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 private val json = Json {
     ignoreUnknownKeys = true
@@ -17,43 +19,70 @@ private val json = Json {
 
 object ChatApiClient {
 
-    private fun buildUrl(path: String): URL =
-        URL("${ChatApiConfig.BASE_URL}${ChatApiConfig.API_PREFIX}$path")
+    private const val MAX_RETRIES = 5
+    private const val RETRY_DELAY_MS = 5000L
 
-    private fun openConnection(url: URL, method: String): HttpURLConnection {
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = method
-        conn.connectTimeout = ChatApiConfig.CONNECT_TIMEOUT_MS
-        conn.readTimeout = ChatApiConfig.READ_TIMEOUT_MS
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("Accept", "application/json")
-        return conn
-    }
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(AppDns)
+        .connectTimeout(ChatApiConfig.CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        .readTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        .writeTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .build()
 
-    private fun readResponse(conn: HttpURLConnection): String {
-        val stream = if (conn.responseCode in 200..299) {
-            conn.inputStream
-        } else {
-            conn.errorStream ?: conn.inputStream
+    private fun buildUrl(path: String): String =
+        "${ChatApiConfig.BASE_URL}${ChatApiConfig.API_PREFIX}$path"
+
+    /**
+     * Retries the block up to MAX_RETRIES times on transient network errors
+     * (UnknownHostException, SocketTimeoutException, ConnectException).
+     * This handles Render free-tier cold starts where the first request may fail
+     * before the server finishes waking up.
+     */
+    private suspend fun <T> retryOnNetworkError(block: suspend () -> T): T {
+        var lastError: Throwable? = null
+        repeat(MAX_RETRIES) { attempt ->
+            try {
+                return block()
+            } catch (e: java.net.UnknownHostException) {
+                lastError = e
+                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (UnknownHost — possible Render cold-start or DNS delay), retrying...")
+            } catch (e: java.net.SocketTimeoutException) {
+                lastError = e
+                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (Timeout), retrying...")
+            } catch (e: java.net.ConnectException) {
+                lastError = e
+                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (ConnectException), retrying...")
+            } catch (e: java.io.IOException) {
+                lastError = e
+                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (IOException: ${e.message}), retrying...")
+            }
+            // Exponential back-off capped at 15 s: 5s, 10s, 15s, 15s, …
+            if (attempt < MAX_RETRIES - 1) {
+                val waitMs = (RETRY_DELAY_MS * (attempt + 1)).coerceAtMost(15_000L)
+                android.util.Log.d("ChatApiClient", "Waiting ${waitMs}ms before attempt ${attempt + 2}…")
+                delay(waitMs)
+            }
         }
-        return BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
+        throw lastError!!
     }
 
     private suspend fun get(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
         val url = buildUrl(path)
         android.util.Log.d("ChatApiClient", "GET request: $url")
-        val conn = openConnection(url, "GET")
-        try {
-            conn.connect()
-            val code = conn.responseCode
-            val body = readResponse(conn)
-            android.util.Log.d("ChatApiClient", "GET $url -> code $code")
-            Pair(code, body)
-        } catch (e: Exception) {
-            android.util.Log.e("ChatApiClient", "GET $url failed with ${e.javaClass.simpleName}: ${e.message}")
-            throw e
-        } finally {
-            conn.disconnect()
+        retryOnNetworkError {
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Accept", "application/json")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                val code = response.code
+                val body = response.body?.string().orEmpty()
+                android.util.Log.d("ChatApiClient", "GET $url -> code $code")
+                Pair(code, body)
+            }
         }
     }
 
@@ -61,22 +90,21 @@ object ChatApiClient {
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
             android.util.Log.d("ChatApiClient", "POST request: $url")
-            val conn = openConnection(url, "POST")
-            conn.doOutput = true
-            try {
-                conn.connect()
-                if (bodyJson.isNotEmpty()) {
-                    conn.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+            retryOnNetworkError {
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val requestBody = bodyJson.toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .build()
+                okHttpClient.newCall(request).execute().use { response ->
+                    val code = response.code
+                    val body = response.body?.string().orEmpty()
+                    android.util.Log.d("ChatApiClient", "POST $url -> code $code")
+                    Pair(code, body)
                 }
-                val code = conn.responseCode
-                val body = readResponse(conn)
-                android.util.Log.d("ChatApiClient", "POST $url -> code $code")
-                Pair(code, body)
-            } catch (e: Exception) {
-                android.util.Log.e("ChatApiClient", "POST $url failed with ${e.javaClass.simpleName}: ${e.message}")
-                throw e
-            } finally {
-                conn.disconnect()
             }
         }
 
