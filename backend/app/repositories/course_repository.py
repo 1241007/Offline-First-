@@ -16,9 +16,11 @@ class CourseRepository:
     async def get_all_courses(
         self,
         featured_only: bool = False,
-        category_slug: Optional[str] = None
+        category_slug: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
     ) -> List[Course]:
-        """Get all active courses with optional filtering"""
+        """Get active courses with optional filtering and pagination"""
         query = select(Course).where(Course.status == "active")
         
         if featured_only:
@@ -28,7 +30,11 @@ class CourseRepository:
             # Join with category to filter by slug
             query = query.join(CourseCategory).where(CourseCategory.slug == category_slug)
         
-        result = await self.db.execute(query.order_by(Course.created_at))
+        query = query.order_by(Course.created_at).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+        
+        result = await self.db.execute(query)
         return list(result.scalars().all())
     
     async def get_course_by_id(self, course_id: str) -> Optional[Course]:

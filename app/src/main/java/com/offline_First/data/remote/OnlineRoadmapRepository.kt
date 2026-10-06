@@ -31,8 +31,12 @@ class OnlineRoadmapRepository : RoadmapRepository {
         )
     }
 
-    override suspend fun getRoadmaps(): Result<List<RoadmapOption>> {
-        return ChatApiClient.getRoadmaps()
+    override suspend fun getRoadmaps(
+        limit: Int?,
+        offset: Int,
+        category: String?
+    ): Result<List<RoadmapOption>> {
+        return ChatApiClient.getRoadmaps(category = category, limit = limit, offset = offset)
             .map { dtos -> dtos.map { it.toDomain() } }
     }
 

@@ -10,21 +10,17 @@ import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.OfflineAIStatus
+import com.offline_First.domain.model.UserMemoryItem
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 5 Main UI States/Screens in EduNova AI:
- * - LANDING: Screen 1 - AI Landing Page
- * - CHAT: Screen 4 - Clean Chat Interface
- * - SETTINGS: Screen 2 - AI Settings
- * - DOWNLOAD_STATE: Screen 3 - Offline AI Download State
- *
- * Screen 5 (Chat History) is presented via a Material 3 Drawer inside the chat interface.
+ * Main UI screens in EduNova AI
  */
 enum class AIScreen {
     LANDING,
@@ -51,6 +47,11 @@ data class AIUiState(
     val activeToolName: String? = null,
     val showToolsSheet: Boolean = false,
     val showAttachmentsSheet: Boolean = false,
+    val showMemoriesSheet: Boolean = false,
+    val memories: List<UserMemoryItem> = emptyList(),
+    val isLoadingMemories: Boolean = false,
+    val editingMessageId: String? = null,
+    val editDraftText: String = "",
     val renameTargetSessionId: String? = null,
     val renameDraftText: String = "",
     val previousScreen: AIScreen = AIScreen.LANDING,
@@ -78,8 +79,11 @@ class AIViewModel(
     private val _uiState = MutableStateFlow(AIUiState())
     val uiState: StateFlow<AIUiState> = _uiState.asStateFlow()
 
+    private var currentStreamingJob: Job? = null
+
     init {
         observeRepositoryFlows()
+        loadMemories()
     }
 
     private fun observeRepositoryFlows() {
@@ -120,7 +124,11 @@ class AIViewModel(
 
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeCurrentSession().collect { session ->
-                _uiState.value = _uiState.value.copy(currentSession = session)
+                val draft = session?.draftText ?: _uiState.value.draftMessage
+                _uiState.value = _uiState.value.copy(
+                    currentSession = session,
+                    draftMessage = if (_uiState.value.draftMessage.isBlank()) draft else _uiState.value.draftMessage
+                )
             }
         }
 
@@ -148,6 +156,13 @@ class AIViewModel(
         )
     }
 
+    fun openChat() = setScreen(AIScreen.CHAT)
+    fun openSettings() = setScreen(AIScreen.SETTINGS)
+    fun openDownloadState() = setScreen(AIScreen.DOWNLOAD_STATE)
+
+    fun goBackFromSettings() = setScreen(_uiState.value.previousScreen)
+    fun goBackFromDownloadState() = setScreen(AIScreen.SETTINGS)
+
     fun setConnectionMode(mode: ConnectionMode) {
         viewModelScope.launch(coroutineContext) {
             aiRepository.setConnectionMode(mode).onFailure(::reportError)
@@ -164,7 +179,7 @@ class AIViewModel(
         viewModelScope.launch(coroutineContext) {
             aiRepository.startOfflineAIDownload().fold(
                 onSuccess = {
-                    if (navigateToDownloadState) setScreen(AIScreen.DOWNLOAD_STATE)
+                    if (navigateToDownloadState) openDownloadState()
                 },
                 onFailure = ::reportError
             )
@@ -172,32 +187,41 @@ class AIViewModel(
     }
 
     fun showDeleteConfirm(show: Boolean) {
-        _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = show)
+        setDeleteConfirmDialogVisible(show)
     }
 
     fun confirmDeleteOfflineAI() {
         viewModelScope.launch(coroutineContext) {
             aiRepository.deleteOfflineAI().fold(
                 onSuccess = {
-                    _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = false)
+                    showDeleteConfirm(false)
                 },
                 onFailure = ::reportError
             )
         }
     }
 
+    fun deleteOfflineModel() {
+        confirmDeleteOfflineAI()
+    }
+
     fun setDrawerOpen(isOpen: Boolean) {
         _uiState.value = _uiState.value.copy(isDrawerOpen = isOpen)
+    }
+
+    fun setDeleteConfirmDialogVisible(visible: Boolean) {
+        _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = visible)
     }
 
     fun createNewChat() {
         viewModelScope.launch(coroutineContext) {
             aiRepository.createNewChat().fold(
-                onSuccess = {
+                onSuccess = { session ->
                     _uiState.value = _uiState.value.copy(
                         isDrawerOpen = false,
                         currentScreen = AIScreen.CHAT,
-                        activeToolName = null
+                        activeToolName = null,
+                        draftMessage = ""
                     )
                 },
                 onFailure = ::reportError
@@ -209,10 +233,12 @@ class AIViewModel(
         viewModelScope.launch(coroutineContext) {
             aiRepository.selectChat(sessionId).fold(
                 onSuccess = {
+                    val session = _uiState.value.sessions.find { it.id == sessionId }
                     _uiState.value = _uiState.value.copy(
                         isDrawerOpen = false,
                         currentScreen = AIScreen.CHAT,
-                        activeToolName = null
+                        activeToolName = null,
+                        draftMessage = session?.draftText.orEmpty()
                     )
                 },
                 onFailure = ::reportError
@@ -260,8 +286,26 @@ class AIViewModel(
         }
     }
 
+    fun togglePin(sessionId: String, isPinned: Boolean) {
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.togglePin(sessionId, isPinned).onFailure(::reportError)
+        }
+    }
+
+    fun toggleArchive(sessionId: String, isArchived: Boolean) {
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.toggleArchive(sessionId, isArchived).onFailure(::reportError)
+        }
+    }
+
     fun onDraftMessageChanged(draft: String) {
         _uiState.value = _uiState.value.copy(draftMessage = draft)
+        val currentId = _uiState.value.currentSession?.id
+        if (currentId != null) {
+            viewModelScope.launch(coroutineContext) {
+                aiRepository.saveDraft(currentId, draft)
+            }
+        }
     }
 
     fun sendMessage(promptOverride: String? = null) {
@@ -270,29 +314,152 @@ class AIViewModel(
         if (promptToSend.isBlank()) return
 
         _uiState.value = _uiState.value.copy(
-            draftMessage = promptToSend,
+            draftMessage = "",
             isGeneratingResponse = true,
             currentScreen = AIScreen.CHAT,
             activeToolName = null,
             errorMessage = null
         )
 
+        // Clear persisted draft
+        _uiState.value.currentSession?.id?.let { convId ->
+            viewModelScope.launch(coroutineContext) { aiRepository.saveDraft(convId, "") }
+        }
+
+        currentStreamingJob = viewModelScope.launch(coroutineContext) {
+            try {
+                aiRepository.streamMessage(promptToSend).collect {
+                    // Chunks update currentSession in repository
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Generation failed")
+                }
+            } finally {
+                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+            }
+        }
+    }
+
+    fun stopGeneration() {
         viewModelScope.launch(coroutineContext) {
-            aiRepository.sendMessage(promptToSend).fold(
-                onSuccess = {
+            currentStreamingJob?.cancel()
+            currentStreamingJob = null
+            aiRepository.stopGeneration()
+            _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+        }
+    }
+
+    fun regenerateLastResponse() {
+        if (_uiState.value.isGeneratingResponse) return
+        _uiState.value = _uiState.value.copy(isGeneratingResponse = true, errorMessage = null)
+
+        currentStreamingJob = viewModelScope.launch(coroutineContext) {
+            try {
+                aiRepository.regenerateLastResponse().collect {}
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Regeneration failed")
+                }
+            } finally {
+                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+            }
+        }
+    }
+
+    fun startEditMessage(messageId: String, currentText: String) {
+        _uiState.value = _uiState.value.copy(
+            editingMessageId = messageId,
+            editDraftText = currentText
+        )
+    }
+
+    fun onEditDraftChanged(newText: String) {
+        _uiState.value = _uiState.value.copy(editDraftText = newText)
+    }
+
+    fun cancelEditMessage() {
+        _uiState.value = _uiState.value.copy(editingMessageId = null, editDraftText = "")
+    }
+
+    fun confirmEditAndRegenerate() {
+        val msgId = _uiState.value.editingMessageId ?: return
+        val newText = _uiState.value.editDraftText.trim()
+        if (newText.isBlank()) return
+
+        _uiState.value = _uiState.value.copy(
+            editingMessageId = null,
+            editDraftText = "",
+            isGeneratingResponse = true,
+            errorMessage = null
+        )
+
+        currentStreamingJob = viewModelScope.launch(coroutineContext) {
+            try {
+                aiRepository.editMessageAndRegenerate(msgId, newText).collect {}
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Edit failed")
+                }
+            } finally {
+                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+            }
+        }
+    }
+
+    fun loadMoreMessages() {
+        val current = _uiState.value.currentSession ?: return
+        val oldestTimestamp = current.messages.firstOrNull()?.timestamp ?: return
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.loadMoreMessages(current.id, beforeTimestamp = oldestTimestamp)
+        }
+    }
+
+    fun loadMoreConversations() {
+        val oldestUpdated = _uiState.value.sessions.lastOrNull()?.lastUpdated
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.loadMoreConversations(beforeCursor = oldestUpdated)
+        }
+    }
+
+    fun loadMemories() {
+        viewModelScope.launch(coroutineContext) {
+            _uiState.value = _uiState.value.copy(isLoadingMemories = true)
+            aiRepository.getMemories().fold(
+                onSuccess = { items ->
                     _uiState.value = _uiState.value.copy(
-                        draftMessage = "",
-                        isGeneratingResponse = false,
-                        errorMessage = null
+                        memories = items,
+                        isLoadingMemories = false
                     )
                 },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isGeneratingResponse = false,
-                        errorMessage = error.localizedMessage ?: "Unable to send the message."
-                    )
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(isLoadingMemories = false)
                 }
             )
+        }
+    }
+
+    fun deleteMemory(memoryId: String) {
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.deleteMemory(memoryId).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        memories = _uiState.value.memories.filter { it.id != memoryId }
+                    )
+                },
+                onFailure = ::reportError
+            )
+        }
+    }
+
+    fun setMemoriesSheetVisible(visible: Boolean) {
+        _uiState.value = _uiState.value.copy(showMemoriesSheet = visible)
+        if (visible) loadMemories()
+    }
+
+    fun syncOfflineData() {
+        viewModelScope.launch(coroutineContext) {
+            aiRepository.syncOfflineData().onFailure(::reportError)
         }
     }
 

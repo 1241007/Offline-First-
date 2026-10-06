@@ -8,7 +8,11 @@ import com.offline_First.domain.model.RoadmapOption
  * Decouples presentation from whether data originates from local cache or remote API.
  */
 interface RoadmapRepository {
-    suspend fun getRoadmaps(): Result<List<RoadmapOption>>
+    suspend fun getRoadmaps(
+        limit: Int? = null,
+        offset: Int = 0,
+        category: String? = null
+    ): Result<List<RoadmapOption>>
     suspend fun getCategories(): List<String>
     suspend fun generatePersonalizedRoadmap(
         goal: String,

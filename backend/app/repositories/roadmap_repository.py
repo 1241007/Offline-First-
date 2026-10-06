@@ -13,9 +13,19 @@ class RoadmapRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def get_all_system_roadmaps(self) -> List[Roadmap]:
-        """Get all system roadmaps"""
-        query = select(Roadmap).where(Roadmap.is_system == True).order_by(Roadmap.created_at)
+    async def get_all_system_roadmaps(
+        self,
+        category: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[Roadmap]:
+        """Get system roadmaps with optional category filter and pagination"""
+        query = select(Roadmap).where(Roadmap.is_system == True)
+        if category and category.lower() != "all":
+            query = query.where(Roadmap.category == category)
+        query = query.order_by(Roadmap.created_at).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         
         result = await self.db.execute(query)
         return list(result.scalars().all())

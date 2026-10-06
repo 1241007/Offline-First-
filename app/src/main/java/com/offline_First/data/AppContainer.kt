@@ -60,7 +60,13 @@ object AppContainer {
         _learningRepository = remoteLearningRepo
 
         val localRepository = LocalAIRepository(appContext)
-        val onlineRepository = OnlineAIRepository(appContext, localRepository)
+        val onlineRepository = OnlineAIRepository(
+            context = appContext,
+            delegate = localRepository,
+            userIdProvider = {
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+            }
+        )
         aiRepoOverride = ModeAwareAIRepository(localRepository, onlineRepository)
     }
 

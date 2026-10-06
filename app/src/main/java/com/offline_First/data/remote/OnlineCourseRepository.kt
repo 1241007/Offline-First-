@@ -24,8 +24,8 @@ class OnlineCourseRepository : CourseRepository {
         )
     }
 
-    override suspend fun getCourses(): Result<List<Course>> {
-        return ChatApiClient.getCourses(featured = null)
+    override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
+        return ChatApiClient.getCourses(featured = null, limit = limit, offset = offset)
             .map { dtos -> dtos.map { it.toDomain() } }
     }
 

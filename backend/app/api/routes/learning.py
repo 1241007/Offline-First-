@@ -1,7 +1,7 @@
 """Learning progress API routes"""
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user_id
@@ -13,30 +13,34 @@ router = APIRouter(prefix="/api/v1/learning", tags=["learning"])
 
 @router.get("/courses/in-progress", response_model=List[LearningCourseResponse])
 async def get_in_progress_courses(
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Page limit"),
+    offset: int = Query(0, ge=0, description="Page offset"),
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get user's in-progress courses.
+    Get user's in-progress courses with optional pagination.
     
     Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
-    return await service.get_in_progress_courses(user_id)
+    return await service.get_in_progress_courses(user_id, limit=limit, offset=offset)
 
 
 @router.get("/courses/completed", response_model=List[LearningCourseResponse])
 async def get_completed_courses(
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Page limit"),
+    offset: int = Query(0, ge=0, description="Page offset"),
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get user's completed courses.
+    Get user's completed courses with optional pagination.
     
     Requires: Bearer token in Authorization header
     """
     service = LearningService(db)
-    return await service.get_completed_courses(user_id)
+    return await service.get_completed_courses(user_id, limit=limit, offset=offset)
 
 
 @router.post("/courses/{course_id}/enroll", response_model=EnrollmentResponse)

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, AsyncIterator
 import google.generativeai as genai
 from app.core.config import settings
 
@@ -31,20 +31,18 @@ class GeminiService:
         self._model_name = settings.gemini_model
         logger.info(f"GeminiService initialized with model: {self._model_name}")
 
-    async def generate_response(
+    def _build_model(
         self,
-        history: list[dict],
         explanation_mode: str = "general",
-    ) -> str:
-        """
-        history: list of {"role": "user"|"model", "parts": [str]}
-        The last item in history is the current user message.
-        All preceding items are conversation context.
-        """
+        memory_context: Optional[str] = None,
+    ) -> genai.GenerativeModel:
         instruction = _SYSTEM_INSTRUCTIONS.get(
             explanation_mode, _SYSTEM_INSTRUCTIONS["general"]
         )
-        model = genai.GenerativeModel(
+        if memory_context:
+            instruction = f"{instruction}\n\n[USER RELEVANT MEMORY & PREFERENCES]\n{memory_context}"
+
+        return genai.GenerativeModel(
             model_name=self._model_name,
             system_instruction=instruction,
             generation_config=genai.GenerationConfig(
@@ -52,7 +50,18 @@ class GeminiService:
             ),
         )
 
-        # Build history for the chat (all messages except the last one)
+    async def generate_response(
+        self,
+        history: list[dict],
+        explanation_mode: str = "general",
+        memory_context: Optional[str] = None,
+    ) -> str:
+        """
+        history: list of {"role": "user"|"model", "parts": [str]}
+        The last item in history is the current user message.
+        All preceding items are conversation context.
+        """
+        model = self._build_model(explanation_mode, memory_context)
         prior_history = history[:-1] if len(history) > 1 else []
         current_message = history[-1]["parts"][0] if history else ""
 
@@ -60,6 +69,26 @@ class GeminiService:
         response = await chat.send_message_async(current_message)
         logger.info(f"Gemini response received, length={len(response.text)}")
         return response.text
+
+    async def generate_response_stream(
+        self,
+        history: list[dict],
+        explanation_mode: str = "general",
+        memory_context: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """
+        Streams response chunks from Gemini asynchronously.
+        """
+        model = self._build_model(explanation_mode, memory_context)
+        prior_history = history[:-1] if len(history) > 1 else []
+        current_message = history[-1]["parts"][0] if history else ""
+
+        chat = model.start_chat(history=prior_history)
+        response_stream = await chat.send_message_async(current_message, stream=True)
+        async for chunk in response_stream:
+            text = chunk.text
+            if text:
+                yield text
 
 
 # Singleton

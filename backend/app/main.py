@@ -10,6 +10,7 @@ from app.api.routes.courses import router as courses_router
 from app.api.routes.roadmaps import router as roadmaps_router
 from app.api.routes.learning import router as learning_router
 from app.api.routes.profile import router as profile_router
+from app.api.routes.memory import router as memory_router
 from app.core.config import settings
 from app.core.errors import AuthException
 from app.core.rate_limit import limiter
@@ -108,3 +109,4 @@ app.include_router(courses_router)
 app.include_router(roadmaps_router)
 app.include_router(learning_router)
 app.include_router(profile_router)
+app.include_router(memory_router)

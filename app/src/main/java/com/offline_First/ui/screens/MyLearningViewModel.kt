@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class MyLearningUiState(
+    val selectedTab: Int = 0, // 0 = In Progress, 1 = Completed
     val inProgressCourses: UiState<List<LearningCourse>> = UiState.Loading,
-    val completedCourses: UiState<List<LearningCourse>> = UiState.Loading,
+    val completedCourses: UiState<List<LearningCourse>> = UiState.Empty,
+    val completedLoaded: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -25,37 +27,59 @@ class MyLearningViewModel(
     val uiState: StateFlow<MyLearningUiState> = _uiState.asStateFlow()
 
     init {
-        loadCourses()
+        loadInProgressCourses()
+    }
+
+    fun selectTab(tabIndex: Int) {
+        _uiState.value = _uiState.value.copy(selectedTab = tabIndex)
+        if (tabIndex == 1 && !_uiState.value.completedLoaded) {
+            loadCompletedCourses()
+        }
     }
 
     fun retry() {
-        loadCourses()
+        if (_uiState.value.selectedTab == 0) {
+            loadInProgressCourses()
+        } else {
+            loadCompletedCourses()
+        }
     }
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
-    private fun loadCourses() {
+    private fun loadInProgressCourses() {
         viewModelScope.launch {
-            _uiState.value = MyLearningUiState(
+            _uiState.value = _uiState.value.copy(
                 inProgressCourses = UiState.Loading,
+                errorMessage = null
+            )
+            val result = repository.getInProgressCourses()
+            _uiState.value = _uiState.value.copy(
+                inProgressCourses = result.fold(
+                    onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
+                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
+                ),
+                errorMessage = result.exceptionOrNull()?.localizedMessage
+            )
+        }
+    }
+
+    private fun loadCompletedCourses() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
                 completedCourses = UiState.Loading,
                 errorMessage = null
             )
-            val inProgress = repository.getInProgressCourses()
-            val completed = repository.getCompletedCourses()
-            val error = inProgress.exceptionOrNull() ?: completed.exceptionOrNull()
-            _uiState.value = MyLearningUiState(
-                inProgressCourses = inProgress.fold(
+            val result = repository.getCompletedCourses()
+            _uiState.value = _uiState.value.copy(
+                completedCourses = result.fold(
                     onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
                     onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
                 ),
-                completedCourses = completed.fold(
-                    onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
-                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
-                ),
-                errorMessage = error?.localizedMessage
+                completedLoaded = true,
+                errorMessage = result.exceptionOrNull()?.localizedMessage
             )
         }
     }

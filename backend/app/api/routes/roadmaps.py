@@ -1,7 +1,7 @@
 """Roadmap API routes"""
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.services.roadmap_service import RoadmapService
@@ -11,12 +11,17 @@ router = APIRouter(prefix="/api/v1", tags=["roadmaps"])
 
 
 @router.get("/roadmaps", response_model=List[RoadmapListResponse])
-async def get_roadmaps(db: AsyncSession = Depends(get_db)):
+async def get_roadmaps(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Page limit"),
+    offset: int = Query(0, ge=0, description="Page offset"),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Get all system roadmaps.
+    Get system roadmaps with optional category filter and pagination.
     """
     service = RoadmapService(db)
-    return await service.get_all_roadmaps()
+    return await service.get_all_roadmaps(category=category, limit=limit, offset=offset)
 
 
 @router.get("/roadmaps/categories", response_model=List[str])

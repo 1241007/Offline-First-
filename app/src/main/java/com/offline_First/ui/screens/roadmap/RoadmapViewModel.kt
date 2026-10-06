@@ -16,6 +16,8 @@ data class RoadmapUiState(
     val roadmaps: UiState<List<RoadmapOption>> = UiState.Loading,
     val categories: List<String> = emptyList(),
     val selectedCategory: String = "All",
+    val isLoadingMore: Boolean = false,
+    val hasMore: Boolean = true,
     val isGenerating: Boolean = false,
     val generatedRoadmap: GeneratedRoadmapPreview? = null,
     val errorMessage: String? = null
@@ -39,12 +41,14 @@ class RoadmapViewModel(
                 errorMessage = null
             )
             val categories = repository.getCategories()
-            val result = repository.getRoadmaps()
+            val categoryFilter = if (_uiState.value.selectedCategory == "All") null else _uiState.value.selectedCategory
+            val result = repository.getRoadmaps(limit = 10, offset = 0, category = categoryFilter)
             result.fold(
                 onSuccess = { list ->
                     _uiState.value = _uiState.value.copy(
                         roadmaps = if (list.isEmpty()) UiState.Empty else UiState.Success(list),
-                        categories = categories
+                        categories = categories,
+                        hasMore = list.size >= 10
                     )
                 },
                 onFailure = { error ->
@@ -58,8 +62,35 @@ class RoadmapViewModel(
         }
     }
 
+    fun loadMoreRoadmaps() {
+        val current = _uiState.value
+        val currentList = (current.roadmaps as? UiState.Success)?.data ?: return
+        if (current.isLoadingMore || !current.hasMore) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingMore = true)
+            val categoryFilter = if (current.selectedCategory == "All") null else current.selectedCategory
+            val result = repository.getRoadmaps(limit = 10, offset = currentList.size, category = categoryFilter)
+            result.fold(
+                onSuccess = { newItems ->
+                    val combined = (currentList + newItems).distinctBy { it.id }
+                    _uiState.value = _uiState.value.copy(
+                        roadmaps = UiState.Success(combined),
+                        hasMore = newItems.size >= 10,
+                        isLoadingMore = false
+                    )
+                },
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(isLoadingMore = false)
+                }
+            )
+        }
+    }
+
     fun selectCategory(category: String) {
+        if (_uiState.value.selectedCategory == category) return
         _uiState.value = _uiState.value.copy(selectedCategory = category)
+        loadData()
     }
 
     fun generatePersonalizedRoadmap(

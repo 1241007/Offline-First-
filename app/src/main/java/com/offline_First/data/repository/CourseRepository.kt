@@ -6,6 +6,6 @@ import com.offline_First.domain.model.Course
  * Repository interface for course catalog.
  */
 interface CourseRepository {
-    suspend fun getCourses(): Result<List<Course>>
+    suspend fun getCourses(limit: Int? = null, offset: Int = 0): Result<List<Course>>
     suspend fun getFeaturedCourses(): Result<List<Course>>
 }

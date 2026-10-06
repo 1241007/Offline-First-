@@ -73,6 +73,37 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun sendMessage(prompt: String): Result<ChatMessage> = unavailable("AI chat")
 
+    override fun streamMessage(
+        prompt: String,
+        parentId: String?,
+        clientMessageId: String?
+    ): Flow<String> = flowOf()
+
+    override suspend fun stopGeneration(): Result<Unit> = Result.success(Unit)
+
+    override fun regenerateLastResponse(): Flow<String> = flowOf()
+
+    override fun editMessageAndRegenerate(messageId: String, newContent: String): Flow<String> = flowOf()
+
+    override suspend fun saveDraft(sessionId: String, draftText: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun togglePin(sessionId: String, isPinned: Boolean): Result<Unit> = Result.success(Unit)
+
+    override suspend fun toggleArchive(sessionId: String, isArchived: Boolean): Result<Unit> = Result.success(Unit)
+
+    override suspend fun loadMoreMessages(sessionId: String, beforeTimestamp: Long?, limit: Int): Result<List<ChatMessage>> =
+        unavailable("Chat history")
+
+    override suspend fun loadMoreConversations(beforeCursor: Long?, limit: Int): Result<List<ChatSession>> =
+        unavailable("Chat history")
+
+    override suspend fun getMemories(): Result<List<com.offline_First.domain.model.UserMemoryItem>> =
+        Result.success(emptyList())
+
+    override suspend fun deleteMemory(memoryId: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncOfflineData(): Result<Unit> = Result.success(Unit)
+
     override suspend fun signIn(contact: String, password: String): Result<Unit> =
         unavailable("Authentication")
 
@@ -93,7 +124,7 @@ class BackendNotConfiguredRepositories :
     override suspend fun fetchMe(): Result<com.offline_First.data.remote.UserDto> =
         Result.failure(UnsupportedOperationException("Backend not configured"))
 
-    override suspend fun getCourses(): Result<List<Course>> = unavailable("Course catalog")
+    override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> = unavailable("Course catalog")
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> =
         unavailable("Featured courses")
@@ -122,7 +153,11 @@ class BackendNotConfiguredRepositories :
 
     override fun observeUserProfile(): Flow<UserProfile?> = flowOf(null)
 
-    override suspend fun getRoadmaps(): Result<List<RoadmapOption>> = unavailable("Roadmaps")
+    override suspend fun getRoadmaps(
+        limit: Int?,
+        offset: Int,
+        category: String?
+    ): Result<List<RoadmapOption>> = unavailable("Roadmaps")
 
     override suspend fun getCategories(): List<String> = emptyList()
 

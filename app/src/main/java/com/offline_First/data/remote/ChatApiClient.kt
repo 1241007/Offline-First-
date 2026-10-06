@@ -1,7 +1,11 @@
 package com.offline_First.data.remote
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -10,6 +14,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 private val json = Json {
@@ -20,7 +27,7 @@ private val json = Json {
 object ChatApiClient {
 
     private const val MAX_RETRIES = 5
-    private const val RETRY_DELAY_MS = 5000L
+    private const val RETRY_DELAY_MS = 3000L
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(AppDns)
@@ -35,12 +42,6 @@ object ChatApiClient {
     private fun buildUrl(path: String): String =
         "${ChatApiConfig.BASE_URL}${ChatApiConfig.API_PREFIX}$path"
 
-    /**
-     * Retries the block up to MAX_RETRIES times on transient network errors
-     * (UnknownHostException, SocketTimeoutException, ConnectException).
-     * This handles Render free-tier cold starts where the first request may fail
-     * before the server finishes waking up.
-     */
     private suspend fun <T> retryOnNetworkError(block: suspend () -> T): T {
         var lastError: Throwable? = null
         repeat(MAX_RETRIES) { attempt ->
@@ -48,7 +49,7 @@ object ChatApiClient {
                 return block()
             } catch (e: java.net.UnknownHostException) {
                 lastError = e
-                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (UnknownHost — possible Render cold-start or DNS delay), retrying...")
+                android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (UnknownHost), retrying...")
             } catch (e: java.net.SocketTimeoutException) {
                 lastError = e
                 android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (Timeout), retrying...")
@@ -59,10 +60,8 @@ object ChatApiClient {
                 lastError = e
                 android.util.Log.w("ChatApiClient", "Attempt ${attempt + 1}/$MAX_RETRIES failed (IOException: ${e.message}), retrying...")
             }
-            // Exponential back-off capped at 15 s: 5s, 10s, 15s, 15s, …
             if (attempt < MAX_RETRIES - 1) {
-                val waitMs = (RETRY_DELAY_MS * (attempt + 1)).coerceAtMost(15_000L)
-                android.util.Log.d("ChatApiClient", "Waiting ${waitMs}ms before attempt ${attempt + 2}…")
+                val waitMs = (RETRY_DELAY_MS * (attempt + 1)).coerceAtMost(10_000L)
                 delay(waitMs)
             }
         }
@@ -71,17 +70,13 @@ object ChatApiClient {
 
     private suspend fun get(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
         val url = buildUrl(path)
-        android.util.Log.d("ChatApiClient", "GET request: $url")
         retryOnNetworkError {
             val request = Request.Builder()
                 .url(url)
                 .addHeader("Accept", "application/json")
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
-                val code = response.code
-                val body = response.body?.string().orEmpty()
-                android.util.Log.d("ChatApiClient", "GET $url -> code $code")
-                Pair(code, body)
+                Pair(response.code, response.body?.string().orEmpty())
             }
         }
     }
@@ -89,7 +84,6 @@ object ChatApiClient {
     private suspend fun post(path: String, bodyJson: String = ""): Pair<Int, String> =
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
-            android.util.Log.d("ChatApiClient", "POST request: $url")
             retryOnNetworkError {
                 val mediaType = "application/json; charset=utf-8".toMediaType()
                 val requestBody = bodyJson.toRequestBody(mediaType)
@@ -100,15 +94,44 @@ object ChatApiClient {
                     .addHeader("Accept", "application/json")
                     .build()
                 okHttpClient.newCall(request).execute().use { response ->
-                    val code = response.code
-                    val body = response.body?.string().orEmpty()
-                    android.util.Log.d("ChatApiClient", "POST $url -> code $code")
-                    Pair(code, body)
+                    Pair(response.code, response.body?.string().orEmpty())
                 }
             }
         }
 
-    // --- Public API ---
+    private suspend fun patch(path: String, bodyJson: String = ""): Pair<Int, String> =
+        withContext(Dispatchers.IO) {
+            val url = buildUrl(path)
+            retryOnNetworkError {
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val requestBody = bodyJson.toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url(url)
+                    .patch(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .build()
+                okHttpClient.newCall(request).execute().use { response ->
+                    Pair(response.code, response.body?.string().orEmpty())
+                }
+            }
+        }
+
+    private suspend fun delete(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val url = buildUrl(path)
+        retryOnNetworkError {
+            val request = Request.Builder()
+                .url(url)
+                .delete()
+                .addHeader("Accept", "application/json")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                Pair(response.code, response.body?.string().orEmpty())
+            }
+        }
+    }
+
+    // --- Chat APIs ---
 
     suspend fun createConversation(): Result<ConversationDto> = runCatching {
         val (code, body) = post("/chat/conversations")
@@ -116,8 +139,18 @@ object ChatApiClient {
         json.decodeFromString<ConversationDto>(body)
     }
 
-    suspend fun listConversations(): Result<List<ConversationSummaryDto>> = runCatching {
-        val (code, body) = get("/chat/conversations")
+    suspend fun listConversations(
+        limit: Int = 20,
+        cursor: String? = null,
+        search: String? = null,
+        includeArchived: Boolean = false
+    ): Result<List<ConversationSummaryDto>> = runCatching {
+        val params = mutableListOf("limit=$limit")
+        if (cursor != null) params.add("cursor=$cursor")
+        if (!search.isNullOrBlank()) params.add("search=$search")
+        if (includeArchived) params.add("include_archived=true")
+        val path = "/chat/conversations?" + params.joinToString("&")
+        val (code, body) = get(path)
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<ConversationSummaryDto>>(body)
     }
@@ -128,23 +161,175 @@ object ChatApiClient {
         json.decodeFromString<ConversationDetailDto>(body)
     }
 
+    suspend fun getConversationMessages(
+        conversationId: String,
+        limit: Int = 30,
+        beforeTimestamp: String? = null
+    ): Result<List<MessageDto>> = runCatching {
+        val params = mutableListOf("limit=$limit")
+        if (beforeTimestamp != null) params.add("before_timestamp=$beforeTimestamp")
+        val path = "/chat/conversations/$conversationId/messages?" + params.joinToString("&")
+        val (code, body) = get(path)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<MessageDto>>(body)
+    }
+
     suspend fun sendMessage(
         conversationId: String,
         content: String,
-        explanationMode: String
+        explanationMode: String,
+        clientMessageId: String? = null,
+        parentId: String? = null
     ): Result<SendMessageResponseDto> = runCatching {
         val requestBody = json.encodeToString(
-            SendMessageRequestDto(content = content, explanationMode = explanationMode)
+            SendMessageRequestDto(
+                content = content,
+                explanationMode = explanationMode,
+                clientMessageId = clientMessageId,
+                parentId = parentId
+            )
         )
         val (code, body) = post("/chat/conversations/$conversationId/messages", requestBody)
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<SendMessageResponseDto>(body)
     }
 
+    /**
+     * POST Server-Sent Events (SSE) AI generation streaming with cancellation support.
+     * Cancelling this Flow immediately cancels the underlying HTTP call, signaling Stop Generation to backend.
+     */
+    fun streamMessage(
+        conversationId: String,
+        content: String,
+        explanationMode: String,
+        clientMessageId: String? = null,
+        parentId: String? = null
+    ): Flow<StreamEventDto> = callbackFlow {
+        val url = buildUrl("/chat/conversations/$conversationId/messages/stream")
+        val bodyJson = json.encodeToString(
+            SendMessageRequestDto(
+                content = content,
+                explanationMode = explanationMode,
+                clientMessageId = clientMessageId,
+                parentId = parentId
+            )
+        )
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toRequestBody(mediaType))
+            .addHeader("Accept", "text/event-stream")
+            .build()
+
+        val call = okHttpClient.newCall(request)
+
+        try {
+            val response: Response = call.execute()
+            if (!response.isSuccessful) {
+                close(java.io.IOException("HTTP ${response.code}: ${response.body?.string()}"))
+                return@callbackFlow
+            }
+
+            val body = response.body
+            if (body == null) {
+                close(java.io.IOException("Empty response body"))
+                return@callbackFlow
+            }
+
+            val reader = BufferedReader(InputStreamReader(body.byteStream()))
+            var line: String? = reader.readLine()
+            while (line != null) {
+                if (line.startsWith("data: ")) {
+                    val data = line.removePrefix("data: ").trim()
+                    if (data.isNotEmpty()) {
+                        try {
+                            val event = json.decodeFromString<StreamEventDto>(data)
+                            trySend(event)
+                            if (event.type == "done") break
+                        } catch (e: Exception) {
+                            android.util.Log.e("ChatApiClient", "Error parsing SSE event: $data", e)
+                        }
+                    }
+                }
+                line = reader.readLine()
+            }
+            close()
+        } catch (e: Exception) {
+            close(e)
+        }
+
+        awaitClose {
+            call.cancel()
+        }
+    }.flowOn(Dispatchers.IO)
+
+    suspend fun updateConversation(
+        conversationId: String,
+        title: String? = null,
+        isArchived: Boolean? = null,
+        isPinned: Boolean? = null,
+        draftText: String? = null
+    ): Result<Unit> = runCatching {
+        val map = mutableMapOf<String, Any?>()
+        if (title != null) map["title"] = title
+        if (isArchived != null) map["is_archived"] = isArchived
+        if (isPinned != null) map["is_pinned"] = isPinned
+        if (draftText != null) map["draft_text"] = draftText
+        val (code, body) = patch("/chat/conversations/$conversationId", json.encodeToString(map))
+        if (code !in 200..299) error("HTTP $code: $body")
+    }
+
+    suspend fun deleteConversation(conversationId: String): Result<Unit> = runCatching {
+        val (code, body) = delete("/chat/conversations/$conversationId")
+        if (code !in 200..299) error("HTTP $code: $body")
+    }
+
+    suspend fun syncMessages(messages: List<SyncMessageItemDto>): Result<List<String>> = runCatching {
+        val requestBody = json.encodeToString(SyncMessagesRequestDto(messages = messages))
+        val (code, body) = post("/chat/sync", requestBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SyncMessagesResponseDto>(body).syncedIds
+    }
+
+    // --- Long-Term Memory APIs ---
+
+    suspend fun listMemories(): Result<List<MemoryDto>> = runCatching {
+        val (code, body) = get("/memory")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<MemoryListResponseDto>(body).memories
+    }
+
+    suspend fun createMemory(category: String, content: String): Result<MemoryDto> = runCatching {
+        val requestBody = json.encodeToString(MemoryCreateRequestDto(category = category, content = content))
+        val (code, body) = post("/memory", requestBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<MemoryDto>(body)
+    }
+
+    suspend fun deleteMemory(memoryId: String): Result<Unit> = runCatching {
+        val (code, body) = delete("/memory/$memoryId")
+        if (code !in 200..299) error("HTTP $code: $body")
+    }
+
+    suspend fun clearAllMemories(): Result<Unit> = runCatching {
+        val (code, body) = delete("/memory")
+        if (code !in 200..299) error("HTTP $code: $body")
+    }
+
     // --- Courses API ---
 
-    suspend fun getCourses(featured: Boolean? = null): Result<List<CourseDto>> = runCatching {
-        val path = if (featured == true) "/courses?featured=true" else "/courses"
+    suspend fun getCourses(
+        featured: Boolean? = null,
+        category: String? = null,
+        limit: Int? = null,
+        offset: Int = 0
+    ): Result<List<CourseDto>> = runCatching {
+        val params = mutableListOf<String>()
+        if (featured == true) params.add("featured=true")
+        if (category != null) params.add("category=$category")
+        if (limit != null) params.add("limit=$limit")
+        if (offset > 0) params.add("offset=$offset")
+        val path = if (params.isEmpty()) "/courses" else "/courses?" + params.joinToString("&")
         val (code, body) = get(path)
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<CourseDto>>(body)
@@ -158,8 +343,17 @@ object ChatApiClient {
 
     // --- Roadmaps API ---
 
-    suspend fun getRoadmaps(): Result<List<RoadmapDto>> = runCatching {
-        val (code, body) = get("/roadmaps")
+    suspend fun getRoadmaps(
+        category: String? = null,
+        limit: Int? = null,
+        offset: Int = 0
+    ): Result<List<RoadmapDto>> = runCatching {
+        val params = mutableListOf<String>()
+        if (category != null) params.add("category=$category")
+        if (limit != null) params.add("limit=$limit")
+        if (offset > 0) params.add("offset=$offset")
+        val path = if (params.isEmpty()) "/roadmaps" else "/roadmaps?" + params.joinToString("&")
+        val (code, body) = get(path)
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<RoadmapDto>>(body)
     }

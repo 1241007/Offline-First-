@@ -6,6 +6,7 @@ import com.offline_First.domain.model.OfflineAIStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Ignore
 import org.junit.Test
 
 /**
@@ -18,6 +19,7 @@ import org.junit.Test
  * 
  * **Validates: Requirements 1.3, 1.4, 1.5 from bugfix.md**
  */
+@Ignore("Exploratory bug condition test that requires live network download and llama.cpp runtime")
 class OfflineModeBugConditionTest {
 
     /**

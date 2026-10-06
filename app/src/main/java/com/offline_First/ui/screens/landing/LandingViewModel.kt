@@ -15,6 +15,7 @@ import com.offline_First.domain.model.UpcomingExam
 import com.offline_First.domain.model.UserProfile
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +32,8 @@ data class LandingUiState(
     val studyFocus: StudyFocusItem? = null,
     val featuredCourses: List<Course> = emptyList(),
     val exploreCourses: List<Course> = emptyList(),
+    val isLoadingMoreCourses: Boolean = false,
+    val hasMoreCourses: Boolean = true,
     val errorMessage: String? = null
 )
 
@@ -54,12 +57,21 @@ class LandingViewModel(
 
     private fun loadInitialData() {
         viewModelScope.launch(coroutineContext) {
-            val courses = courseRepository.getCourses()
-            val featured = courseRepository.getFeaturedCourses()
-            val subjects = learningRepository.getSubjects()
-            val continueLearning = learningRepository.getContinueLearning()
-            val exams = learningRepository.getUpcomingExams()
-            val studyFocus = learningRepository.getStudyFocus()
+            // Parallel execution: fetch all landing sections concurrently
+            val coursesDeferred = async { courseRepository.getCourses(limit = 10, offset = 0) }
+            val featuredDeferred = async { courseRepository.getFeaturedCourses() }
+            val subjectsDeferred = async { learningRepository.getSubjects() }
+            val continueDeferred = async { learningRepository.getContinueLearning() }
+            val examsDeferred = async { learningRepository.getUpcomingExams() }
+            val studyFocusDeferred = async { learningRepository.getStudyFocus() }
+
+            val courses = coursesDeferred.await()
+            val featured = featuredDeferred.await()
+            val subjects = subjectsDeferred.await()
+            val continueLearning = continueDeferred.await()
+            val exams = examsDeferred.await()
+            val studyFocus = studyFocusDeferred.await()
+
             val errors = listOf(
                 courses.exceptionOrNull(),
                 featured.exceptionOrNull(),
@@ -68,6 +80,9 @@ class LandingViewModel(
                 exams.exceptionOrNull(),
                 studyFocus.exceptionOrNull()
             )
+
+            val courseList = courses.getOrNull().orEmpty()
+
             loadedData = LandingUiState(
                 isLoading = false,
                 continueLearning = continueLearning.getOrNull(),
@@ -75,11 +90,37 @@ class LandingViewModel(
                 upcomingExams = exams.getOrNull().orEmpty(),
                 studyFocus = studyFocus.getOrNull(),
                 featuredCourses = featured.getOrNull().orEmpty(),
-                exploreCourses = courses.getOrNull().orEmpty(),
+                exploreCourses = courseList,
+                hasMoreCourses = courseList.size >= 10,
                 errorMessage = errors.firstNotNullOfOrNull { it?.localizedMessage }
                     ?: if (errors.any { it != null }) "Unable to load learning data." else null
             )
             publishState()
+        }
+    }
+
+    fun loadMoreCourses() {
+        val currentState = _uiState.value
+        if (currentState.isLoadingMoreCourses || !currentState.hasMoreCourses) return
+
+        viewModelScope.launch(coroutineContext) {
+            _uiState.value = _uiState.value.copy(isLoadingMoreCourses = true)
+            val currentCount = _uiState.value.exploreCourses.size
+            val nextBatch = courseRepository.getCourses(limit = 10, offset = currentCount)
+            nextBatch.fold(
+                onSuccess = { newCourses ->
+                    val combined = (_uiState.value.exploreCourses + newCourses).distinctBy { it.id }
+                    loadedData = loadedData.copy(
+                        exploreCourses = combined,
+                        hasMoreCourses = newCourses.size >= 10,
+                        isLoadingMoreCourses = false
+                    )
+                    publishState()
+                },
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(isLoadingMoreCourses = false)
+                }
+            )
         }
     }
 
@@ -102,7 +143,13 @@ class LandingViewModel(
         )
     }
 
+    fun retry() {
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        loadInitialData()
+    }
+
     fun clearError() {
+        loadedData = loadedData.copy(errorMessage = null)
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 }

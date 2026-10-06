@@ -14,17 +14,21 @@ router = APIRouter(prefix="/api/v1", tags=["courses"])
 async def get_courses(
     featured: Optional[bool] = Query(None, description="Filter for featured courses"),
     category: Optional[str] = Query(None, description="Filter by category slug"),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Page limit"),
+    offset: int = Query(0, ge=0, description="Page offset"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get all active courses.
+    Get active courses with optional filtering and pagination.
     
     Optionally filter by:
     - featured: Show only featured courses
     - category: Filter by category slug
+    - limit: Page size (1-100)
+    - offset: Number of records to skip
     """
     service = CourseService(db)
-    return await service.get_courses(featured=featured, category=category)
+    return await service.get_courses(featured=featured, category=category, limit=limit, offset=offset)
 
 
 @router.get("/courses/{course_id}", response_model=CourseDetailResponse)

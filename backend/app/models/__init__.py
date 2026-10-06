@@ -5,6 +5,7 @@ from .roadmap import Roadmap, RoadmapItem
 from .progress import UserCourseProgress, UserLessonProgress
 from .profile import UserProfile
 from .user import User, RefreshToken, PasswordResetToken
+from .memory import UserMemory
 
 __all__ = [
     "Conversation",
@@ -21,4 +22,5 @@ __all__ = [
     "User",
     "RefreshToken",
     "PasswordResetToken",
+    "UserMemory",
 ]

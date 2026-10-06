@@ -17,6 +17,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -400,6 +401,40 @@ class LocalAIRepository(
         Result.success(assistantMessage)
     }
 
+    suspend fun generateOfflineInference(
+        systemPrompt: String,
+        history: List<ChatMessage>,
+        prompt: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val profile = selectModel()
+        val file = modelFile(profile)
+        if (!isValidModelFile(file, profile)) {
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            return@withContext Result.failure(
+                IllegalStateException("Offline AI model is missing or invalid. Please download it in AI Settings.")
+            )
+        }
+        val engine = inferenceEngine ?: return@withContext Result.failure(
+            IllegalStateException("The Android llama.cpp runtime is unavailable on this device.")
+        )
+        try {
+            engine.loadModel(file)
+            val fullPrompt = buildConversationPrompt(history, prompt)
+            val response = engine.generate(systemPrompt, fullPrompt)
+            Result.success(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun stopOfflineInference(): Result<Unit> = withContext(Dispatchers.IO) {
+        inferenceEngine?.unload()
+        Result.success(Unit)
+    }
+
     private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildString {
         history.takeLast(12).forEach { message ->
             append(if (message.fromUser) "User" else "Assistant")
@@ -410,4 +445,62 @@ class LocalAIRepository(
         append("User: ")
         append(prompt)
     }
+
+    override fun streamMessage(
+        prompt: String,
+        parentId: String?,
+        clientMessageId: String?
+    ): Flow<String> = kotlinx.coroutines.flow.flow {
+        val result = sendMessage(prompt)
+        if (result.isSuccess) {
+            val text = result.getOrThrow().text
+            val words = text.split(" ")
+            for ((index, word) in words.withIndex()) {
+                emit(if (index == 0) word else " $word")
+                kotlinx.coroutines.delay(20)
+            }
+        } else {
+            throw result.exceptionOrNull() ?: RuntimeException("Offline generation failed")
+        }
+    }
+
+    override suspend fun stopGeneration(): Result<Unit> = Result.success(Unit)
+
+    override fun regenerateLastResponse(): Flow<String> = kotlinx.coroutines.flow.flow {
+        val current = currentSession.value ?: return@flow
+        val lastUserMsg = current.messages.lastOrNull { it.fromUser } ?: return@flow
+        streamMessage(lastUserMsg.text, lastUserMsg.parentId, null).collect { emit(it) }
+    }
+
+    override fun editMessageAndRegenerate(messageId: String, newContent: String): Flow<String> = kotlinx.coroutines.flow.flow {
+        streamMessage(newContent, null, null).collect { emit(it) }
+    }
+
+    override suspend fun saveDraft(sessionId: String, draftText: String): Result<Unit> {
+        currentSession.value = currentSession.value?.copy(draftText = draftText)
+        return Result.success(Unit)
+    }
+
+    override suspend fun togglePin(sessionId: String, isPinned: Boolean): Result<Unit> {
+        sessions.value = sessions.value.map { if (it.id == sessionId) it.copy(isPinned = isPinned) else it }
+        return Result.success(Unit)
+    }
+
+    override suspend fun toggleArchive(sessionId: String, isArchived: Boolean): Result<Unit> {
+        sessions.value = sessions.value.map { if (it.id == sessionId) it.copy(isArchived = isArchived) else it }
+        return Result.success(Unit)
+    }
+
+    override suspend fun loadMoreMessages(sessionId: String, beforeTimestamp: Long?, limit: Int): Result<List<ChatMessage>> =
+        Result.success(currentSession.value?.messages ?: emptyList())
+
+    override suspend fun loadMoreConversations(beforeCursor: Long?, limit: Int): Result<List<ChatSession>> =
+        Result.success(sessions.value)
+
+    override suspend fun getMemories(): Result<List<com.offline_First.domain.model.UserMemoryItem>> =
+        Result.success(emptyList())
+
+    override suspend fun deleteMemory(memoryId: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncOfflineData(): Result<Unit> = Result.success(Unit)
 }
