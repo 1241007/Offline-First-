@@ -4,6 +4,9 @@ project(edunova_llama LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Support 16 KB page alignment for Android 15+ / 16 KB devices
+add_link_options("-Wl,-z,max-page-size=16384")
+
 # =============================================================================
 # Prebuilt llama.cpp libraries
 #

@@ -46,6 +46,12 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         onCreate(db)
     }
 
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        db.execSQL("DROP TABLE IF EXISTS local_messages")
+        db.execSQL("DROP TABLE IF EXISTS local_conversations")
+        onCreate(db)
+    }
+
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
