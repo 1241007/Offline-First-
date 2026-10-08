@@ -15,7 +15,11 @@ _DEV_PLACEHOLDER = "edunova-dev-secret-key-32bytes-long-change-in-production!"
 class Settings(BaseSettings):
     environment: str = "development"
     database_url: str
-    gemini_api_key: str
+    openrouter_api_key: str = ""
+    openrouter_model: str = "google/gemini-3.8-flash"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_max_tokens: int = 1024
+    gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.5-flash"
     chat_context_messages: int = 12
     gemini_max_output_tokens: int = 1024

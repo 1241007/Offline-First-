@@ -6,7 +6,8 @@ from typing import Optional, AsyncIterator
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.chat_repository import ChatRepository
-from app.services.gemini_service import gemini_service
+from app.services.openrouter_service import openrouter_service
+gemini_service = openrouter_service  # Backwards compatibility alias
 from app.services.memory_service import MemoryService
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -157,13 +158,13 @@ class ChatService:
             gen_kwargs["memory_context"] = memory_context
 
         try:
-            ai_text = await gemini_service.generate_response(
+            ai_text = await openrouter_service.generate_response(
                 history=history,
                 explanation_mode=explanation_mode,
                 **gen_kwargs
             )
         except Exception as exc:
-            logger.error(f"Gemini call failed for conv={conversation_id}: {type(exc).__name__}")
+            logger.error(f"OpenRouter call failed for conv={conversation_id}: {type(exc).__name__}")
             raise HTTPException(
                 status_code=502,
                 detail="AI service temporarily unavailable. Please try again.",
@@ -246,7 +247,7 @@ class ChatService:
 
         accumulated_chunks = []
         try:
-            async for token in gemini_service.generate_response_stream(
+            async for token in openrouter_service.generate_response_stream(
                 history=history,
                 explanation_mode=explanation_mode,
                 memory_context=memory_context,

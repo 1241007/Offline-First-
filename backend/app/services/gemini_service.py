@@ -206,5 +206,7 @@ class GeminiService:
         raise last_error or RuntimeError("All Gemini models exhausted")
 
 
-# Singleton
-gemini_service = GeminiService()
+from app.services.openrouter_service import openrouter_service
+
+# Singleton: OpenRouter replaces Gemini provider
+gemini_service = openrouter_service

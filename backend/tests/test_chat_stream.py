@@ -9,14 +9,14 @@ async def test_stream_message_sse(client: AsyncClient):
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["id"]
 
-    # Mock generator for Gemini streaming
+    # Mock generator for OpenRouter streaming
     async def mock_stream_tokens(*args, **kwargs):
         yield "Hello"
         yield " "
         yield "world!"
 
     with patch(
-        "app.services.chat_service.gemini_service.generate_response_stream",
+        "app.services.chat_service.openrouter_service.generate_response_stream",
         side_effect=mock_stream_tokens
     ):
         response = await client.post(
@@ -48,4 +48,40 @@ async def test_stream_message_sse(client: AsyncClient):
     assert messages[0]["content"] == "Say hello world"
     assert messages[0]["id"] == "test-client-msg-123"  # stable client ID
     assert messages[1]["content"] == "Hello world!"
+    assert messages[1]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_stream_message_interrupted_persists_partial(client: AsyncClient):
+    """Verifies Stop Generation saves partial output."""
+    create_resp = await client.post("/api/v1/chat/conversations")
+    assert create_resp.status_code == 201
+    conv_id = create_resp.json()["id"]
+
+    async def mock_failing_stream(*args, **kwargs):
+        yield "Partial"
+        yield " response"
+        raise RuntimeError("Client aborted / Stop generation")
+
+    with patch(
+        "app.services.chat_service.openrouter_service.generate_response_stream",
+        side_effect=mock_failing_stream
+    ):
+        response = await client.post(
+            f"/api/v1/chat/conversations/{conv_id}/messages/stream",
+            json={
+                "content": "Tell me a story",
+                "explanation_mode": "general",
+            }
+        )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "error" in body
+
+    # Check that partial content was saved to DB in finally block
+    conv_resp = await client.get(f"/api/v1/chat/conversations/{conv_id}")
+    messages = conv_resp.json()["messages"]
+    assert len(messages) == 2
+    assert messages[1]["content"] == "Partial response"
     assert messages[1]["role"] == "assistant"
