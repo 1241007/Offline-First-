@@ -56,12 +56,19 @@ class MyLearningViewModel(
                 errorMessage = null
             )
             val result = repository.getInProgressCourses()
+            val errorMsg = result.exceptionOrNull()?.let { err ->
+                when (err) {
+                    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                        "Unable to connect to server. Please check your internet connection."
+                    else -> err.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to load courses."
+                }
+            }
             _uiState.value = _uiState.value.copy(
                 inProgressCourses = result.fold(
                     onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
-                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
+                    onFailure = { UiState.Error(errorMsg ?: "Unable to load courses.") }
                 ),
-                errorMessage = result.exceptionOrNull()?.localizedMessage
+                errorMessage = errorMsg
             )
         }
     }
@@ -73,13 +80,20 @@ class MyLearningViewModel(
                 errorMessage = null
             )
             val result = repository.getCompletedCourses()
+            val errorMsg = result.exceptionOrNull()?.let { err ->
+                when (err) {
+                    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                        "Unable to connect to server. Please check your internet connection."
+                    else -> err.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to load courses."
+                }
+            }
             _uiState.value = _uiState.value.copy(
                 completedCourses = result.fold(
                     onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
-                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
+                    onFailure = { UiState.Error(errorMsg ?: "Unable to load courses.") }
                 ),
                 completedLoaded = true,
-                errorMessage = result.exceptionOrNull()?.localizedMessage
+                errorMessage = errorMsg
             )
         }
     }

@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Online LLM Provider communicating with FastAPI & Google Gemini API via SSE streaming.
+ * Online LLM Provider communicating with FastAPI & OpenRouter via SSE streaming.
  */
 class OnlineGeminiProvider : LLMProvider {
-    override val name: String = "Gemini"
+    override val name: String = "Online"
     private var activeJob: Job? = null
 
     override fun streamInference(

@@ -1580,11 +1580,19 @@ private fun FormattedMarkdownChatText(text: String, isFromUser: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEachIndexed { index, part ->
             if (index % 2 == 1) {
-                // Code block
-                val cleanedCode = part.trim().removePrefix("kotlin").removePrefix("java").trim()
+                // Code block: strip any optional language tag on first line
+                val rawTrimmed = part.trim()
+                val lines = rawTrimmed.lines()
+                val firstLine = lines.firstOrNull()?.trim().orEmpty()
+                val cleanedCode = if (lines.size > 1 && firstLine.isNotEmpty() && firstLine.all { it.isLetterOrDigit() || it in "+#-_" }) {
+                    lines.drop(1).joinToString("\n").trim()
+                } else {
+                    rawTrimmed
+                }
                 Surface(
                     color = Color(0xFF1E1E24),
                     shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF2D3748)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(

@@ -26,8 +26,8 @@ private val json = Json {
 
 object ChatApiClient {
 
-    private const val MAX_RETRIES = 5
-    private const val RETRY_DELAY_MS = 3000L
+    private const val MAX_RETRIES = 2
+    private const val RETRY_DELAY_MS = 1000L
 
     private val defaultClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -281,6 +281,7 @@ object ChatApiClient {
                 return@callbackFlow
             }
 
+            var hasLoggedFirstToken = false
             val reader = BufferedReader(InputStreamReader(body.byteStream()))
             var line: String? = reader.readLine()
             while (line != null) {
@@ -294,8 +295,9 @@ object ChatApiClient {
                                 close(java.io.IOException(event.detail ?: "Streaming error from AI service"))
                                 return@callbackFlow
                             }
-                            if (event.type == "token") {
-                                android.util.Log.i("ChatApiClient", "ONLINE_CHAT: token_received")
+                            if (event.type == "token" && !hasLoggedFirstToken) {
+                                hasLoggedFirstToken = true
+                                android.util.Log.i("ChatApiClient", "ONLINE_CHAT: first_token_received")
                             }
                             trySend(event)
                             if (event.type == "done") {

@@ -50,7 +50,14 @@ object AppContainer {
             authenticatedApiClient = authenticatedApiClient
         )
         val remoteLearningRepo = com.offline_First.data.remote.RemoteLearningRepository(
+            context = appContext,
             authenticatedApiClient = authenticatedApiClient
+        )
+        val onlineCourseRepo = com.offline_First.data.remote.OnlineCourseRepository(
+            context = appContext
+        )
+        val onlineRoadmapRepo = com.offline_First.data.remote.OnlineRoadmapRepository(
+            context = appContext
         )
 
         _tokenStorage = tokenStorage
@@ -60,6 +67,8 @@ object AppContainer {
         _authRepository = remoteAuthRepo
         _profileRepository = remoteProfileRepo
         _learningRepository = remoteLearningRepo
+        _courseRepository = onlineCourseRepo
+        _roadmapRepository = onlineRoadmapRepo
 
         val localRepository = LocalAIRepository(appContext)
         val onlineRepository = OnlineAIRepository(
@@ -88,10 +97,14 @@ object AppContainer {
         get() = _authRepository ?: defaultRepositories
 
     val aiRepository get() = aiRepoOverride ?: defaultRepositories
-    val courseRepository = OnlineCourseRepository()
+    private var _courseRepository: com.offline_First.data.repository.CourseRepository? = null
+    val courseRepository: com.offline_First.data.repository.CourseRepository
+        get() = _courseRepository ?: OnlineCourseRepository()
     val learningRepository: com.offline_First.data.repository.LearningRepository
         get() = _learningRepository ?: defaultRepositories
     val profileRepository: com.offline_First.data.repository.ProfileRepository
         get() = _profileRepository ?: defaultRepositories
-    val roadmapRepository = OnlineRoadmapRepository()
+    private var _roadmapRepository: com.offline_First.data.repository.RoadmapRepository? = null
+    val roadmapRepository: com.offline_First.data.repository.RoadmapRepository
+        get() = _roadmapRepository ?: OnlineRoadmapRepository()
 }

@@ -73,6 +73,14 @@ class RemoteProfileRepository(
     }
 
     override suspend fun getUserProfile(): Result<UserProfile?> = withContext(Dispatchers.IO) {
+        // If there's a pending offline profile update and we're online, sync it first
+        if (isPendingSync()) {
+            val pendingProfile = _profileState.value ?: loadCachedProfile()
+            if (pendingProfile != null) {
+                runCatching { pushProfileToRemote(pendingProfile) }
+            }
+        }
+
         runCatching {
             val request = Request.Builder()
                 .url("$baseUrl/api/v1/profile")
@@ -100,54 +108,87 @@ class RemoteProfileRepository(
                 )
 
                 saveCachedProfile(domainProfile)
+                markPendingSync(false)
                 _profileState.value = domainProfile
                 domainProfile
+            }
+        }.recoverCatching { error ->
+            val cached = _profileState.value ?: loadCachedProfile()
+            if (cached != null) {
+                cached
+            } else {
+                throw error
             }
         }
     }
 
-    override suspend fun updateUserProfile(profile: UserProfile): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val dto = ProfileUpdateRequestDto(
-                fullName = profile.fullName,
-                email = profile.email,
-                mobile = profile.mobile.ifBlank { null },
-                interests = profile.interests.ifBlank { null },
-                level = profile.level,
-                educationMode = if (profile.educationMode == EducationMode.SCHOOL) "school" else "general"
-            )
+    private fun pushProfileToRemote(profile: UserProfile): UserProfile {
+        val dto = ProfileUpdateRequestDto(
+            fullName = profile.fullName,
+            email = profile.email,
+            mobile = profile.mobile.ifBlank { null },
+            interests = profile.interests.ifBlank { null },
+            level = profile.level,
+            educationMode = if (profile.educationMode == EducationMode.SCHOOL) "school" else "general"
+        )
 
-            val payload = json.encodeToString(ProfileUpdateRequestDto.serializer(), dto)
-            val request = Request.Builder()
-                .url("$baseUrl/api/v1/profile")
-                .put(payload.toRequestBody("application/json".toMediaType()))
-                .build()
+        val payload = json.encodeToString(ProfileUpdateRequestDto.serializer(), dto)
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/profile")
+            .put(payload.toRequestBody("application/json".toMediaType()))
+            .build()
 
-            authenticatedApiClient.okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errBody = response.body?.string()
-                    throw IOException("HTTP ${response.code}: ${errBody ?: "Failed to update profile"}")
+        return authenticatedApiClient.okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errBody = response.body?.string()
+                throw IOException("HTTP ${response.code}: ${errBody ?: "Failed to update profile"}")
+            }
+            val body = response.body?.string() ?: ""
+            val updatedDto = json.decodeFromString(ProfileResponseDto.serializer(), body)
+
+            val updatedProfile = UserProfile(
+                fullName = updatedDto.fullName,
+                email = updatedDto.email,
+                mobile = updatedDto.mobile.orEmpty(),
+                interests = updatedDto.interests.orEmpty(),
+                level = updatedDto.level,
+                educationMode = if (updatedDto.educationMode.equals("school", ignoreCase = true)) {
+                    EducationMode.SCHOOL
+                } else {
+                    EducationMode.GENERAL
                 }
-                val body = response.body?.string() ?: ""
-                val updatedDto = json.decodeFromString(ProfileResponseDto.serializer(), body)
+            )
+            saveCachedProfile(updatedProfile)
+            markPendingSync(false)
+            _profileState.value = updatedProfile
+            updatedProfile
+        }
+    }
 
-                val updatedProfile = UserProfile(
-                    fullName = updatedDto.fullName,
-                    email = updatedDto.email,
-                    mobile = updatedDto.mobile.orEmpty(),
-                    interests = updatedDto.interests.orEmpty(),
-                    level = updatedDto.level,
-                    educationMode = if (updatedDto.educationMode.equals("school", ignoreCase = true)) {
-                        EducationMode.SCHOOL
-                    } else {
-                        EducationMode.GENERAL
-                    }
-                )
+    override suspend fun updateUserProfile(profile: UserProfile): Result<Unit> = withContext(Dispatchers.IO) {
+        // Optimistically update local cache and state immediately (offline-first)
+        saveCachedProfile(profile)
+        _profileState.value = profile
 
-                saveCachedProfile(updatedProfile)
-                _profileState.value = updatedProfile
+        runCatching {
+            pushProfileToRemote(profile)
+            Unit
+        }.recoverCatching { error ->
+            if (error is IOException) {
+                // Preserved in local SQLite/prefs; mark pending sync for network reconnection
+                markPendingSync(true)
+                Unit
+            } else {
+                throw error
             }
         }
+    }
+
+    private fun isPendingSync(): Boolean =
+        prefs?.getBoolean(KEY_PENDING_SYNC, false) ?: false
+
+    private fun markPendingSync(pending: Boolean) {
+        prefs?.edit()?.putBoolean(KEY_PENDING_SYNC, pending)?.apply()
     }
 
     companion object {
@@ -158,5 +199,6 @@ class RemoteProfileRepository(
         private const val KEY_INTERESTS = "profile_interests"
         private const val KEY_LEVEL = "profile_level"
         private const val KEY_MODE = "profile_education_mode"
+        private const val KEY_PENDING_SYNC = "profile_pending_sync"
     }
 }

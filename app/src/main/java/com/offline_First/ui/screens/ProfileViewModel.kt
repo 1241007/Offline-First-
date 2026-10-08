@@ -49,9 +49,14 @@ class ProfileViewModel(
                     )
                 },
                 onFailure = { error ->
+                    val userMsg = when (error) {
+                        is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                            "Unable to connect to server. Please check your internet connection."
+                        else -> error.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to save profile."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
-                        errorMessage = error.localizedMessage ?: "Unable to save profile."
+                        errorMessage = userMsg
                     )
                 }
             )
@@ -78,9 +83,14 @@ class ProfileViewModel(
                     _uiState.value = ProfileUiState(profile = profile, isLoading = false)
                 },
                 onFailure = { error ->
+                    val userMsg = when (error) {
+                        is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                            "Unable to connect to server. Please check your internet connection."
+                        else -> error.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to load profile."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = error.localizedMessage ?: "Unable to load profile."
+                        errorMessage = userMsg
                     )
                 }
             )

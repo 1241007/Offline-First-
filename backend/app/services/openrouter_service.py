@@ -94,11 +94,28 @@ class OpenRouterService:
             or "https://openrouter.ai/api/v1"
         ).rstrip("/")
         self._max_tokens = getattr(settings, "openrouter_max_tokens", 1024)
+        self._client: Optional[httpx.AsyncClient] = None
 
         # Do NOT log the API key
         logger.info(
             f"OpenRouterService initialized with model: {self._model_name}, base_url: {self._base_url}"
         )
+
+    async def get_client(self) -> httpx.AsyncClient:
+        """Returns a pooled, persistent AsyncClient with configured connection limits."""
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=15.0, read=90.0, write=30.0, pool=15.0),
+                limits=limits,
+            )
+        return self._client
+
+    async def close(self):
+        """Cleanly releases pooled HTTP connections upon application shutdown."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _get_headers(self) -> dict[str, str]:
         # Never expose API key in logs
@@ -164,12 +181,12 @@ class OpenRouterService:
 
             for attempt in range(2):
                 try:
-                    async with httpx.AsyncClient(timeout=60.0) as client:
-                        response = await client.post(
-                            f"{self._base_url}/chat/completions",
-                            headers=self._get_headers(),
-                            json=payload,
-                        )
+                    client = await self.get_client()
+                    response = await client.post(
+                        f"{self._base_url}/chat/completions",
+                        headers=self._get_headers(),
+                        json=payload,
+                    )
 
                     # Fatal auth errors: do not retry or cycle models
                     if response.status_code in (401, 403):
@@ -267,13 +284,13 @@ class OpenRouterService:
             for attempt in range(2):
                 try:
                     yielded_any = False
-                    async with httpx.AsyncClient(timeout=90.0) as client:
-                        async with client.stream(
-                            "POST",
-                            f"{self._base_url}/chat/completions",
-                            headers=self._get_headers(),
-                            json=payload,
-                        ) as response:
+                    client = await self.get_client()
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/chat/completions",
+                        headers=self._get_headers(),
+                        json=payload,
+                    ) as response:
                             if response.status_code in (401, 403):
                                 logger.error(
                                     f"OpenRouter stream authentication error HTTP {response.status_code}"
