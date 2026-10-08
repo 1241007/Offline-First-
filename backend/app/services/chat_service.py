@@ -70,6 +70,18 @@ class ChatService:
             raise HTTPException(status_code=403, detail="Forbidden: conversation does not belong to user")
         return conv
 
+    async def get_or_create_conversation(
+        self, conversation_id: str, user_id: str, title: str = "New Conversation"
+    ) -> Conversation:
+        conv = await self.repo.get_conversation(conversation_id)
+        if not conv:
+            return await self.repo.create_conversation(
+                user_id=user_id, title=title, conversation_id=conversation_id
+            )
+        if conv.user_id is not None and conv.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden: conversation does not belong to user")
+        return conv
+
     async def get_messages_paginated(
         self,
         conversation_id: str,
@@ -191,7 +203,7 @@ class ChatService:
         Server-Sent Events (SSE) generator for streaming AI responses.
         Handles client disconnection / Stop generation gracefully by saving partial text.
         """
-        conv = await self.get_conversation(conversation_id, user_id)
+        conv = await self.get_or_create_conversation(conversation_id, user_id)
 
         # Extract memories
         await self.memory_service.extract_and_save_memories(

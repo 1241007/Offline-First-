@@ -262,7 +262,13 @@ object ChatApiClient {
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
                 android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed HTTP ${response.code}")
-                close(java.io.IOException("HTTP ${response.code}: $errorBody"))
+                val errorMsg = when (response.code) {
+                    401 -> "HTTP 401: Authentication required. Please log in to your account."
+                    403 -> "HTTP 403: Access denied. Please check your account permissions."
+                    502 -> "HTTP 502: AI service temporarily unavailable. Please try again."
+                    else -> "HTTP ${response.code}: $errorBody"
+                }
+                close(java.io.IOException(errorMsg))
                 return@callbackFlow
             }
 
@@ -287,6 +293,9 @@ object ChatApiClient {
                                 android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed ${event.detail}")
                                 close(java.io.IOException(event.detail ?: "Streaming error from AI service"))
                                 return@callbackFlow
+                            }
+                            if (event.type == "token") {
+                                android.util.Log.i("ChatApiClient", "ONLINE_CHAT: token_received")
                             }
                             trySend(event)
                             if (event.type == "done") {

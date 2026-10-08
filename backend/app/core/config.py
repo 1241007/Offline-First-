@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str
     gemini_api_key: str
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.5-flash"
     chat_context_messages: int = 12
     gemini_max_output_tokens: int = 1024
     db_pool_size: int = 5
