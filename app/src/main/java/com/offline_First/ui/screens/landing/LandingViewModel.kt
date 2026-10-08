@@ -92,8 +92,17 @@ class LandingViewModel(
                 featuredCourses = featured.getOrNull().orEmpty(),
                 exploreCourses = courseList,
                 hasMoreCourses = courseList.size >= 10,
-                errorMessage = errors.firstNotNullOfOrNull { it?.localizedMessage }
-                    ?: if (errors.any { it != null }) "Unable to load learning data." else null
+                errorMessage = run {
+                    val raw = errors.firstNotNullOfOrNull { it?.localizedMessage }
+                    when {
+                        raw == null -> if (errors.any { it != null }) "Unable to load learning data." else null
+                        raw.contains("not connected") -> raw
+                        errors.any { it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketTimeoutException } ->
+                            "Unable to connect to server. Please check your internet connection."
+                        raw.isNotBlank() -> raw
+                        else -> "Unable to load learning data."
+                    }
+                }
             )
             publishState()
         }

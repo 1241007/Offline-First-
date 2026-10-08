@@ -214,32 +214,70 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         return session.copy(messages = messages)
     }
 
-    fun updateConversationDraft(conversationId: String, userId: String, draftText: String) {
-        val values = ContentValues().apply { put("draft_text", draftText) }
-        writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(conversationId, userId))
-    }
-
-    fun updateConversationTitle(conversationId: String, userId: String, newTitle: String) {
+    fun updateConversationDraft(conversationId: String, userId: String, draftText: String, syncStatus: String? = null) {
         val values = ContentValues().apply {
-            put("title", newTitle)
-            put("updated_at", System.currentTimeMillis())
+            put("draft_text", draftText)
+            if (syncStatus != null) put("sync_status", syncStatus)
         }
         writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(conversationId, userId))
     }
 
-    fun toggleArchive(conversationId: String, userId: String, isArchived: Boolean) {
-        val values = ContentValues().apply { put("is_archived", if (isArchived) 1 else 0) }
+    fun updateConversationTitle(conversationId: String, userId: String, newTitle: String, syncStatus: String? = null) {
+        val values = ContentValues().apply {
+            put("title", newTitle)
+            put("updated_at", System.currentTimeMillis())
+            if (syncStatus != null) put("sync_status", syncStatus)
+        }
         writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(conversationId, userId))
     }
 
-    fun togglePin(conversationId: String, userId: String, isPinned: Boolean) {
-        val values = ContentValues().apply { put("is_pinned", if (isPinned) 1 else 0) }
+    fun toggleArchive(conversationId: String, userId: String, isArchived: Boolean, syncStatus: String? = null) {
+        val values = ContentValues().apply {
+            put("is_archived", if (isArchived) 1 else 0)
+            if (syncStatus != null) put("sync_status", syncStatus)
+        }
+        writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(conversationId, userId))
+    }
+
+    fun togglePin(conversationId: String, userId: String, isPinned: Boolean, syncStatus: String? = null) {
+        val values = ContentValues().apply {
+            put("is_pinned", if (isPinned) 1 else 0)
+            if (syncStatus != null) put("sync_status", syncStatus)
+        }
         writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(conversationId, userId))
     }
 
     fun deleteConversation(conversationId: String, userId: String) {
         writableDatabase.delete("local_conversations", "id = ? AND user_id = ?", arrayOf(conversationId, userId))
         writableDatabase.delete("local_messages", "conversation_id = ? AND user_id = ?", arrayOf(conversationId, userId))
+    }
+
+    fun getUnsyncedConversations(userId: String): List<ChatSession> {
+        val result = mutableListOf<ChatSession>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT id, title, updated_at, is_archived, is_pinned, draft_text FROM local_conversations WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    ChatSession(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        lastUpdated = it.getLong(2),
+                        isArchived = it.getInt(3) == 1,
+                        isPinned = it.getInt(4) == 1,
+                        draftText = it.getString(5).orEmpty()
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    fun markConversationSynced(id: String, userId: String) {
+        val values = ContentValues().apply { put("sync_status", "synced") }
+        writableDatabase.update("local_conversations", values, "id = ? AND user_id = ?", arrayOf(id, userId))
     }
 
     // --- Message operations (Strictly scoped by user_id) ---

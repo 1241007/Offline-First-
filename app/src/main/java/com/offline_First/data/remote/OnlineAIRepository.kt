@@ -117,7 +117,7 @@ class OnlineAIRepository(
                 val localId = UUID.randomUUID().toString()
                 val now = System.currentTimeMillis()
                 val session = ChatSession(id = localId, title = "New Conversation", lastUpdated = now)
-                cacheDb.upsertConversation(localId, currentUserId, "New Conversation", now, now)
+                cacheDb.upsertConversation(localId, currentUserId, "New Conversation", now, now, syncStatus = "pending_sync")
                 _sessionsFlow.value = listOf(session) + _sessionsFlow.value
                 _currentSessionFlow.value = session
                 _errorFlow.value = "Could not connect to server. Working offline."
@@ -182,14 +182,18 @@ class OnlineAIRepository(
     }
 
     override suspend fun renameChat(sessionId: String, newTitle: String): Result<Unit> = withContext(Dispatchers.IO) {
-        cacheDb.updateConversationTitle(sessionId, currentUserId, newTitle)
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        val syncStatus = if (isOffline) "pending_sync" else "synced"
+        cacheDb.updateConversationTitle(sessionId, currentUserId, newTitle, syncStatus)
         _sessionsFlow.value = _sessionsFlow.value.map {
             if (it.id == sessionId) it.copy(title = newTitle) else it
         }
         if (_currentSessionFlow.value?.id == sessionId) {
             _currentSessionFlow.value = _currentSessionFlow.value?.copy(title = newTitle)
         }
-        ChatApiClient.updateConversation(sessionId, title = newTitle)
+        if (!isOffline) {
+            ChatApiClient.updateConversation(sessionId, title = newTitle)
+        }
         Result.success(Unit)
     }
 
@@ -205,38 +209,50 @@ class OnlineAIRepository(
     }
 
     override suspend fun saveDraft(sessionId: String, draftText: String): Result<Unit> = withContext(Dispatchers.IO) {
-        cacheDb.updateConversationDraft(sessionId, currentUserId, draftText)
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        val syncStatus = if (isOffline) "pending_sync" else "synced"
+        cacheDb.updateConversationDraft(sessionId, currentUserId, draftText, syncStatus)
         if (_currentSessionFlow.value?.id == sessionId) {
             _currentSessionFlow.value = _currentSessionFlow.value?.copy(draftText = draftText)
         }
         _sessionsFlow.value = _sessionsFlow.value.map {
             if (it.id == sessionId) it.copy(draftText = draftText) else it
         }
-        ChatApiClient.updateConversation(sessionId, draftText = draftText)
+        if (!isOffline) {
+            ChatApiClient.updateConversation(sessionId, draftText = draftText)
+        }
         Result.success(Unit)
     }
 
     override suspend fun togglePin(sessionId: String, isPinned: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
-        cacheDb.togglePin(sessionId, currentUserId, isPinned)
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        val syncStatus = if (isOffline) "pending_sync" else "synced"
+        cacheDb.togglePin(sessionId, currentUserId, isPinned, syncStatus)
         _sessionsFlow.value = _sessionsFlow.value.map {
             if (it.id == sessionId) it.copy(isPinned = isPinned) else it
         }
         if (_currentSessionFlow.value?.id == sessionId) {
             _currentSessionFlow.value = _currentSessionFlow.value?.copy(isPinned = isPinned)
         }
-        ChatApiClient.updateConversation(sessionId, isPinned = isPinned)
+        if (!isOffline) {
+            ChatApiClient.updateConversation(sessionId, isPinned = isPinned)
+        }
         Result.success(Unit)
     }
 
     override suspend fun toggleArchive(sessionId: String, isArchived: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
-        cacheDb.toggleArchive(sessionId, currentUserId, isArchived)
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        val syncStatus = if (isOffline) "pending_sync" else "synced"
+        cacheDb.toggleArchive(sessionId, currentUserId, isArchived, syncStatus)
         _sessionsFlow.value = _sessionsFlow.value.map {
             if (it.id == sessionId) it.copy(isArchived = isArchived) else it
         }
         if (_currentSessionFlow.value?.id == sessionId) {
             _currentSessionFlow.value = _currentSessionFlow.value?.copy(isArchived = isArchived)
         }
-        ChatApiClient.updateConversation(sessionId, isArchived = isArchived)
+        if (!isOffline) {
+            ChatApiClient.updateConversation(sessionId, isArchived = isArchived)
+        }
         Result.success(Unit)
     }
 
@@ -342,7 +358,12 @@ class OnlineAIRepository(
                     parentId = userMsgId
                 )
                 val curr = _currentSessionFlow.value ?: current
-                val updatedList = curr.messages.filter { it.id != tempAiId } + activeMsg
+                val messages = curr.messages
+                val updatedList = if (messages.isNotEmpty() && messages.last().id == tempAiId) {
+                    messages.toMutableList().apply { set(lastIndex, activeMsg) }
+                } else {
+                    messages + activeMsg
+                }
                 _currentSessionFlow.value = curr.copy(messages = updatedList)
             }
             streamCompletedNormally = true
@@ -556,6 +577,21 @@ class OnlineAIRepository(
     }
 
     override suspend fun syncOfflineData(): Result<Unit> = withContext(Dispatchers.IO) {
+        // 1. Sync pending offline conversation metadata
+        val unsyncedConvs = cacheDb.getUnsyncedConversations(currentUserId)
+        for (conv in unsyncedConvs) {
+            ChatApiClient.updateConversation(
+                conversationId = conv.id,
+                title = conv.title,
+                isArchived = conv.isArchived,
+                isPinned = conv.isPinned,
+                draftText = conv.draftText
+            ).onSuccess {
+                cacheDb.markConversationSynced(conv.id, currentUserId)
+            }
+        }
+
+        // 2. Sync pending offline messages
         val unsynced = cacheDb.getUnsyncedMessages(currentUserId)
         if (unsynced.isEmpty()) return@withContext Result.success(Unit)
 

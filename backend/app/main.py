@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -24,10 +25,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("EduNova Backend API started")
+    logger.info(f"Environment: {settings.environment}")
+    if settings.allow_dev_user_id:
+        logger.warning("⚠️  DEVELOPMENT MODE: user_id query parameter is ENABLED")
+        logger.warning("⚠️  This is INSECURE and should NEVER be used in production!")
+    yield
+    from app.services.openrouter_service import openrouter_service
+    await openrouter_service.close()
+    logger.info("EduNova Backend API shutdown completed")
+
+
 app = FastAPI(
     title="EduNova Backend API",
     description="Backend for EduNova — Courses, Roadmaps, Learning Progress, AI Chat",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # Attach rate-limiter to app state and add middleware
@@ -80,16 +96,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# ── Lifecycle ─────────────────────────────────────────────────────────────────
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("EduNova Backend API started")
-    logger.info(f"Environment: {settings.environment}")
-    if settings.allow_dev_user_id:
-        logger.warning("⚠️  DEVELOPMENT MODE: user_id query parameter is ENABLED")
-        logger.warning("⚠️  This is INSECURE and should NEVER be used in production!")
-
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/health")
 async def health():
