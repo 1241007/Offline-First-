@@ -98,6 +98,10 @@ async def health():
         "service": "EduNova Backend API",
         "version": "2.0.0",
         "environment": settings.environment,
+        "ai_provider": "openrouter",
+        "openrouter_model": settings.openrouter_model,
+        "openrouter_base_url": settings.openrouter_base_url,
+        "openrouter_configured": bool(settings.openrouter_api_key),
     }
 
 
