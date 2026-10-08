@@ -293,7 +293,7 @@ fun AIWorkspaceScreen(
                             errorMessage = uiState.errorMessage,
                             onClearError = { viewModel.clearError() },
                             onDraftChanged = { viewModel.onDraftMessageChanged(it) },
-                            onSendMessage = { viewModel.sendMessage() },
+                            onSendMessage = { prompt -> viewModel.sendMessage(prompt, com.offline_First.data.local.MonotonicClock.elapsedMillis()) },
                             onStopGeneration = { viewModel.stopGeneration() },
                             onRegenerate = { viewModel.regenerateLastResponse() },
                             onEditMessage = { id, text -> viewModel.startEditMessage(id, text) },
@@ -1189,7 +1189,7 @@ private fun CleanChatScreenView(
     errorMessage: String?,
     onClearError: () -> Unit,
     onDraftChanged: (String) -> Unit,
-    onSendMessage: () -> Unit,
+    onSendMessage: (String?) -> Unit,
     onStopGeneration: () -> Unit,
     onRegenerate: () -> Unit,
     onEditMessage: (String, String) -> Unit,
@@ -1485,8 +1485,12 @@ private fun CleanChatScreenView(
             AIChatBottomBar(
                 draft = draft,
                 onDraftChanged = onDraftChanged,
-                onSend = { onSendMessage() },
-                onOpenAttachments = onOpenAttachments
+                onSend = { prompt -> onSendMessage(prompt) },
+                onOpenAttachments = onOpenAttachments,
+                isGenerating = isGenerating,
+                onStopGeneration = onStopGeneration,
+                hasError = errorMessage != null,
+                onRetry = onRegenerate
             )
         }
     }
@@ -1609,7 +1613,11 @@ private fun AIChatBottomBar(
     draft: String,
     onDraftChanged: (String) -> Unit,
     onSend: (String) -> Unit,
-    onOpenAttachments: () -> Unit
+    onOpenAttachments: () -> Unit,
+    isGenerating: Boolean = false,
+    onStopGeneration: () -> Unit = {},
+    hasError: Boolean = false,
+    onRetry: (() -> Unit)? = null
 ) {
     Surface(
         color = EduNovaBackground,
@@ -1653,19 +1661,40 @@ private fun AIChatBottomBar(
                     IconButton(onClick = { }) {
                         Icon(Icons.Default.Mic, "Voice input", tint = EduNovaTextSecondary)
                     }
-                    IconButton(
-                        onClick = {
-                            if (draft.isNotBlank()) {
-                                onSend(draft.trim())
+                    if (isGenerating) {
+                        IconButton(
+                            onClick = onStopGeneration
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(16.dp),
+                                shape = RoundedCornerShape(3.dp),
+                                color = MaterialTheme.colorScheme.error
+                            ) {}
+                        }
+                    } else {
+                        if (hasError && onRetry != null) {
+                            IconButton(onClick = onRetry) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Retry",
+                                    tint = EduNovaPrimary
+                                )
                             }
-                        },
-                        enabled = draft.isNotBlank()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send message",
-                            tint = if (draft.isNotBlank()) EduNovaPrimary else EduNovaTextSecondary.copy(alpha = 0.4f)
-                        )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (draft.isNotBlank()) {
+                                    onSend(draft.trim())
+                                }
+                            },
+                            enabled = draft.isNotBlank()
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send message",
+                                tint = if (draft.isNotBlank()) EduNovaPrimary else EduNovaTextSecondary.copy(alpha = 0.4f)
+                            )
+                        }
                     }
                 }
             }

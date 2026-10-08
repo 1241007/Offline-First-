@@ -29,18 +29,38 @@ object ChatApiClient {
     private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 3000L
 
-    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .dns(AppDns)
-        .connectTimeout(ChatApiConfig.CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .readTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .writeTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .retryOnConnectionFailure(true)
-        .build()
+    private val defaultClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .dns(AppDns)
+            .connectTimeout(ChatApiConfig.CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .writeTimeout(ChatApiConfig.READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
 
-    private fun buildUrl(path: String): String =
-        "${ChatApiConfig.BASE_URL}${ChatApiConfig.API_PREFIX}$path"
+    @Volatile
+    private var customClient: OkHttpClient? = null
+
+    var okHttpClient: OkHttpClient
+        get() = customClient ?: defaultClient
+        set(value) {
+            customClient = value
+        }
+
+    fun initialize(client: OkHttpClient) {
+        customClient = client
+    }
+
+    @Volatile
+    var customBaseUrl: String? = null
+
+    private fun buildUrl(path: String): String {
+        val base = customBaseUrl ?: ChatApiConfig.BASE_URL
+        return "$base${ChatApiConfig.API_PREFIX}$path"
+    }
 
     private suspend fun <T> retryOnNetworkError(block: suspend () -> T): T {
         var lastError: Throwable? = null
@@ -177,10 +197,11 @@ object ChatApiClient {
     suspend fun sendMessage(
         conversationId: String,
         content: String,
-        explanationMode: String,
+        explanationMode: String = "general",
         clientMessageId: String? = null,
         parentId: String? = null
     ): Result<SendMessageResponseDto> = runCatching {
+        android.util.Log.i("ChatApiClient", "ONLINE_CHAT: request_started")
         val requestBody = json.encodeToString(
             SendMessageRequestDto(
                 content = content,
@@ -189,9 +210,16 @@ object ChatApiClient {
                 parentId = parentId
             )
         )
+        android.util.Log.i("ChatApiClient", "ONLINE_CHAT: request_authenticated")
         val (code, body) = post("/chat/conversations/$conversationId/messages", requestBody)
-        if (code !in 200..299) error("HTTP $code: $body")
+        if (code !in 200..299) {
+            android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed HTTP $code")
+            error("HTTP $code: $body")
+        }
+        android.util.Log.i("ChatApiClient", "ONLINE_CHAT: stream_completed")
         json.decodeFromString<SendMessageResponseDto>(body)
+    }.onFailure {
+        android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed ${it.message}")
     }
 
     /**
@@ -201,10 +229,11 @@ object ChatApiClient {
     fun streamMessage(
         conversationId: String,
         content: String,
-        explanationMode: String,
+        explanationMode: String = "general",
         clientMessageId: String? = null,
         parentId: String? = null
     ): Flow<StreamEventDto> = callbackFlow {
+        android.util.Log.i("ChatApiClient", "ONLINE_CHAT: request_started")
         val url = buildUrl("/chat/conversations/$conversationId/messages/stream")
         val bodyJson = json.encodeToString(
             SendMessageRequestDto(
@@ -221,17 +250,27 @@ object ChatApiClient {
             .addHeader("Accept", "text/event-stream")
             .build()
 
-        val call = okHttpClient.newCall(request)
+        android.util.Log.i("ChatApiClient", "ONLINE_CHAT: request_authenticated")
+
+        val streamingClient = okHttpClient.newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
+        val call = streamingClient.newCall(request)
 
         try {
             val response: Response = call.execute()
             if (!response.isSuccessful) {
-                close(java.io.IOException("HTTP ${response.code}: ${response.body?.string()}"))
+                val errorBody = response.body?.string().orEmpty()
+                android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed HTTP ${response.code}")
+                close(java.io.IOException("HTTP ${response.code}: $errorBody"))
                 return@callbackFlow
             }
 
+            android.util.Log.i("ChatApiClient", "ONLINE_CHAT: stream_started")
+
             val body = response.body
             if (body == null) {
+                android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed Empty response body")
                 close(java.io.IOException("Empty response body"))
                 return@callbackFlow
             }
@@ -244,8 +283,16 @@ object ChatApiClient {
                     if (data.isNotEmpty()) {
                         try {
                             val event = json.decodeFromString<StreamEventDto>(data)
+                            if (event.type == "error") {
+                                android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed ${event.detail}")
+                                close(java.io.IOException(event.detail ?: "Streaming error from AI service"))
+                                return@callbackFlow
+                            }
                             trySend(event)
-                            if (event.type == "done") break
+                            if (event.type == "done") {
+                                android.util.Log.i("ChatApiClient", "ONLINE_CHAT: stream_completed")
+                                break
+                            }
                         } catch (e: Exception) {
                             android.util.Log.e("ChatApiClient", "Error parsing SSE event: $data", e)
                         }
@@ -255,6 +302,7 @@ object ChatApiClient {
             }
             close()
         } catch (e: Exception) {
+            android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed ${e.message}")
             close(e)
         }
 

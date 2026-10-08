@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -56,8 +57,11 @@ internal fun isValidGgufFile(file: File, minimumValidBytes: Long): Boolean {
 /** Local GGUF downloader and llama.cpp-backed chat repository. */
 class LocalAIRepository(
     private val context: Context? = null,
-    private val inferenceEngine: OfflineInferenceEngine? = context?.let { LlamaCppInferenceEngine() }
+    private val inferenceEngine: OfflineInferenceEngine? = context?.let { LlamaCppInferenceEngine() },
+    modelLifecycleManager: OfflineModelManager? = null
 ) : AIRepository {
+
+    val modelManager: OfflineModelManager = modelLifecycleManager ?: OfflineModelManager(inferenceEngine)
 
     /** Device selection stays internal; the UI never asks the user to choose a model. */
     private enum class InternalModelProfile(
@@ -107,6 +111,12 @@ class LocalAIRepository(
         offlineStatus.value = if (ready) OfflineAIStatus.READY else OfflineAIStatus.NOT_DOWNLOADED
         downloadProgress.value = progressFor(selectModel(), ready)
         if (!ready) preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+        if (connectionMode.value == ConnectionMode.OFFLINE && ready) {
+            val file = modelFile(selectModel())
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                modelManager.onOfflineModeEntered(file)
+            }
+        }
     }
 
     private fun <T : Enum<T>> readEnum(key: String, default: T): T {
@@ -149,6 +159,15 @@ class LocalAIRepository(
     override suspend fun setConnectionMode(mode: ConnectionMode): Result<Unit> {
         connectionMode.value = mode
         preferences?.edit()?.putString(CONNECTION_MODE_KEY, mode.name)?.apply()
+        if (mode == ConnectionMode.ONLINE) {
+            modelManager.onOnlineModeEntered()
+        } else if (mode == ConnectionMode.OFFLINE) {
+            val profile = selectModel()
+            val file = modelFile(profile)
+            if (isValidModelFile(file, profile)) {
+                modelManager.onOfflineModeEntered(file)
+            }
+        }
         return Result.success(Unit)
     }
 
@@ -171,8 +190,7 @@ class LocalAIRepository(
         // A valid model is kept and loaded. Never fetch the large file a second time.
         if (isValidModelFile(destination, profile)) {
             try {
-                requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
-                    .loadModel(destination)
+                modelManager.ensureModelLoaded(destination).getOrThrow()
                 markReady(profile)
                 return@withContext Result.success(Unit)
             } catch (cancelled: CancellationException) {
@@ -257,8 +275,7 @@ class LocalAIRepository(
             if (!partial.renameTo(destination)) {
                 throw IllegalStateException("Could not store the downloaded Offline AI model.")
             }
-            requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
-                .loadModel(destination)
+            modelManager.ensureModelLoaded(destination).getOrThrow()
             markReady(profile)
             Result.success(Unit)
         } catch (cancelled: CancellationException) {
@@ -311,7 +328,7 @@ class LocalAIRepository(
 
     override suspend fun deleteOfflineAI(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            inferenceEngine?.unload()
+            modelManager.unload()
             val files = InternalModelProfile.entries.flatMap { profile ->
                 listOf(modelFile(profile), File(modelDirectory, profile.fileName + ".download"))
             }
@@ -374,14 +391,15 @@ class LocalAIRepository(
                 IllegalStateException("Offline AI model is missing or invalid. Download Offline AI before chatting.")
             )
         }
-        val engine = inferenceEngine ?: return@withContext Result.failure(
-            IllegalStateException("The Android llama.cpp runtime is unavailable.")
-        )
         val current = currentSession.value ?: createNewChat().getOrThrow()
         val userMessage = ChatMessage(text = prompt, fromUser = true)
         val response = try {
-            engine.loadModel(file)
-            engine.generate(systemPromptFor(explanationMode.value), buildConversationPrompt(current.messages, prompt))
+            modelManager.generate(
+                systemPrompt = systemPromptFor(explanationMode.value),
+                userPrompt = prompt,
+                modelFile = file,
+                history = current.messages
+            ).getOrThrow()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -401,6 +419,24 @@ class LocalAIRepository(
         Result.success(assistantMessage)
     }
 
+    fun streamOfflineInference(
+        systemPrompt: String,
+        history: List<ChatMessage>,
+        prompt: String,
+        sendTimestamp: Long = MonotonicClock.elapsedMillis()
+    ): Flow<String> {
+        val profile = selectModel()
+        val file = modelFile(profile)
+        if (!isValidModelFile(file, profile)) {
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            return kotlinx.coroutines.flow.flow {
+                throw IllegalStateException("Offline AI model is missing or invalid. Please download it in AI Settings.")
+            }
+        }
+        return modelManager.stream(systemPrompt, history, prompt, file, sendTimestamp)
+    }
+
     suspend fun generateOfflineInference(
         systemPrompt: String,
         history: List<ChatMessage>,
@@ -415,13 +451,8 @@ class LocalAIRepository(
                 IllegalStateException("Offline AI model is missing or invalid. Please download it in AI Settings.")
             )
         }
-        val engine = inferenceEngine ?: return@withContext Result.failure(
-            IllegalStateException("The Android llama.cpp runtime is unavailable on this device.")
-        )
         try {
-            engine.loadModel(file)
-            val fullPrompt = buildConversationPrompt(history, prompt)
-            val response = engine.generate(systemPrompt, fullPrompt)
+            val response = modelManager.generate(systemPrompt, prompt, file, history).getOrThrow()
             Result.success(response)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -431,40 +462,30 @@ class LocalAIRepository(
     }
 
     suspend fun stopOfflineInference(): Result<Unit> = withContext(Dispatchers.IO) {
-        inferenceEngine?.unload()
+        modelManager.cancelGeneration()
         Result.success(Unit)
     }
 
-    private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildString {
-        history.takeLast(12).forEach { message ->
-            append(if (message.fromUser) "User" else "Assistant")
-            append(": ")
-            append(message.text)
-            append('\n')
-        }
-        append("User: ")
-        append(prompt)
-    }
+    private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildChatMlPrompt(
+        systemPrompt = "",
+        history = history,
+        newPrompt = prompt
+    )
 
     override fun streamMessage(
         prompt: String,
         parentId: String?,
         clientMessageId: String?
-    ): Flow<String> = kotlinx.coroutines.flow.flow {
-        val result = sendMessage(prompt)
-        if (result.isSuccess) {
-            val text = result.getOrThrow().text
-            val words = text.split(" ")
-            for ((index, word) in words.withIndex()) {
-                emit(if (index == 0) word else " $word")
-                kotlinx.coroutines.delay(20)
-            }
-        } else {
-            throw result.exceptionOrNull() ?: RuntimeException("Offline generation failed")
-        }
-    }
+    ): Flow<String> = streamOfflineInference(
+        systemPrompt = systemPromptFor(explanationMode.value),
+        history = currentSession.value?.messages ?: emptyList(),
+        prompt = prompt
+    )
 
-    override suspend fun stopGeneration(): Result<Unit> = Result.success(Unit)
+    override suspend fun stopGeneration(): Result<Unit> {
+        modelManager.cancelGeneration()
+        return Result.success(Unit)
+    }
 
     override fun regenerateLastResponse(): Flow<String> = kotlinx.coroutines.flow.flow {
         val current = currentSession.value ?: return@flow

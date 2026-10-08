@@ -6,6 +6,7 @@ import com.offline_First.data.local.LocalAIRepository
 import com.offline_First.data.local.TokenStorage
 import com.offline_First.data.remote.AuthApiClient
 import com.offline_First.data.remote.AuthenticatedApiClient
+import com.offline_First.data.remote.ChatApiClient
 import com.offline_First.data.remote.OnlineAIRepository
 import com.offline_First.data.remote.OnlineCourseRepository
 import com.offline_First.data.remote.OnlineRoadmapRepository
@@ -37,6 +38,7 @@ object AppContainer {
             sessionManager = sessionManager,
             publicClient = { authApiClient.okHttpClient }
         )
+        ChatApiClient.initialize(authenticatedApiClient.okHttpClient)
         val remoteAuthRepo = RemoteAuthRepository(
             authApiClient = authApiClient,
             authenticatedApiClient = authenticatedApiClient,

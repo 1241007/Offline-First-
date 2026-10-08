@@ -23,23 +23,11 @@ class OfflineLlamaProvider(
         explanationMode: ExplanationMode,
         history: List<ChatMessage>,
         systemPrompt: String
-    ): Flow<String> = flow {
-        val result = localAIRepository.generateOfflineInference(
-            systemPrompt = systemPrompt,
-            history = history,
-            prompt = prompt
-        )
-        if (result.isFailure) {
-            throw result.exceptionOrNull() ?: IllegalStateException("Offline llama.cpp inference failed")
-        }
-        val fullText = result.getOrThrow()
-        // Stream words progressively to deliver real-time token streaming UX
-        val words = fullText.split(" ")
-        for ((index, word) in words.withIndex()) {
-            emit(if (index == 0) word else " $word")
-            delay(20)
-        }
-    }
+    ): Flow<String> = localAIRepository.streamOfflineInference(
+        systemPrompt = systemPrompt,
+        history = history,
+        prompt = prompt
+    )
 
     override suspend fun stopInference() {
         localAIRepository.stopOfflineInference()

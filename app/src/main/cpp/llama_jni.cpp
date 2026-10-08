@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -20,6 +21,8 @@ struct ModelHandle {
     llama_sampler * sampler = nullptr;
     std::atomic_bool cancelled{false};
     std::mutex inference_mutex;
+    std::vector<llama_token> cached_tokens;
+    std::string instance_id;
 };
 
 std::once_flag backend_init_flag;
@@ -86,10 +89,21 @@ jlong native_load_model(JNIEnv * env, jobject, jstring model_path) {
     handle->sampler = llama_sampler_chain_init(sampler_params);
     llama_sampler_chain_add(handle->sampler, llama_sampler_init_greedy());
 
+    handle->instance_id = std::to_string(reinterpret_cast<uintptr_t>(handle.get()));
+    handle->cached_tokens.clear();
+
     return reinterpret_cast<jlong>(handle.release());
 }
 
-jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt, jint max_tokens) {
+jstring native_generate_stream(
+    JNIEnv * env,
+    jobject,
+    jlong raw_handle,
+    jstring prompt,
+    jint max_tokens,
+    jobject callback,
+    jlongArray out_metrics
+) {
     auto * handle = reinterpret_cast<ModelHandle *>(raw_handle);
     if (handle == nullptr || handle->model == nullptr || handle->context == nullptr) {
         throw_java(env, "java/lang/IllegalStateException", "The offline model is not loaded.");
@@ -103,8 +117,18 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
     const std::string prompt_text(prompt_chars);
     env->ReleaseStringUTFChars(prompt, prompt_chars);
 
+    jmethodID on_token_method = nullptr;
+    if (callback != nullptr) {
+        jclass callback_class = env->GetObjectClass(callback);
+        if (callback_class != nullptr) {
+            on_token_method = env->GetMethodID(callback_class, "onToken", "(Ljava/lang/String;)Z");
+            env->DeleteLocalRef(callback_class);
+        }
+    }
+
     std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
-    llama_memory_clear(llama_get_memory(handle->context), true);
+
+    using clock = std::chrono::steady_clock;
 
     const int32_t token_count = -llama_tokenize(
         handle->vocab,
@@ -141,6 +165,24 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
         return nullptr;
     }
 
+    // ── KV Cache Prefix Matching ──────────────────────────────────────────────
+    size_t common_prefix = 0;
+    while (common_prefix < handle->cached_tokens.size() &&
+           common_prefix < tokens.size() &&
+           handle->cached_tokens[common_prefix] == tokens[common_prefix]) {
+        common_prefix++;
+    }
+
+    if (common_prefix < handle->cached_tokens.size()) {
+        if (common_prefix == 0) {
+            llama_memory_clear(llama_get_memory(handle->context), true);
+            handle->cached_tokens.clear();
+        } else {
+            llama_memory_seq_rm(llama_get_memory(handle->context), 0, static_cast<llama_pos>(common_prefix), -1);
+            handle->cached_tokens.resize(common_prefix);
+        }
+    }
+
     std::unique_ptr<llama_batch_ext, decltype(&llama_batch_ext_free)> batch(
         llama_batch_ext_init(handle->context),
         llama_batch_ext_free
@@ -150,11 +192,18 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
         return nullptr;
     }
 
-    int32_t position = 0;
-    for (int32_t offset = 0; offset < token_count;) {
+    llama_sampler_reset(handle->sampler);
+
+    auto t_prompt_eval_start = clock::now();
+    int32_t position = static_cast<int32_t>(common_prefix);
+    const int32_t evaluated_tokens = token_count - static_cast<int32_t>(common_prefix);
+
+    for (int32_t offset = static_cast<int32_t>(common_prefix); offset < token_count;) {
         const int32_t chunk_size = std::min(512, token_count - offset);
         batch_set_tokens(batch.get(), tokens.data() + offset, chunk_size, position);
         if (llama_process(handle->context, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            llama_memory_clear(llama_get_memory(handle->context), true);
+            handle->cached_tokens.clear();
             throw_java(env, "java/lang/IllegalStateException", "llama.cpp failed while evaluating the prompt.");
             return nullptr;
         }
@@ -162,7 +211,18 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
         position += chunk_size;
     }
 
+    auto t_prompt_eval_end = clock::now();
+    int64_t prompt_eval_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_prompt_eval_end - t_prompt_eval_start).count();
+
+    for (size_t i = common_prefix; i < tokens.size(); ++i) {
+        handle->cached_tokens.push_back(tokens[i]);
+    }
+
+    // ── Token Generation & Streaming ──────────────────────────────────────────
+    auto t_gen_start = clock::now();
     std::string generated_text;
+    int32_t generated_tokens_count = 0;
+
     for (int32_t generated = 0; generated < prediction_limit; ++generated) {
         if (handle->cancelled.load()) {
             break;
@@ -183,6 +243,7 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
             0,
             true
         );
+        std::string piece_str;
         if (piece_size < 0) {
             std::vector<char> expanded_buffer(static_cast<size_t>(-piece_size));
             piece_size = llama_token_to_piece(
@@ -197,9 +258,22 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
                 throw_java(env, "java/lang/IllegalStateException", "Could not decode a generated model token.");
                 return nullptr;
             }
-            generated_text.append(expanded_buffer.data(), static_cast<size_t>(piece_size));
+            piece_str.assign(expanded_buffer.data(), static_cast<size_t>(piece_size));
         } else {
-            generated_text.append(piece_buffer, static_cast<size_t>(piece_size));
+            piece_str.assign(piece_buffer, static_cast<size_t>(piece_size));
+        }
+
+        generated_text.append(piece_str);
+        handle->cached_tokens.push_back(token);
+        generated_tokens_count++;
+
+        if (callback != nullptr && on_token_method != nullptr) {
+            jstring piece_jstr = env->NewStringUTF(piece_str.c_str());
+            jboolean keep_going = env->CallBooleanMethod(callback, on_token_method, piece_jstr);
+            env->DeleteLocalRef(piece_jstr);
+            if (!keep_going) {
+                break;
+            }
         }
 
         batch_set_tokens(batch.get(), &token, 1, position++);
@@ -209,7 +283,49 @@ jstring native_generate(JNIEnv * env, jobject, jlong raw_handle, jstring prompt,
         }
     }
 
+    auto t_gen_end = clock::now();
+    int64_t gen_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_gen_end - t_gen_start).count();
+
+    if (out_metrics != nullptr) {
+        jlong metrics[6] = {
+            static_cast<jlong>(token_count),
+            static_cast<jlong>(common_prefix),
+            static_cast<jlong>(evaluated_tokens),
+            static_cast<jlong>(generated_tokens_count),
+            static_cast<jlong>(prompt_eval_ms),
+            static_cast<jlong>(gen_ms)
+        };
+        env->SetLongArrayRegion(out_metrics, 0, 6, metrics);
+    }
+
+    __android_log_print(ANDROID_LOG_INFO, "OFFLINE_LATENCY",
+        "OFFLINE_NATIVE: prompt_tokens=%d, cached_prefix=%zu, evaluated=%d, prompt_eval_ms=%lld, gen_tokens=%d, gen_ms=%lld, tok_per_sec=%.2f",
+        token_count, common_prefix, evaluated_tokens, (long long)prompt_eval_ms,
+        generated_tokens_count, (long long)gen_ms,
+        gen_ms > 0 ? (generated_tokens_count * 1000.0 / gen_ms) : 0.0);
+
     return env->NewStringUTF(generated_text.c_str());
+}
+
+jstring native_generate(JNIEnv * env, jobject thiz, jlong raw_handle, jstring prompt, jint max_tokens) {
+    return native_generate_stream(env, thiz, raw_handle, prompt, max_tokens, nullptr, nullptr);
+}
+
+jstring native_get_instance_id(JNIEnv * env, jobject, jlong raw_handle) {
+    auto * handle = reinterpret_cast<ModelHandle *>(raw_handle);
+    if (handle == nullptr) {
+        return nullptr;
+    }
+    return env->NewStringUTF(handle->instance_id.c_str());
+}
+
+void native_clear_cache(JNIEnv *, jobject, jlong raw_handle) {
+    auto * handle = reinterpret_cast<ModelHandle *>(raw_handle);
+    if (handle != nullptr && handle->context != nullptr) {
+        std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
+        llama_memory_clear(llama_get_memory(handle->context), true);
+        handle->cached_tokens.clear();
+    }
 }
 
 void native_cancel(JNIEnv *, jobject, jlong raw_handle) {
@@ -233,6 +349,7 @@ void native_unload(JNIEnv *, jobject, jlong raw_handle) {
     }
     handle->cancelled.store(true);
     std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
+    handle->cached_tokens.clear();
     if (handle->sampler != nullptr) {
         llama_sampler_free(handle->sampler);
     }
@@ -248,6 +365,9 @@ void native_unload(JNIEnv *, jobject, jlong raw_handle) {
 JNINativeMethod native_methods[] = {
     {const_cast<char *>("nativeLoadModel"), const_cast<char *>("(Ljava/lang/String;)J"), reinterpret_cast<void *>(native_load_model)},
     {const_cast<char *>("nativeGenerate"), const_cast<char *>("(JLjava/lang/String;I)Ljava/lang/String;"), reinterpret_cast<void *>(native_generate)},
+    {const_cast<char *>("nativeGenerateStream"), const_cast<char *>("(JLjava/lang/String;ILcom/offline_First/data/local/NativeTokenCallback;[J)Ljava/lang/String;"), reinterpret_cast<void *>(native_generate_stream)},
+    {const_cast<char *>("nativeGetInstanceId"), const_cast<char *>("(J)Ljava/lang/String;"), reinterpret_cast<void *>(native_get_instance_id)},
+    {const_cast<char *>("nativeClearCache"), const_cast<char *>("(J)V"), reinterpret_cast<void *>(native_clear_cache)},
     {const_cast<char *>("nativeResetCancellation"), const_cast<char *>("(J)V"), reinterpret_cast<void *>(native_reset_cancellation)},
     {const_cast<char *>("nativeCancel"), const_cast<char *>("(J)V"), reinterpret_cast<void *>(native_cancel)},
     {const_cast<char *>("nativeUnload"), const_cast<char *>("(J)V"), reinterpret_cast<void *>(native_unload)},

@@ -243,6 +243,7 @@ class ChatService:
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
         except Exception as exc:
             logger.warning(f"Stream interrupted or cancelled for conv={conversation_id}: {exc}")
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
         finally:
             # End-to-end Stop generation handling: persist accumulated content (even if partial)
             final_text = "".join(accumulated_chunks).strip()

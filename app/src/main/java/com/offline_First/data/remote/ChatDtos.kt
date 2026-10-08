@@ -63,8 +63,9 @@ data class SendMessageResponseDto(
 
 @Serializable
 data class StreamEventDto(
-    val type: String, // "metadata" | "token" | "done"
+    val type: String, // "metadata" | "token" | "done" | "error"
     val content: String? = null,
+    val detail: String? = null,
     @SerialName("user_message_id") val userMessageId: String? = null,
     @SerialName("assistant_message_id") val assistantMessageId: String? = null,
     val title: String? = null

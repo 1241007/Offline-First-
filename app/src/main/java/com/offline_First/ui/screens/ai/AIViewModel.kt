@@ -122,12 +122,18 @@ class AIViewModel(
             }
         }
 
+        var lastSessionId: String? = null
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeCurrentSession().collect { session ->
-                val draft = session?.draftText ?: _uiState.value.draftMessage
+                val sessionIdChanged = session?.id != lastSessionId
+                lastSessionId = session?.id
                 _uiState.value = _uiState.value.copy(
                     currentSession = session,
-                    draftMessage = if (_uiState.value.draftMessage.isBlank()) draft else _uiState.value.draftMessage
+                    draftMessage = if (sessionIdChanged) {
+                        session?.draftText.orEmpty()
+                    } else {
+                        _uiState.value.draftMessage
+                    }
                 )
             }
         }
@@ -308,10 +314,15 @@ class AIViewModel(
         }
     }
 
-    fun sendMessage(promptOverride: String? = null) {
+    fun sendMessage(
+        promptOverride: String? = null,
+        sendTimestamp: Long = com.offline_First.data.local.MonotonicClock.elapsedMillis()
+    ) {
         if (_uiState.value.isGeneratingResponse) return
         val promptToSend = (promptOverride ?: _uiState.value.draftMessage).trim()
         if (promptToSend.isBlank()) return
+
+        android.util.Log.i("AIViewModel", "OFFLINE_LATENCY: send_clicked (t=${sendTimestamp}ms)")
 
         _uiState.value = _uiState.value.copy(
             draftMessage = "",
@@ -328,7 +339,13 @@ class AIViewModel(
 
         currentStreamingJob = viewModelScope.launch(coroutineContext) {
             try {
+                var firstTokenUi = false
                 aiRepository.streamMessage(promptToSend).collect {
+                    if (!firstTokenUi) {
+                        firstTokenUi = true
+                        val uiReceived = com.offline_First.data.local.MonotonicClock.elapsedMillis()
+                        android.util.Log.i("AIViewModel", "OFFLINE_LATENCY: ui_received, +${uiReceived - sendTimestamp}ms from send_clicked")
+                    }
                     // Chunks update currentSession in repository
                 }
             } catch (e: Exception) {

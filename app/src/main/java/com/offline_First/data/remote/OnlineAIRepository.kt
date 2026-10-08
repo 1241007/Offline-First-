@@ -278,7 +278,18 @@ class OnlineAIRepository(
         val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
         val syncStatus = if (isOffline) "pending_sync" else "synced"
 
-        // 1. Optimistically show & persist user message in local cache & unified session
+        // 1. Immediately clear draft in local cache, session, and conversation list
+        cacheDb.updateConversationDraft(current.id, currentUserId, "")
+        val sessionWithoutDraft = current.copy(
+            draftText = "",
+            messages = current.messages.filter { it.id != userMsgId } + tempUserMsg
+        )
+        _currentSessionFlow.value = sessionWithoutDraft
+        _sessionsFlow.value = _sessionsFlow.value.map {
+            if (it.id == current.id) it.copy(draftText = "") else it
+        }
+
+        // 2. Optimistically show & persist user message in local cache & unified session
         cacheDb.upsertMessage(
             id = userMsgId,
             conversationId = current.id,
@@ -288,9 +299,6 @@ class OnlineAIRepository(
             createdAt = userTimestamp,
             parentId = parentId,
             syncStatus = syncStatus
-        )
-        _currentSessionFlow.value = current.copy(
-            messages = current.messages.filter { it.id != userMsgId } + tempUserMsg
         )
 
         // 2. Extract top relevant memories for prompt context
@@ -303,7 +311,10 @@ class OnlineAIRepository(
         val systemPrompt = systemPromptFor(_currentExplanationMode) + memoryContext
 
         // 3. Select active provider: Gemini for ONLINE, llama.cpp for OFFLINE
-        val activeProvider: LLMProvider = if (isOffline) offlineProvider else onlineProvider
+        val activeProvider: LLMProvider = if (isOffline) {
+            Log.i("OnlineAIRepository", "OFFLINE_LATENCY: repository_received")
+            offlineProvider
+        } else onlineProvider
 
         val tempAiId = UUID.randomUUID().toString()
         val responseBuilder = StringBuilder()

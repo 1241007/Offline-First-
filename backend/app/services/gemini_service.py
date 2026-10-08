@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional, AsyncIterator
 import google.generativeai as genai
@@ -66,9 +67,20 @@ class GeminiService:
         current_message = history[-1]["parts"][0] if history else ""
 
         chat = model.start_chat(history=prior_history)
-        response = await chat.send_message_async(current_message)
-        logger.info(f"Gemini response received, length={len(response.text)}")
-        return response.text
+
+        for attempt in range(3):
+            try:
+                response = await chat.send_message_async(current_message)
+                logger.info(f"Gemini response received, length={len(response.text)}")
+                return response.text
+            except Exception as e:
+                err_str = str(e)
+                if ("503" in err_str or "429" in err_str or "ResourceExhausted" in err_str or "Unavailable" in err_str) and attempt < 2:
+                    wait_time = (attempt + 1) * 2.0
+                    logger.warning(f"Gemini transient error on attempt {attempt + 1}, retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise e
 
     async def generate_response_stream(
         self,
@@ -78,17 +90,33 @@ class GeminiService:
     ) -> AsyncIterator[str]:
         """
         Streams response chunks from Gemini asynchronously.
+        Includes retry for transient high-demand (503) or rate-limit (429) spikes.
         """
         model = self._build_model(explanation_mode, memory_context)
         prior_history = history[:-1] if len(history) > 1 else []
         current_message = history[-1]["parts"][0] if history else ""
 
         chat = model.start_chat(history=prior_history)
-        response_stream = await chat.send_message_async(current_message, stream=True)
-        async for chunk in response_stream:
-            text = chunk.text
-            if text:
-                yield text
+
+        for attempt in range(3):
+            try:
+                response_stream = await chat.send_message_async(current_message, stream=True)
+                async for chunk in response_stream:
+                    try:
+                        text = chunk.text
+                    except (ValueError, AttributeError):
+                        text = None
+                    if text:
+                        yield text
+                return
+            except Exception as e:
+                err_str = str(e)
+                if ("503" in err_str or "429" in err_str or "ResourceExhausted" in err_str or "Unavailable" in err_str) and attempt < 2:
+                    wait_time = (attempt + 1) * 2.0
+                    logger.warning(f"Gemini transient error on attempt {attempt + 1}, retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise e
 
 
 # Singleton
