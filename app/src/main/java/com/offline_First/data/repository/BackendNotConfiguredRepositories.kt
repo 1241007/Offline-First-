@@ -177,6 +177,13 @@ class BackendNotConfiguredRepositories :
     ): Result<com.offline_First.domain.model.AssessmentSessionState> =
         unavailable("Assessment message")
 
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Profile field correction")
+
     override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
         unavailable("Personalized roadmap generation")
 
@@ -195,7 +202,14 @@ class BackendNotConfiguredRepositories :
     override suspend fun savePersonalizedRoadmap(roadmap: com.offline_First.domain.model.PersonalizedRoadmapDetail): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
         unavailable("Save personalized roadmap")
 
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
+        unavailable("Delete personalized roadmap")
+
+    override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Rename personalized roadmap")
+
     override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
+
 
     override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
         unavailable("Milestone sync")

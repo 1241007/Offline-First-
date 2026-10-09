@@ -171,8 +171,34 @@ class FakeRoadmapRepository : RoadmapRepository {
         return Result.success(roadmap)
     }
 
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> {
+        myPersonalizedRoadmapsList = myPersonalizedRoadmapsList.filter { it.id != roadmapId }
+        completedMilestonesMap.remove(roadmapId)
+        return Result.success(Unit)
+    }
+
+    override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<PersonalizedRoadmapDetail> {
+        val target = myPersonalizedRoadmapsList.find { it.id == roadmapId } ?: generateRoadmapResult.getOrNull()?.takeIf { it.id == roadmapId }
+        val updated = target?.copy(title = newTitle) ?: PersonalizedRoadmapDetail(
+            id = roadmapId,
+            title = newTitle,
+            goal = "Renamed",
+            category = "General",
+            level = "Beginner",
+            duration = "4 weeks",
+            stages = 1,
+            icon = "school"
+        )
+        myPersonalizedRoadmapsList = myPersonalizedRoadmapsList.map { if (it.id == roadmapId) updated else it }
+        if (!myPersonalizedRoadmapsList.any { it.id == roadmapId }) {
+            myPersonalizedRoadmapsList = myPersonalizedRoadmapsList + updated
+        }
+        return Result.success(updated)
+    }
+
     override suspend fun getCompletedMilestones(roadmapId: String): Set<String> =
         completedMilestonesMap[roadmapId] ?: emptySet()
+
 
     override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> {
         val set = completedMilestonesMap.getOrPut(roadmapId) { mutableSetOf() }
@@ -188,6 +214,23 @@ class FakeRoadmapRepository : RoadmapRepository {
 
     override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
 
+
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState> {
+        val current = activeAssessmentSession ?: startAssessmentResult.getOrThrow()
+        val updated = when (field) {
+            "goal" -> current.copy(goal = value)
+            "target_level" -> current.copy(targetLevel = value)
+            "weekly_hours" -> current.copy(weeklyHours = value.toDoubleOrNull() ?: 8.0)
+            "target_timeline" -> current.copy(targetTimeline = value)
+            else -> current
+        }
+        activeAssessmentSession = updated
+        return Result.success(updated)
+    }
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,
@@ -699,7 +742,284 @@ class PersonalizedRoadmapViewModelTest {
         assertEquals("ASSESSING_AVAILABILITY", state.assessmentSession?.state)
         assertEquals(listOf("2-4 hours/week", "5-10 hours/week", "15+ hours/week"), state.assessmentSession?.options)
     }
+
+    @Test
+    fun multiRoadmap_creatingSecondRoadmap_preservesFirstRoadmap() = runTest {
+        val roadmap1 = PersonalizedRoadmapDetail(
+            id = "roadmap-python-1",
+            title = "Python for Data Science",
+            goal = "Learn Python for data analysis",
+            category = "Data Science",
+            level = "Advanced",
+            duration = "8 weeks",
+            stages = 2,
+            icon = "code",
+            weeklyHours = 6.0
+        )
+        fakeRepo.myPersonalizedRoadmapsList = listOf(roadmap1)
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        assertEquals(1, viewModel.uiState.value.myPersonalizedRoadmaps.size)
+
+        // User starts a new assessment for Kotlin Android
+        viewModel.startNewAssessment()
+        testScheduler.advanceUntilIdle()
+
+        // Existing roadmaps remain intact
+        assertEquals(1, viewModel.uiState.value.myPersonalizedRoadmaps.size)
+        assertEquals("roadmap-python-1", viewModel.uiState.value.myPersonalizedRoadmaps[0].id)
+
+        // Generate second roadmap
+        val roadmap2 = PersonalizedRoadmapDetail(
+            id = "roadmap-kotlin-2",
+            title = "Kotlin Android App Development",
+            goal = "Build Android apps with Kotlin",
+            category = "Mobile",
+            level = "Intermediate",
+            duration = "10 weeks",
+            stages = 3,
+            icon = "phone",
+            weeklyHours = 8.0
+        )
+        fakeRepo.generateRoadmapResult = Result.success(roadmap2)
+        viewModel.generatePersonalizedRoadmap()
+        testScheduler.advanceUntilIdle()
+
+        // Both roadmaps exist independently
+        val roadmaps = viewModel.uiState.value.myPersonalizedRoadmaps
+        assertEquals(2, roadmaps.size)
+        assertTrue(roadmaps.any { it.id == "roadmap-python-1" && it.title == "Python for Data Science" })
+        assertTrue(roadmaps.any { it.id == "roadmap-kotlin-2" && it.title == "Kotlin Android App Development" })
+    }
+
+    @Test
+    fun multiRoadmap_independentMilestoneProgress_doesNotCrossContaminate() = runTest {
+        val roadmap1 = PersonalizedRoadmapDetail(
+            id = "r-python",
+            title = "Python Path",
+            goal = "Python",
+            category = "General",
+            level = "Beginner",
+            duration = "4 weeks",
+            stages = 1,
+            icon = "code",
+            phases = listOf(
+                PersonalizedPhase(
+                    title = "P1",
+                    objective = "Basics",
+                    durationWeeks = 2,
+                    milestones = listOf(PersonalizedMilestone(title = "Python M1"))
+                )
+            )
+        )
+        val roadmap2 = PersonalizedRoadmapDetail(
+            id = "r-kotlin",
+            title = "Kotlin Path",
+            goal = "Kotlin",
+            category = "General",
+            level = "Advanced",
+            duration = "4 weeks",
+            stages = 1,
+            icon = "phone",
+            phases = listOf(
+                PersonalizedPhase(
+                    title = "P1",
+                    objective = "Compose",
+                    durationWeeks = 2,
+                    milestones = listOf(PersonalizedMilestone(title = "Kotlin M1"))
+                )
+            )
+        )
+        fakeRepo.myPersonalizedRoadmapsList = listOf(roadmap1, roadmap2)
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+
+        // Select Python and complete its milestone
+        viewModel.selectPersonalizedRoadmap(roadmap1)
+        testScheduler.advanceUntilIdle()
+        viewModel.toggleMilestone("r-python_0_0_Python M1")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(setOf("r-python_0_0_Python M1"), fakeRepo.completedMilestonesMap["r-python"])
+        assertNull(fakeRepo.completedMilestonesMap["r-kotlin"])
+
+        // Select Kotlin and verify Python's milestone didn't leak
+        viewModel.selectPersonalizedRoadmap(roadmap2)
+        testScheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.completedMilestones.isEmpty())
+
+        // Complete Kotlin milestone
+        viewModel.toggleMilestone("r-kotlin_0_0_Kotlin M1")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(setOf("r-python_0_0_Python M1"), fakeRepo.completedMilestonesMap["r-python"])
+        assertEquals(setOf("r-kotlin_0_0_Kotlin M1"), fakeRepo.completedMilestonesMap["r-kotlin"])
+    }
+
+    @Test
+    fun multiRoadmap_deleteRoadmap_removesCorrectItemOnly() = runTest {
+        val roadmap1 = PersonalizedRoadmapDetail(id = "r-1", title = "Roadmap 1", goal = "Goal 1", category = "A", level = "Beginner", duration = "4w", stages = 1, icon = "1")
+        val roadmap2 = PersonalizedRoadmapDetail(id = "r-2", title = "Roadmap 2", goal = "Goal 2", category = "B", level = "Advanced", duration = "6w", stages = 2, icon = "2")
+        fakeRepo.myPersonalizedRoadmapsList = listOf(roadmap1, roadmap2)
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        assertEquals(2, viewModel.uiState.value.myPersonalizedRoadmaps.size)
+
+        viewModel.deletePersonalizedRoadmap("r-1")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.myPersonalizedRoadmaps.size)
+        assertEquals("r-2", viewModel.uiState.value.myPersonalizedRoadmaps[0].id)
+    }
+
+    @Test
+    fun multiRoadmap_renameRoadmap_updatesTitleCorrectly() = runTest {
+        val roadmap1 = PersonalizedRoadmapDetail(id = "r-1", title = "Original Title", goal = "Goal 1", category = "A", level = "Beginner", duration = "4w", stages = 1, icon = "1")
+        fakeRepo.myPersonalizedRoadmapsList = listOf(roadmap1)
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.renamePersonalizedRoadmap("r-1", "Updated Custom Title")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("Updated Custom Title", viewModel.uiState.value.myPersonalizedRoadmaps[0].title)
+    }
+
+    @Test
+    fun progressCalculation_and_nextActionableMilestone_areAccurate() = runTest {
+        val roadmap = PersonalizedRoadmapDetail(
+            id = "r-progress",
+            title = "Progress Test",
+            goal = "Test",
+            category = "Test",
+            level = "Intermediate",
+            duration = "8 weeks",
+            stages = 2,
+            icon = "code",
+            phases = listOf(
+                PersonalizedPhase(
+                    title = "Phase 1",
+                    objective = "Obj 1",
+                    durationWeeks = 2,
+                    milestones = listOf(
+                        PersonalizedMilestone(title = "Milestone 1", isCompleted = false),
+                        PersonalizedMilestone(title = "Milestone 2", isCompleted = false)
+                    )
+                ),
+                PersonalizedPhase(
+                    title = "Phase 2",
+                    objective = "Obj 2",
+                    durationWeeks = 2,
+                    milestones = listOf(
+                        PersonalizedMilestone(title = "Milestone 3", isCompleted = false),
+                        PersonalizedMilestone(title = "Milestone 4", isCompleted = false)
+                    )
+                )
+            )
+        )
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+
+        // 0 of 4 milestones completed
+        assertEquals(0, viewModel.calculateRoadmapProgress(roadmap, emptySet()))
+        assertEquals("Milestone 1", viewModel.getNextActionableMilestone(roadmap, emptySet()))
+
+        // 2 of 4 milestones completed (50%)
+        val completedSet = setOf("r-progress_0_0_Milestone 1", "r-progress_0_1_Milestone 2")
+        assertEquals(50, viewModel.calculateRoadmapProgress(roadmap, completedSet))
+        assertEquals("Milestone 3", viewModel.getNextActionableMilestone(roadmap, completedSet))
+
+        // All 4 milestones completed (100%)
+        val allCompleted = setOf(
+            "r-progress_0_0_Milestone 1",
+            "r-progress_0_1_Milestone 2",
+            "r-progress_1_0_Milestone 3",
+            "r-progress_1_1_Milestone 4"
+        )
+        assertEquals(100, viewModel.calculateRoadmapProgress(roadmap, allCompleted))
+        assertEquals("All milestones completed!", viewModel.getNextActionableMilestone(roadmap, allCompleted))
+    }
+
+    @Test
+    fun correctProfileField_updatesSessionStateCorrectly() = runTest {
+        val initialSession = AssessmentSessionState(
+            id = "sess-corr",
+            state = "READY_FOR_GENERATION",
+            goal = "Original Goal",
+            targetLevel = "Beginner",
+            weeklyHours = 8.0,
+            targetTimeline = "8 weeks"
+        )
+        fakeRepo.activeAssessmentSession = initialSession
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.startOrResumeAssessment()
+        testScheduler.advanceUntilIdle()
+
+        viewModel.correctProfileField("goal", "Master Android Kotlin")
+        testScheduler.advanceUntilIdle()
+        assertEquals("Master Android Kotlin", viewModel.uiState.value.assessmentSession?.goal)
+
+        viewModel.correctProfileField("weekly_hours", 15.0)
+        testScheduler.advanceUntilIdle()
+        assertEquals(15.0, viewModel.uiState.value.assessmentSession?.weeklyHours)
+
+        viewModel.correctProfileField("target_level", "Intermediate")
+        testScheduler.advanceUntilIdle()
+        assertEquals("Intermediate", viewModel.uiState.value.assessmentSession?.targetLevel)
+    }
+
+    @Test
+    fun toggleTask_updatesCompletedMilestonesAndProgress() = runTest {
+        val roadmap = PersonalizedRoadmapDetail(
+            id = "r-task-test",
+            title = "Task Test",
+            goal = "Test Goal",
+            category = "Testing",
+            level = "Beginner",
+            duration = "4 weeks",
+            stages = 1,
+            icon = "code",
+            phases = listOf(
+                PersonalizedPhase(
+                    title = "Phase 1",
+                    objective = "Learn tasks",
+                    durationWeeks = 2,
+                    tasks = listOf(
+                        PersonalizedTask(id = "t1", title = "Task 1", estimatedHours = 2.0),
+                        PersonalizedTask(id = "t2", title = "Task 2", estimatedHours = 3.0)
+                    ),
+                    milestones = listOf(
+                        PersonalizedMilestone(title = "Milestone 1", isCompleted = false)
+                    )
+                )
+            )
+        )
+        fakeRepo.myPersonalizedRoadmapsList = listOf(roadmap)
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.selectPersonalizedRoadmap(roadmap)
+        testScheduler.advanceUntilIdle()
+
+        // 0 of 3 items done (0%)
+        assertEquals(0, viewModel.calculateRoadmapProgress(roadmap))
+        assertFalse(viewModel.isTaskCompleted("r-task-test", "t1"))
+
+        // Toggle task 1
+        viewModel.toggleTask("t1")
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.isTaskCompleted("r-task-test", "t1"))
+        // 1 of 3 items done (33%)
+        assertEquals(33, viewModel.calculateRoadmapProgress(roadmap))
+
+        // Toggle task 2 and milestone 1
+        viewModel.toggleTask("t2")
+        viewModel.toggleMilestone("r-task-test_0_0_Milestone 1")
+        testScheduler.advanceUntilIdle()
+
+        // 3 of 3 items done (100%)
+        assertEquals(100, viewModel.calculateRoadmapProgress(roadmap))
+    }
 }
+
 
 
 

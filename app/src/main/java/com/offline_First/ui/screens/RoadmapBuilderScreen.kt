@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -77,6 +76,16 @@ fun RoadmapBuilderScreen(
     val isReadyForGeneration = session?.state == "READY_FOR_GENERATION" || uiState.generatedPersonalizedRoadmap != null
     val isBusy = uiState.isAssessmentLoading || uiState.isSendingAssessmentMessage || uiState.isGenerating
 
+    // Step calculation based on completed steps / session state
+    val currentStepNumber = when {
+        uiState.generatedPersonalizedRoadmap != null -> 5
+        session?.state == "READY_FOR_GENERATION" -> 5
+        session?.quiz != null || session?.currentStepId == "skills" || session?.state == "ASSESSING_SKILLS" -> 4
+        session?.currentStepId == "availability" || session?.state == "ASSESSING_AVAILABILITY" -> 3
+        session?.currentStepId == "experience" || session?.state == "COLLECTING_PROGRESS" -> 2
+        else -> 1
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -115,15 +124,16 @@ fun RoadmapBuilderScreen(
                                             RoundedCornerShape(8.dp)
                                         )
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
+                                    ) {
                                     Text(
                                         text = when (session?.state) {
-                                            "READY_FOR_GENERATION" -> "Ready to Build"
-                                            "ASSESSING_SKILLS" -> "Assessing Skills"
-                                            "COLLECTING_GOALS" -> "Goal Discovery"
-                                            "COLLECTING_PROGRESS" -> "Analyzing Background"
+                                            "READY_FOR_GENERATION" -> "Step 5: Ready to Generate"
+                                            "ASSESSING_SKILLS" -> "Step 4: Skill Diagnostic"
+                                            "ASSESSING_AVAILABILITY" -> "Step 3: Study Hours"
+                                            "COLLECTING_PROGRESS" -> "Step 2: Experience Level"
+                                            "COLLECTING_GOALS" -> "Step 1: Learning Goal"
                                             "COMPLETED" -> "Roadmap Created"
-                                            else -> "Adaptive Assessment"
+                                            else -> "Step $currentStepNumber of 5"
                                         },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (isReadyForGeneration) EduNovaSuccess else primaryColor,
@@ -138,17 +148,17 @@ fun RoadmapBuilderScreen(
                             )
                         }
 
-                        IconButton(onClick = { viewModel.resetAssessment() }) {
+                        IconButton(onClick = { viewModel.startNewAssessment() }) {
                             Icon(
                                 Icons.Default.Refresh,
-                                contentDescription = "Reset Assessment",
+                                contentDescription = "Start Fresh Session",
                                 tint = onSurfaceVariant
                             )
                         }
                     }
 
-                    // Progress bar
-                    val progressFraction = (session?.completenessPercentage ?: 15) / 100f
+                    // 5-Step Progress Bar
+                    val progressFraction = (session?.completenessPercentage ?: (currentStepNumber * 20)) / 100f
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -268,58 +278,35 @@ fun RoadmapBuilderScreen(
                     }
                 }
 
-                // Ready for Generation Banner CTA
+                // Step 5: Review & Ready for Generation with Editable Profile Card
                 if (session?.state == "READY_FOR_GENERATION" && !uiState.isGenerating) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = primaryColor.copy(alpha = 0.08f)),
-                        border = BorderStroke(1.5.dp, primaryColor)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = "Ready",
-                                    tint = EduNovaSuccess,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "Assessment Complete!",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        "Your goals, current skills, and timeline have been analyzed.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = { viewModel.generatePersonalizedRoadmap() },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Generate My Personalized Roadmap", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    LearnerProfileReviewCard(
+                        session = session,
+                        isGenerating = uiState.isGenerating,
+                        onGenerate = { viewModel.generatePersonalizedRoadmap() },
+                        onCorrectField = { field, value ->
+                            viewModel.correctProfileField(field, value)
+                        },
+                        primaryColor = primaryColor
+                    )
                 }
 
-                // Quick Option Chips
+                // Step 1 Helper Example Chips for Learning Goal Discovery
+                val isGoalStep = session?.state == "COLLECTING_GOALS" || currentStepNumber == 1
                 val latestMentorMsg = uiState.assessmentMessages.lastOrNull { it.speaker == AssessmentSpeaker.MENTOR }
                 val hasPendingQuiz = uiState.assessmentSession?.quiz != null || uiState.assessmentMessages.lastOrNull()?.quiz != null
                 val activeOptions = uiState.assessmentSession?.options?.ifEmpty { latestMentorMsg?.options ?: emptyList() } ?: latestMentorMsg?.options ?: emptyList()
-                val showQuickOptions = activeOptions.isNotEmpty() && !hasPendingQuiz && !isBusy && session?.state != "READY_FOR_GENERATION" && session?.state != "COMPLETED"
+
+                val promptSuggestions = if (isGoalStep && activeOptions.isEmpty()) {
+                    listOf(
+                        "Learn Python for data analysis",
+                        "Build Android apps with Kotlin",
+                        "Prepare for machine-learning interviews",
+                        "Master Fullstack Web Development"
+                    )
+                } else activeOptions
+
+                val showQuickOptions = promptSuggestions.isNotEmpty() && !hasPendingQuiz && !isBusy && session?.state != "READY_FOR_GENERATION" && session?.state != "COMPLETED"
 
                 if (showQuickOptions) {
                     FlowRow(
@@ -329,7 +316,7 @@ fun RoadmapBuilderScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        activeOptions.forEach { optionText ->
+                        promptSuggestions.forEach { optionText ->
                             SuggestionChip(
                                 onClick = {
                                     if (!isBusy) {
@@ -365,7 +352,7 @@ fun RoadmapBuilderScreen(
                             value = draftText,
                             onValueChange = { draftText = it },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text("Reply to advisor or ask a question...") },
+                            placeholder = { Text("Reply to advisor or clarify your goal...") },
                             maxLines = 3,
                             enabled = !isBusy,
                             shape = RoundedCornerShape(16.dp),
@@ -549,21 +536,290 @@ private fun AssessmentBubble(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Button(
                                     onClick = {
-                                        if (selectedQuizIndex != null) {
-                                            val chosenText = quiz.options[selectedQuizIndex]
+                                        if (selectedQuizIndex != null && !isSubmitting) {
+                                            val chosenText = quiz.options.getOrNull(selectedQuizIndex) ?: ""
                                             onSubmitQuiz(selectedQuizIndex, chosenText)
                                         }
                                     },
                                     enabled = selectedQuizIndex != null && !isSubmitting,
-                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
                                 ) {
-                                    Text("Submit Answer", fontWeight = FontWeight.SemiBold)
+                                    Text("Submit Diagnostic Answer", fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LearnerProfileReviewCard(
+    session: AssessmentSessionState,
+    isGenerating: Boolean,
+    onGenerate: () -> Unit,
+    onCorrectField: (String, Any) -> Unit,
+    primaryColor: Color
+) {
+    var isEditingGoal by remember { mutableStateOf(false) }
+    var goalDraft by remember(session.goal) { mutableStateOf(session.goal ?: "") }
+
+    var isEditingLevel by remember { mutableStateOf(false) }
+    var isEditingHours by remember { mutableStateOf(false) }
+    var isEditingTimeline by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.5.dp, primaryColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(EduNovaSuccess.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Ready",
+                        tint = EduNovaSuccess,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Review Your Learning Profile",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Tap any field to adjust before generating your personalized roadmap.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+            // 1. Goal Field
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Target Goal", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                    TextButton(
+                        onClick = { isEditingGoal = !isEditingGoal },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(if (isEditingGoal) "Cancel" else "Edit", fontSize = 12.sp, color = primaryColor)
+                    }
+                }
+                if (isEditingGoal) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = goalDraft,
+                            onValueChange = { goalDraft = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (goalDraft.isNotBlank()) {
+                                    onCorrectField("goal", goalDraft.trim())
+                                    isEditingGoal = false
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                        ) {
+                            Text("Save", fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    Text(
+                        session.goal ?: "General Skill Growth",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // 2. Level Field
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Baseline Level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                    TextButton(
+                        onClick = { isEditingLevel = !isEditingLevel },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(if (isEditingLevel) "Done" else "Edit", fontSize = 12.sp, color = primaryColor)
+                    }
+                }
+                if (isEditingLevel) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("Beginner", "Intermediate", "Advanced").forEach { lvl ->
+                            val isSel = session.targetLevel?.equals(lvl, ignoreCase = true) == true
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    onCorrectField("target_level", lvl)
+                                    isEditingLevel = false
+                                },
+                                label = { Text(lvl) }
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        session.targetLevel ?: "Beginner",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // 3. Weekly Hours & Timeline
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Weekly Hours
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Weekly Hours", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                        TextButton(
+                            onClick = { isEditingHours = !isEditingHours },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(if (isEditingHours) "Done" else "Edit", fontSize = 12.sp, color = primaryColor)
+                        }
+                    }
+                    if (isEditingHours) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val currentH = session.weeklyHours ?: 8.0
+                            IconButton(
+                                onClick = {
+                                    val newH = (currentH - 2.0).coerceAtLeast(2.0)
+                                    onCorrectField("weekly_hours", newH)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "-2 hrs")
+                            }
+                            Text(
+                                "${currentH.toInt()} hrs",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                            IconButton(
+                                onClick = {
+                                    val newH = (currentH + 2.0).coerceAtMost(40.0)
+                                    onCorrectField("weekly_hours", newH)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "+2 hrs")
+                            }
+                        }
+                    } else {
+                        Text(
+                            "${(session.weeklyHours ?: 8.0).toInt()} hrs / week",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Timeline
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Target Timeline", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                        TextButton(
+                            onClick = { isEditingTimeline = !isEditingTimeline },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(if (isEditingTimeline) "Done" else "Edit", fontSize = 12.sp, color = primaryColor)
+                        }
+                    }
+                    if (isEditingTimeline) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("8 weeks", "12 weeks", "16 weeks").forEach { t ->
+                                val isSel = session.targetTimeline == t
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = {
+                                        onCorrectField("target_timeline", t)
+                                        isEditingTimeline = false
+                                    },
+                                    label = { Text(t, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            session.targetTimeline ?: "12 weeks",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Button(
+                onClick = onGenerate,
+                enabled = !isGenerating,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+            ) {
+                if (isGenerating) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generating Roadmap with AI...", fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generate My Personalized Roadmap", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -584,116 +840,139 @@ private fun PersonalizedRoadmapReviewView(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Hero Card
-        item(key = "roadmap-hero-card") {
+        // Success Header Card
+        item(key = "review-header") {
             Card(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = primaryColor.copy(alpha = 0.08f)),
-                border = BorderStroke(1.5.dp, primaryColor.copy(alpha = 0.3f)),
+                border = BorderStroke(1.5.dp, primaryColor),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
-                                .background(primaryColor, CircleShape),
+                                .size(36.dp)
+                                .background(EduNovaSuccess, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✦", color = Color.White, fontSize = 20.sp)
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = roadmap.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Goal: ${roadmap.goal}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Your Roadmap Is Ready!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Tailored by AI to your exact goals and diagnostic results", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                }
+            }
+        }
+
+        // Core Roadmap Profile Overview Card
+        item(key = "roadmap-overview") {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(roadmap.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Goal: ${roadmap.goal}", style = MaterialTheme.typography.bodyMedium, color = primaryColor, fontWeight = FontWeight.SemiBold)
 
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        EduNovaBadge("Level: ${roadmap.level}")
-                        EduNovaBadge("Duration: ${roadmap.duration}")
+                        EduNovaBadge("Starting Level: ${roadmap.level}")
                         EduNovaBadge("Commitment: ${roadmap.weeklyHours} hrs/week")
+                        EduNovaBadge("Duration: ${roadmap.duration}")
                         EduNovaBadge("${roadmap.phases.size} Phases")
                     }
                 }
             }
         }
 
-        // Assessment Summary: Strengths & Skill Gaps
-        item(key = "assessment-strengths-gaps") {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Advisor Assessment Summary",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+        // Diagnostic Assessment Summary Card
+        if (roadmap.assessmentSummary.strengths.isNotEmpty() || roadmap.assessmentSummary.skillGaps.isNotEmpty() || roadmap.assessmentSummary.skillGapBreakdown.isNotEmpty()) {
+            item(key = "assessment-summary-card") {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Diagnostic Insights", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                    if (roadmap.assessmentSummary.strengths.isNotEmpty()) {
-                        Text(
-                            "Verified Strengths & Background:",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = EduNovaSuccess,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            roadmap.assessmentSummary.strengths.forEach { s ->
-                                EduNovaBadge(s, containerColor = EduNovaSuccess.copy(alpha = 0.12f), contentColor = EduNovaSuccess)
+                        if (roadmap.assessmentSummary.strengths.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Verified Strengths", style = MaterialTheme.typography.labelMedium, color = EduNovaSuccess, fontWeight = FontWeight.Bold)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    roadmap.assessmentSummary.strengths.forEach { str ->
+                                        EduNovaBadge(str, containerColor = EduNovaSuccess.copy(alpha = 0.15f), contentColor = EduNovaSuccess)
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    if (roadmap.assessmentSummary.skillGaps.isNotEmpty()) {
-                        Text(
-                            "Target Skill Gaps to Bridge:",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = EduNovaAccent,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            roadmap.assessmentSummary.skillGaps.forEach { g ->
-                                EduNovaBadge(g, containerColor = EduNovaAccent.copy(alpha = 0.12f), contentColor = EduNovaAccent)
+                        if (roadmap.assessmentSummary.skillGapBreakdown.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Focus Areas to Build", style = MaterialTheme.typography.labelMedium, color = primaryColor, fontWeight = FontWeight.Bold)
+                                roadmap.assessmentSummary.skillGapBreakdown.forEach { item ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("→ ", color = primaryColor, fontWeight = FontWeight.Bold)
+                                        Text(item.skill, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                        EduNovaBadge(
+                                            text = item.status.replace("_", " "),
+                                            containerColor = primaryColor.copy(alpha = 0.1f),
+                                            contentColor = primaryColor
+                                        )
+                                    }
+                                    if (!item.rationale.isNullOrBlank()) {
+                                        Text(
+                                            text = item.rationale,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 12.dp)
+                                        )
+                                    }
+                                }
                             }
+                        } else if (roadmap.assessmentSummary.skillGaps.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Focus Areas to Build", style = MaterialTheme.typography.labelMedium, color = EduNovaAccent, fontWeight = FontWeight.Bold)
+                                roadmap.assessmentSummary.skillGaps.forEach { gap ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("→ ", color = EduNovaAccent, fontWeight = FontWeight.Bold)
+                                        Text(gap, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!roadmap.assessmentSummary.curriculumRationale.isNullOrBlank()) {
+                            Text(
+                                text = roadmap.assessmentSummary.curriculumRationale,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             }
         }
 
-        // Phases & Milestones
-        item(key = "phases-header") {
-            Text(
-                "Learning Phases & Milestones",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
+        // Ordered Phases & Actionable Milestones / Tasks
         itemsIndexed(
             items = roadmap.phases,
             key = { pIdx, phase -> "phase_${pIdx}_${phase.title}" }
@@ -756,6 +1035,64 @@ private fun PersonalizedRoadmapReviewView(
                             ) {
                                 phase.topics.forEach { topic ->
                                     EduNovaBadge(topic)
+                                }
+                            }
+                        }
+
+                        // Practical Tasks
+                        if (phase.tasks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Structured Tasks (${phase.tasks.size}):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                            phase.tasks.forEach { task ->
+                                val taskKey = "${roadmap.id}_task_${task.id}"
+                                val isDone = completedMilestones.contains(taskKey) || completedMilestones.contains(task.id) || task.isCompleted
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable { onToggleMilestone(taskKey) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isDone) EduNovaSuccess.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Checkbox(
+                                            checked = isDone,
+                                            onCheckedChange = { onToggleMilestone(taskKey) },
+                                            colors = CheckboxDefaults.colors(checkedColor = EduNovaSuccess)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = task.title,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                EduNovaBadge("${task.estimatedHours}h", containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            if (task.instructions.isNotBlank()) {
+                                                Text(
+                                                    text = task.instructions,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            if (task.completionCriteria.isNotBlank()) {
+                                                Text(
+                                                    text = "Criteria: ${task.completionCriteria}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = primaryColor
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -844,7 +1181,7 @@ private fun PersonalizedRoadmapReviewView(
                     }
                     Text(roadmap.capstoneProject, style = MaterialTheme.typography.bodyMedium)
 
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Next Step", tint = primaryColor)
@@ -1008,4 +1345,3 @@ private fun AssessmentErrorStateView(
         }
     }
 }
-

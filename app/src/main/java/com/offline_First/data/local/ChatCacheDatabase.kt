@@ -12,13 +12,17 @@ import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.RoadmapAccentTheme
 import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.PersonalizedPhase
+import com.offline_First.domain.model.PersonalizedTask
 import com.offline_First.domain.model.PersonalizedMilestone
 import com.offline_First.domain.model.WeeklyScheduleItem
 import com.offline_First.domain.model.AssessmentSummary
+import com.offline_First.domain.model.SkillGapItem
 import com.offline_First.data.remote.PersonalizedPhaseDto
+import com.offline_First.data.remote.PersonalizedTaskDto
 import com.offline_First.data.remote.PersonalizedMilestoneDto
 import com.offline_First.data.remote.WeeklyScheduleItemDto
 import com.offline_First.data.remote.AssessmentSummaryDto
+import com.offline_First.data.remote.SkillGapItemDto
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -766,6 +770,19 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                         objective = p.objective,
                         durationWeeks = p.durationWeeks,
                         topics = p.topics,
+                        tasks = p.tasks.map { t ->
+                            PersonalizedTaskDto(
+                                id = t.id,
+                                title = t.title,
+                                description = t.description,
+                                instructions = t.instructions,
+                                estimatedHours = t.estimatedHours,
+                                resources = t.resources,
+                                completionCriteria = t.completionCriteria,
+                                isCompleted = t.isCompleted,
+                                dependencies = t.dependencies
+                            )
+                        },
                         activities = p.activities,
                         resources = p.resources,
                         milestones = p.milestones.map { m ->
@@ -792,7 +809,17 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                     skillGaps = r.assessmentSummary.skillGaps,
                     verifiedEvidence = r.assessmentSummary.verifiedEvidence,
                     selfReportedInformation = r.assessmentSummary.selfReportedInformation,
-                    unknowns = r.assessmentSummary.unknowns
+                    unknowns = r.assessmentSummary.unknowns,
+                    skillGapBreakdown = r.assessmentSummary.skillGapBreakdown.map {
+                        SkillGapItemDto(
+                            skill = it.skill,
+                            status = it.status,
+                            source = it.source,
+                            confidence = it.confidence,
+                            rationale = it.rationale
+                        )
+                    },
+                    curriculumRationale = r.assessmentSummary.curriculumRationale
                 )
 
                 val values = ContentValues().apply {
@@ -953,6 +980,20 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         )
     }
 
+    fun updatePersonalizedRoadmapTitle(roadmapId: String, newTitle: String, userId: String) {
+        val values = ContentValues().apply {
+            put("title", newTitle)
+            put("updated_at", System.currentTimeMillis())
+        }
+        writableDatabase.update(
+            "local_personalized_roadmaps",
+            values,
+            "id = ? AND (user_id = ? OR user_id = 'default_user')",
+            arrayOf(roadmapId, userId)
+        )
+    }
+
+
     private fun parsePersonalizedRoadmapCursor(
         cursor: Cursor,
         completedMilestones: List<String>
@@ -987,6 +1028,20 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                     objective = p.objective,
                     durationWeeks = p.durationWeeks,
                     topics = p.topics,
+                    tasks = p.tasks.map { t ->
+                        val isDone = completedMilestones.contains("${id}_task_${t.id}") || completedMilestones.contains(t.id)
+                        PersonalizedTask(
+                            id = t.id,
+                            title = t.title,
+                            description = t.description.orEmpty(),
+                            instructions = t.instructions,
+                            estimatedHours = t.estimatedHours,
+                            resources = t.resources,
+                            completionCriteria = t.completionCriteria,
+                            isCompleted = isDone,
+                            dependencies = t.dependencies
+                        )
+                    },
                     activities = p.activities,
                     resources = p.resources,
                     milestones = p.milestones.mapIndexed { mIdx, m ->
@@ -1018,7 +1073,17 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                 skillGaps = sumDto.skillGaps,
                 verifiedEvidence = sumDto.verifiedEvidence,
                 selfReportedInformation = sumDto.selfReportedInformation,
-                unknowns = sumDto.unknowns
+                unknowns = sumDto.unknowns,
+                skillGapBreakdown = sumDto.skillGapBreakdown.map {
+                    SkillGapItem(
+                        skill = it.skill,
+                        status = it.status,
+                        source = it.source,
+                        confidence = it.confidence,
+                        rationale = it.rationale
+                    )
+                },
+                curriculumRationale = sumDto.curriculumRationale
             )
 
             PersonalizedRoadmapDetail(

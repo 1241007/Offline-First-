@@ -14,6 +14,7 @@ data class RoadmapUiState(
     val roadmaps: UiState<List<RoadmapOption>> = UiState.Loading,
     val categories: List<String> = emptyList(),
     val selectedCategory: String = "All",
+    val dashboardTab: String = "All", // "All", "In Progress", "Completed", "Catalog"
     val isLoadingMore: Boolean = false,
     val hasMore: Boolean = true,
     // Personalized Roadmaps
@@ -101,6 +102,93 @@ class RoadmapViewModel(
         }
     }
 
+    fun deletePersonalizedRoadmap(roadmapId: String) {
+        viewModelScope.launch {
+            repository.deletePersonalizedRoadmap(roadmapId).onSuccess {
+                val updated = _uiState.value.myPersonalizedRoadmaps.filter { it.id != roadmapId }
+                _uiState.value = _uiState.value.copy(
+                    myPersonalizedRoadmaps = updated,
+                    selectedPersonalizedRoadmap = if (_uiState.value.selectedPersonalizedRoadmap?.id == roadmapId) null else _uiState.value.selectedPersonalizedRoadmap
+                )
+            }
+        }
+    }
+
+    fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.renamePersonalizedRoadmap(roadmapId, newTitle).onSuccess { updatedItem ->
+                val updatedList = _uiState.value.myPersonalizedRoadmaps.map {
+                    if (it.id == roadmapId) updatedItem else it
+                }
+                _uiState.value = _uiState.value.copy(
+                    myPersonalizedRoadmaps = updatedList,
+                    selectedPersonalizedRoadmap = if (_uiState.value.selectedPersonalizedRoadmap?.id == roadmapId) updatedItem else _uiState.value.selectedPersonalizedRoadmap
+                )
+            }
+        }
+    }
+
+    fun setDashboardTab(tab: String) {
+        _uiState.value = _uiState.value.copy(dashboardTab = tab)
+    }
+
+    fun calculateRoadmapProgress(roadmap: PersonalizedRoadmapDetail, completedSet: Set<String>? = null): Int {
+        val totalMilestones = roadmap.phases.flatMap { it.milestones }
+        val totalTasks = roadmap.phases.flatMap { it.tasks }
+        val totalItems = totalMilestones.size + totalTasks.size
+        if (totalItems == 0) return 0
+
+        val completedKeys = completedSet ?: if (_uiState.value.completedMilestones.isNotEmpty()) _uiState.value.completedMilestones else roadmap.completedMilestones.toSet()
+        var completedCount = 0
+
+        roadmap.phases.forEachIndexed { pIdx, phase ->
+            phase.milestones.forEachIndexed { mIdx, m ->
+                val key = "${roadmap.id}_${pIdx}_${mIdx}_${m.title}"
+                if (completedKeys.contains(key) || completedKeys.contains(m.title) || m.isCompleted) {
+                    completedCount++
+                }
+            }
+            phase.tasks.forEach { t ->
+                val key = "${roadmap.id}_task_${t.id}"
+                if (completedKeys.contains(key) || completedKeys.contains(t.id) || t.isCompleted) {
+                    completedCount++
+                }
+            }
+        }
+        return ((completedCount.toFloat() / totalItems.toFloat()) * 100).toInt().coerceIn(0, 100)
+    }
+
+    fun isTaskCompleted(roadmapId: String, taskId: String, completedSet: Set<String>? = null): Boolean {
+        val keys = completedSet ?: _uiState.value.completedMilestones
+        return keys.contains("${roadmapId}_task_${taskId}") || keys.contains(taskId)
+    }
+
+    fun isMilestoneCompleted(roadmapId: String, pIdx: Int, mIdx: Int, title: String, completedSet: Set<String>? = null): Boolean {
+        val keys = completedSet ?: _uiState.value.completedMilestones
+        val key = "${roadmapId}_${pIdx}_${mIdx}_${title}"
+        return keys.contains(key) || keys.contains(title)
+    }
+
+    fun getNextActionableMilestone(roadmap: PersonalizedRoadmapDetail, completedSet: Set<String>? = null): String {
+        val completedKeys = completedSet ?: roadmap.completedMilestones.toSet()
+        for ((pIdx, phase) in roadmap.phases.withIndex()) {
+            for (task in phase.tasks) {
+                val tKey = "${roadmap.id}_task_${task.id}"
+                val isDone = completedKeys.contains(tKey) || completedKeys.contains(task.id) || task.isCompleted
+                if (!isDone) {
+                    return task.title
+                }
+            }
+            for ((mIdx, milestone) in phase.milestones.withIndex()) {
+                val key = "${roadmap.id}_${pIdx}_${mIdx}_${milestone.title}"
+                val isDone = completedKeys.contains(key) || completedKeys.contains(milestone.title) || milestone.isCompleted
+                if (!isDone) {
+                    return milestone.title
+                }
+            }
+        }
+        return "All milestones completed!"
+    }
 
     fun loadMoreRoadmaps() {
         val current = _uiState.value
@@ -195,6 +283,17 @@ class RoadmapViewModel(
                 }
             )
         }
+    }
+
+    fun startNewAssessment() {
+        _uiState.value = _uiState.value.copy(
+            assessmentSession = null,
+            assessmentMessages = emptyList(),
+            generatedPersonalizedRoadmap = null,
+            generatedRoadmap = null,
+            selectedQuizIndex = null
+        )
+        startOrResumeAssessment(forceNew = true)
     }
 
     fun retryAssessment() {
@@ -331,6 +430,36 @@ class RoadmapViewModel(
         }
     }
 
+    fun toggleTask(taskId: String) {
+        val currentRoadmap = _uiState.value.selectedPersonalizedRoadmap ?: _uiState.value.generatedPersonalizedRoadmap ?: return
+        val taskKey = "${currentRoadmap.id}_task_${taskId}"
+        toggleMilestone(taskKey)
+    }
+
+    fun correctProfileField(field: String, value: Any, onComplete: ((Boolean) -> Unit)? = null) {
+        val currentSession = _uiState.value.assessmentSession ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSendingAssessmentMessage = true, errorMessage = null)
+            repository.correctProfileField(currentSession.id, field, value.toString()).fold(
+                onSuccess = { updatedSession ->
+                    _uiState.value = _uiState.value.copy(
+                        isSendingAssessmentMessage = false,
+                        assessmentSession = updatedSession,
+                        assessmentMessages = updatedSession.messages
+                    )
+                    onComplete?.invoke(true)
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isSendingAssessmentMessage = false,
+                        errorMessage = err.localizedMessage ?: "Failed to update profile field."
+                    )
+                    onComplete?.invoke(false)
+                }
+            )
+        }
+    }
+
     fun syncPendingChanges() {
         viewModelScope.launch {
             repository.syncPendingRoadmaps()
@@ -361,3 +490,4 @@ class RoadmapViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 }
+

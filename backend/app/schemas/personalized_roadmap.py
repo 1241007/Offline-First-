@@ -10,7 +10,9 @@ class AssessmentQuizPublicDto(BaseModel):
     """Diagnostic quiz presented to the client. Never contains correct_index or answers!"""
     question: str
     options: List[str]
-    skill_tested: Optional[str] = None
+    skill_tested: Optional[str] = Field(None, alias="skillTested")
+    difficulty: Optional[str] = None
+    selection_rationale: Optional[str] = Field(None, alias="selectionRationale")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -56,12 +58,34 @@ class SubmitAssessmentAnswerRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ProfileCorrectionRequest(BaseModel):
+    """In-place correction of a specific profile field before generation"""
+    field: str  # "goal", "target_level", "weekly_hours", "target_timeline"
+    value: Any
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 # --- Structured Roadmap Schemas ---
+
+class PersonalizedTaskSchema(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = ""
+    instructions: str = ""
+    estimated_hours: float = Field(1.0, alias="estimatedHours")
+    resources: List[str] = Field(default_factory=list)
+    completion_criteria: str = Field("", alias="completionCriteria")
+    is_completed: bool = Field(False, alias="isCompleted")
+    dependencies: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
 
 class PersonalizedMilestoneSchema(BaseModel):
     title: str
     completion_criteria: List[str] = Field(default_factory=list, alias="completionCriteria")
-    assessment: str
+    assessment: str = ""
     passing_criteria: str = Field(..., alias="passingCriteria")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -72,6 +96,7 @@ class PersonalizedPhaseSchema(BaseModel):
     objective: str
     duration_weeks: int = Field(1, alias="durationWeeks")
     topics: List[str] = Field(default_factory=list)
+    tasks: List[PersonalizedTaskSchema] = Field(default_factory=list)
     activities: List[str] = Field(default_factory=list)
     resources: List[str] = Field(default_factory=list)
     milestones: List[PersonalizedMilestoneSchema] = Field(default_factory=list)
@@ -89,12 +114,24 @@ class WeeklyScheduleItemSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class SkillGapItemSchema(BaseModel):
+    skill: str
+    status: str = "developing"  # "demonstrated", "developing", "not_yet_demonstrated", "unknown"
+    source: str = "diagnostic_verified"  # "diagnostic_verified", "course_completion", "self_reported", "inferred"
+    confidence: float = 1.0
+    rationale: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AssessmentSummarySchema(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     skill_gaps: List[str] = Field(default_factory=list, alias="skillGaps")
     verified_evidence: List[str] = Field(default_factory=list, alias="verifiedEvidence")
     self_reported_information: List[str] = Field(default_factory=list, alias="selfReportedInformation")
     unknowns: List[str] = Field(default_factory=list)
+    skill_gap_breakdown: List[SkillGapItemSchema] = Field(default_factory=list, alias="skillGapBreakdown")
+    curriculum_rationale: Optional[str] = Field(None, alias="curriculumRationale")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -164,5 +201,12 @@ class RoadmapMilestonesSyncResponse(BaseModel):
     """Current state of completed milestones for a personalized roadmap"""
     roadmap_id: str = Field(..., alias="roadmapId")
     completed_milestones: List[str] = Field(default_factory=list, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RenamePersonalizedRoadmapRequest(BaseModel):
+    """Request to rename a personalized roadmap"""
+    title: str = Field(..., min_length=1, max_length=255)
 
     model_config = ConfigDict(populate_by_name=True)

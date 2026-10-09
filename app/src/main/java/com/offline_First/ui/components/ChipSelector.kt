@@ -41,24 +41,3 @@ fun EduNovaFilterChip(
         )
     }
 }
-
-@Composable
-fun EduNovaBadge(
-    text: String,
-    modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(containerColor)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            color = contentColor,
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
-}

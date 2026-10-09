@@ -47,7 +47,9 @@ data class RoadmapDetailDto(
 data class AssessmentQuizPublicDto(
     val question: String,
     val options: List<String> = emptyList(),
-    @SerialName("skill_tested") val skillTested: String? = null
+    @SerialName("skill_tested") val skillTested: String? = null,
+    val difficulty: String? = null,
+    @SerialName("selection_rationale") val selectionRationale: String? = null
 )
 
 @Serializable
@@ -85,6 +87,25 @@ data class SubmitAssessmentAnswerRequestDto(
 )
 
 @Serializable
+data class ProfileCorrectionRequestDto(
+    val field: String,
+    val value: String
+)
+
+@Serializable
+data class PersonalizedTaskDto(
+    val id: String,
+    val title: String,
+    val description: String = "",
+    val instructions: String = "",
+    @SerialName("estimatedHours") val estimatedHours: Double = 1.0,
+    val resources: List<String> = emptyList(),
+    @SerialName("completionCriteria") val completionCriteria: String = "",
+    @SerialName("isCompleted") val isCompleted: Boolean = false,
+    val dependencies: List<String> = emptyList()
+)
+
+@Serializable
 data class PersonalizedMilestoneDto(
     val title: String,
     @SerialName("completionCriteria") val completionCriteria: List<String> = emptyList(),
@@ -98,6 +119,7 @@ data class PersonalizedPhaseDto(
     val objective: String,
     @SerialName("durationWeeks") val durationWeeks: Int = 1,
     val topics: List<String> = emptyList(),
+    val tasks: List<PersonalizedTaskDto> = emptyList(),
     val activities: List<String> = emptyList(),
     val resources: List<String> = emptyList(),
     val milestones: List<PersonalizedMilestoneDto> = emptyList(),
@@ -113,12 +135,23 @@ data class WeeklyScheduleItemDto(
 )
 
 @Serializable
+data class SkillGapItemDto(
+    val skill: String,
+    val status: String = "developing",
+    val source: String = "diagnostic_verified",
+    val confidence: Double = 1.0,
+    val rationale: String? = null
+)
+
+@Serializable
 data class AssessmentSummaryDto(
     val strengths: List<String> = emptyList(),
     @SerialName("skillGaps") val skillGaps: List<String> = emptyList(),
     @SerialName("verifiedEvidence") val verifiedEvidence: List<String> = emptyList(),
     @SerialName("selfReportedInformation") val selfReportedInformation: List<String> = emptyList(),
-    val unknowns: List<String> = emptyList()
+    val unknowns: List<String> = emptyList(),
+    @SerialName("skillGapBreakdown") val skillGapBreakdown: List<SkillGapItemDto> = emptyList(),
+    @SerialName("curriculumRationale") val curriculumRationale: String? = null
 )
 
 @Serializable
@@ -180,3 +213,7 @@ data class SavePersonalizedRoadmapRequestDto(
     val structure: PersonalizedRoadmapStructureDto
 )
 
+@Serializable
+data class RenamePersonalizedRoadmapRequestDto(
+    val title: String
+)

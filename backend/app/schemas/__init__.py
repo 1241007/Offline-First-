@@ -27,7 +27,8 @@ from .personalized_roadmap import (
     WeeklyScheduleItemSchema,
     AssessmentSummarySchema,
     PersonalizedRoadmapSchema,
-    PersonalizedRoadmapDetailResponse
+    PersonalizedRoadmapDetailResponse,
+    RenamePersonalizedRoadmapRequest
 )
 from .learning import (
     LearningCourseResponse,

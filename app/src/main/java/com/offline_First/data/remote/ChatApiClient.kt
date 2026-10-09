@@ -485,6 +485,22 @@ object ChatApiClient {
         json.decodeFromString<AssessmentSessionResponseDto>(body)
     }
 
+    suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionResponseDto> = runCatching {
+        val payload = json.encodeToString(
+            ProfileCorrectionRequestDto(
+                field = field,
+                value = value
+            )
+        )
+        val (code, body) = post("/roadmaps/personalized/session/$sessionId/correct-field", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
     suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetailResponseDto> = runCatching {
         val (code, body) = post("/roadmaps/personalized/session/$sessionId/generate", "{}")
         if (code !in 200..299) error("HTTP $code: $body")
@@ -542,5 +558,21 @@ object ChatApiClient {
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
     }
+
+    suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> = runCatching {
+        val (code, body) = delete("/roadmaps/personalized/$roadmapId")
+        if (code !in 200..299) error("HTTP $code: $body")
+    }
+
+    suspend fun renamePersonalizedRoadmap(
+        roadmapId: String,
+        title: String
+    ): Result<PersonalizedRoadmapDetailResponseDto> = runCatching {
+        val payload = json.encodeToString(RenamePersonalizedRoadmapRequestDto(title = title))
+        val (code, body) = patch("/roadmaps/personalized/$roadmapId/rename", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
+    }
 }
+
 

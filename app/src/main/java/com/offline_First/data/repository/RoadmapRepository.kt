@@ -32,6 +32,12 @@ interface RoadmapRepository {
         quizSelectedIndex: Int? = null
     ): Result<AssessmentSessionState>
 
+    suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState>
+
     suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail>
 
     suspend fun getMyPersonalizedRoadmaps(
@@ -44,6 +50,11 @@ interface RoadmapRepository {
     suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail>
 
     suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail>
+    
+    suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit>
+
+    suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<PersonalizedRoadmapDetail>
+
 
     // --- Offline-First Milestone Progress & Sync ---
 

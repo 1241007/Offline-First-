@@ -183,3 +183,30 @@ class RoadmapRepository:
         await self.db.flush()
         return await self.get_roadmap_by_id_and_user(roadmap.id, roadmap.user_id)
 
+    async def delete_personalized_roadmap(self, roadmap_id: str, user_id: str) -> bool:
+        """Delete a user-owned personalized roadmap and associated items"""
+        roadmap = await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or roadmap.is_system or roadmap.user_id != user_id:
+            return False
+
+        await self.db.delete(roadmap)
+        await self.db.flush()
+        return True
+
+    async def rename_personalized_roadmap(
+        self, roadmap_id: str, user_id: str, new_title: str
+    ) -> Optional[Roadmap]:
+        """Update title of a user-owned personalized roadmap"""
+        roadmap = await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or roadmap.is_system or roadmap.user_id != user_id:
+            return None
+
+        roadmap.title = new_title
+        if roadmap.structure:
+            struct = dict(roadmap.structure)
+            struct["title"] = new_title
+            roadmap.structure = struct
+
+        await self.db.flush()
+        return await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+

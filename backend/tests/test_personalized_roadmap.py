@@ -760,4 +760,369 @@ async def test_idempotent_duplicate_message_submission(client: AsyncClient, setu
     assert msg_count_1 == msg_count_2, "Duplicate submission must be idempotent"
 
 
+@pytest.mark.asyncio
+async def test_regression_screenshot_1_goal_not_polluted_by_hours(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """
+    Regression Test 1:
+    User enters Python as learning goal and '2–4 hours/week' as study availability.
+    The resulting roadmap title and goal must reflect 'Python', NOT '2–4 hours/week'.
+    """
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # Step 1: Goal
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Python"},
+    )
+    # Step 2: Level
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Intermediate"},
+    )
+    # Step 3: Study availability
+    step3_resp = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "2–4 hours/week"},
+    )
+    assert step3_resp.status_code == 200
+    step3_data = step3_resp.json()
+    assert step3_data["goal"] == "Python"
+    assert step3_data["weeklyHours"] == 3.0
+
+    # Progress to ready
+    session_query = select(RoadmapAssessmentSession).where(RoadmapAssessmentSession.id == session_id)
+    session = (await db_session.execute(session_query)).scalar_one()
+    session.state = "READY_FOR_GENERATION"
+    await db_session.commit()
+
+    # Generate roadmap with mock AI returning a title that might contain hours
+    mock_roadmap = {
+        "title": "2–4 hours/week Python Mastery",
+        "goal": "Python",
+        "startingLevel": "Intermediate",
+        "category": "Software Engineering",
+        "estimatedDuration": "8 weeks",
+        "weeklyHours": 3.0,
+        "assessmentSummary": {
+            "strengths": ["Python basics"],
+            "skillGaps": ["Asyncio"],
+            "verifiedEvidence": [],
+            "selfReportedInformation": [],
+            "unknowns": []
+        },
+        "phases": [
+            {
+                "title": "Phase 1: Python Core",
+                "objective": "Deep dive into Python",
+                "durationWeeks": 4,
+                "topics": ["OOP", "Iterators"],
+                "activities": ["Build CLI"],
+                "resources": ["Docs"],
+                "milestones": [
+                    {
+                        "title": "CLI Tool Complete",
+                        "completionCriteria": ["Working CLI"],
+                        "assessment": "Code Review",
+                        "passingCriteria": "Passes all tests"
+                    }
+                ],
+                "recommendedCourseIds": []
+            }
+        ],
+        "weeklySchedule": [
+            {
+                "dayOrWeek": "Week 1",
+                "focusTopic": "OOP",
+                "estimatedHours": 3.0,
+                "tasks": ["Read chapter", "Write code"]
+            }
+        ],
+        "assumptions": ["Basic knowledge"],
+        "capstoneProject": "Python CLI tool",
+        "nextAction": "Start Phase 1"
+    }
+
+    with patch("app.services.openrouter_service.openrouter_service.generate_response", new=AsyncMock(return_value=json.dumps(mock_roadmap))):
+        gen_resp = await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/generate")
+        assert gen_resp.status_code == 201
+        gen_data = gen_resp.json()
+
+        # Check that title is sanitized and does NOT contain study hours
+        assert "2–4 hours/week" not in gen_data["title"]
+        assert "hours/week" not in gen_data["title"].lower()
+        assert "Python" in gen_data["title"]
+        assert gen_data["goal"] == "Python"
+
+
+@pytest.mark.asyncio
+async def test_regression_screenshot_2_advanced_level_preserved(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """
+    Regression Test 2:
+    User selects 'Advanced'. The generated roadmap must display 'Advanced', NEVER silently defaulting to 'Beginner'.
+    """
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # Step 1: Goal
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Android Architecture"},
+    )
+    # Step 2: Level (Advanced)
+    level_resp = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Advanced (Built production apps)"},
+    )
+    assert level_resp.status_code == 200
+    assert level_resp.json()["targetLevel"] == "Advanced"
+
+    # Step 3: Availability
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "10 hours/week"},
+    )
+
+    # Progress session to ready
+    session_query = select(RoadmapAssessmentSession).where(RoadmapAssessmentSession.id == session_id)
+    session = (await db_session.execute(session_query)).scalar_one()
+    session.state = "READY_FOR_GENERATION"
+    await db_session.commit()
+
+    # Simulate AI output that mistakenly has startingLevel: "Beginner"
+    mock_roadmap = {
+        "title": "Advanced Android Architecture",
+        "goal": "Android Architecture",
+        "startingLevel": "Beginner",  # AI hallucination!
+        "category": "Mobile Development",
+        "estimatedDuration": "8 weeks",
+        "weeklyHours": 10.0,
+        "assessmentSummary": {
+            "strengths": ["Compose", "Coroutines"],
+            "skillGaps": ["Custom Layouts"],
+            "verifiedEvidence": [],
+            "selfReportedInformation": [],
+            "unknowns": []
+        },
+        "phases": [
+            {
+                "title": "Phase 1: Modular Architecture",
+                "objective": "Build multi-module architecture",
+                "durationWeeks": 4,
+                "topics": ["Dependency Injection", "Navigation"],
+                "activities": ["Refactor app"],
+                "resources": ["Android Guide"],
+                "milestones": [
+                    {
+                        "title": "Multi-module refactor",
+                        "completionCriteria": ["Clean build"],
+                        "assessment": "Code Review",
+                        "passingCriteria": "100% tests pass"
+                    }
+                ],
+                "recommendedCourseIds": []
+            }
+        ],
+        "weeklySchedule": [],
+        "assumptions": [],
+        "capstoneProject": "Modular Android App",
+        "nextAction": "Start Phase 1"
+    }
+
+    with patch("app.services.openrouter_service.openrouter_service.generate_response", new=AsyncMock(return_value=json.dumps(mock_roadmap))):
+        gen_resp = await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/generate")
+        assert gen_resp.status_code == 201
+        gen_data = gen_resp.json()
+
+        # The service MUST correct the level back to "Advanced"
+        assert gen_data["level"] == "Advanced"
+        assert gen_data["structure"]["startingLevel"] == "Advanced"
+
+
+@pytest.mark.asyncio
+async def test_regression_screenshot_3_no_assessment_complete_while_quiz_pending(client: AsyncClient, setup_learner_data):
+    """
+    Regression Test 3:
+    When a diagnostic quiz is presented, the session must NOT show 'READY_FOR_GENERATION' or 100% complete
+    while required quiz questions remain unanswered.
+    """
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # User answers goal, level, availability
+    await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/message", json={"answer": "Python Data Science"})
+    await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/message", json={"answer": "Intermediate"})
+    resp3 = await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/message", json={"answer": "5 hours/week"})
+    data3 = resp3.json()
+
+    # If quiz is present:
+    if data3.get("quiz"):
+        assert data3["state"] == "ASSESSING_SKILLS"
+        assert data3["state"] != "READY_FOR_GENERATION", "Must NOT be ready for generation while quiz is pending!"
+        assert data3["completenessPercentage"] < 100, "Completeness must be < 100% while quiz is pending!"
+
+
+@pytest.mark.asyncio
+async def test_multiple_independent_roadmaps_for_single_user(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """
+    Test creating multiple independent roadmaps for one user:
+    - Roadmap 1: Python Data Science
+    - Roadmap 2: Kotlin Android Development
+    Verify both exist independently with unique IDs, goals, and milestone sets.
+    """
+    # 1. Create Roadmap 1
+    start1 = await client.post("/api/v1/roadmaps/personalized/start")
+    session1_id = start1.json()["id"]
+
+    session1 = (await db_session.execute(select(RoadmapAssessmentSession).where(RoadmapAssessmentSession.id == session1_id))).scalar_one()
+    session1.state = "READY_FOR_GENERATION"
+    session1.goal = "Python Data Science"
+    session1.target_level = "Beginner"
+    session1.weekly_hours = 6.0
+    await db_session.commit()
+
+    mock1 = {
+        "title": "Python Data Science Roadmap",
+        "goal": "Python Data Science",
+        "startingLevel": "Beginner",
+        "category": "AI & Data",
+        "estimatedDuration": "8 weeks",
+        "weeklyHours": 6.0,
+        "assessmentSummary": {"strengths": ["Math"], "skillGaps": ["Pandas"], "verifiedEvidence": [], "selfReportedInformation": [], "unknowns": []},
+        "phases": [
+            {
+                "title": "Phase 1: Pandas",
+                "objective": "Data wrangling",
+                "durationWeeks": 4,
+                "topics": ["Pandas"],
+                "activities": ["EDA"],
+                "resources": [],
+                "milestones": [{"title": "EDA Lab", "completionCriteria": ["Done"], "assessment": "Check", "passingCriteria": "Pass"}],
+                "recommendedCourseIds": []
+            }
+        ],
+        "weeklySchedule": [],
+        "assumptions": [],
+        "capstoneProject": "Kaggle Project",
+        "nextAction": "Start Pandas"
+    }
+
+    with patch("app.services.openrouter_service.openrouter_service.generate_response", new=AsyncMock(return_value=json.dumps(mock1))):
+        resp1 = await client.post(f"/api/v1/roadmaps/personalized/session/{session1_id}/generate")
+        assert resp1.status_code == 201
+        r1_id = resp1.json()["id"]
+
+    # 2. Create Roadmap 2 (Fresh session)
+    start2 = await client.post("/api/v1/roadmaps/personalized/start")
+    session2_id = start2.json()["id"]
+    assert session2_id != session1_id
+
+    session2 = (await db_session.execute(select(RoadmapAssessmentSession).where(RoadmapAssessmentSession.id == session2_id))).scalar_one()
+    session2.state = "READY_FOR_GENERATION"
+    session2.goal = "Kotlin Android Development"
+    session2.target_level = "Advanced"
+    session2.weekly_hours = 12.0
+    await db_session.commit()
+
+    mock2 = {
+        "title": "Kotlin Android Development Roadmap",
+        "goal": "Kotlin Android Development",
+        "startingLevel": "Advanced",
+        "category": "Mobile Development",
+        "estimatedDuration": "10 weeks",
+        "weeklyHours": 12.0,
+        "assessmentSummary": {"strengths": ["Kotlin"], "skillGaps": ["JNI"], "verifiedEvidence": [], "selfReportedInformation": [], "unknowns": []},
+        "phases": [
+            {
+                "title": "Phase 1: Native JNI",
+                "objective": "C++ bridge",
+                "durationWeeks": 5,
+                "topics": ["JNI", "CMake"],
+                "activities": ["Bridge llama.cpp"],
+                "resources": [],
+                "milestones": [{"title": "JNI Bridge", "completionCriteria": ["Runs model"], "assessment": "Check", "passingCriteria": "Pass"}],
+                "recommendedCourseIds": []
+            }
+        ],
+        "weeklySchedule": [],
+        "assumptions": [],
+        "capstoneProject": "Offline LLM App",
+        "nextAction": "Start JNI"
+    }
+
+    with patch("app.services.openrouter_service.openrouter_service.generate_response", new=AsyncMock(return_value=json.dumps(mock2))):
+        resp2 = await client.post(f"/api/v1/roadmaps/personalized/session/{session2_id}/generate")
+        assert resp2.status_code == 201
+        r2_id = resp2.json()["id"]
+        assert r2_id != r1_id
+
+    # 3. List roadmaps: Both must exist
+    my_roadmaps_resp = await client.get("/api/v1/roadmaps/personalized/my-roadmaps")
+    assert my_roadmaps_resp.status_code == 200
+    my_roadmaps = my_roadmaps_resp.json()
+    ids = [r["id"] for r in my_roadmaps]
+    assert r1_id in ids
+    assert r2_id in ids
+
+    # 4. Milestone progress on Roadmap 1 does NOT affect Roadmap 2
+    await client.put(f"/api/v1/roadmaps/personalized/{r1_id}/milestones", json={"milestoneKey": "EDA Lab", "isCompleted": True})
+    m1 = (await client.get(f"/api/v1/roadmaps/personalized/{r1_id}/milestones")).json()["completedMilestones"]
+    m2 = (await client.get(f"/api/v1/roadmaps/personalized/{r2_id}/milestones")).json()["completedMilestones"]
+    assert "EDA Lab" in m1
+    assert "EDA Lab" not in m2
+
+
+@pytest.mark.asyncio
+async def test_rename_and_delete_personalized_roadmap(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """Test renaming and deleting a personalized roadmap."""
+    # Create test roadmap
+    roadmap = Roadmap(
+        id="test-delete-roadmap-1",
+        user_id="test-user-id",
+        is_system=False,
+        title="Old Roadmap Title",
+        slug="delete-test-slug-1",
+        category="General",
+        description="A test roadmap",
+        level="Beginner",
+        duration="4 weeks",
+        icon="school",
+        accent_theme="primary",
+        structure={
+            "title": "Old Roadmap Title",
+            "goal": "A test roadmap",
+            "startingLevel": "Beginner",
+            "category": "General",
+            "estimatedDuration": "4 weeks",
+            "weeklyHours": 5.0,
+            "assessmentSummary": {"strengths": [], "skillGaps": [], "verifiedEvidence": [], "selfReportedInformation": [], "unknowns": []},
+            "phases": [],
+            "weeklySchedule": [],
+            "assumptions": [],
+            "capstoneProject": "App",
+            "nextAction": "Start",
+            "completedMilestones": []
+        }
+    )
+    db_session.add(roadmap)
+    await db_session.commit()
+
+    # 1. Rename roadmap
+    rename_resp = await client.patch(
+        "/api/v1/roadmaps/personalized/test-delete-roadmap-1/rename",
+        json={"title": "New Refined Roadmap Title"}
+    )
+    assert rename_resp.status_code == 200
+    assert rename_resp.json()["title"] == "New Refined Roadmap Title"
+
+    # 2. Delete roadmap
+    del_resp = await client.delete("/api/v1/roadmaps/personalized/test-delete-roadmap-1")
+    assert del_resp.status_code == 204
+
+    # 3. Verify it is gone
+    get_resp = await client.get("/api/v1/roadmaps/personalized/test-delete-roadmap-1")
+    assert get_resp.status_code == 404
+
+
+
 

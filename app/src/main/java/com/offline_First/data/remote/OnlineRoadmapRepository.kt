@@ -44,7 +44,33 @@ class OnlineRoadmapRepository(
         return DiagnosticQuiz(
             question = question,
             options = options,
-            skillTested = skillTested
+            skillTested = skillTested,
+            difficulty = difficulty,
+            selectionRationale = selectionRationale
+        )
+    }
+
+    private fun PersonalizedTaskDto.toDomain(): PersonalizedTask {
+        return PersonalizedTask(
+            id = id,
+            title = title,
+            description = description ?: "",
+            instructions = instructions,
+            estimatedHours = estimatedHours,
+            resources = resources,
+            completionCriteria = completionCriteria,
+            isCompleted = isCompleted,
+            dependencies = dependencies
+        )
+    }
+
+    private fun SkillGapItemDto.toDomain(): SkillGapItem {
+        return SkillGapItem(
+            skill = skill,
+            status = status,
+            source = source,
+            confidence = confidence,
+            rationale = rationale
         )
     }
 
@@ -98,6 +124,7 @@ class OnlineRoadmapRepository(
             objective = objective,
             durationWeeks = durationWeeks,
             topics = topics,
+            tasks = tasks.map { it.toDomain() },
             activities = activities,
             resources = resources,
             milestones = milestones.map { it.toDomain() },
@@ -120,7 +147,9 @@ class OnlineRoadmapRepository(
             skillGaps = skillGaps,
             verifiedEvidence = verifiedEvidence,
             selfReportedInformation = selfReportedInformation,
-            unknowns = unknowns
+            unknowns = unknowns,
+            skillGapBreakdown = skillGapBreakdown.map { it.toDomain() },
+            curriculumRationale = curriculumRationale
         )
     }
 
@@ -221,6 +250,18 @@ class OnlineRoadmapRepository(
         ).map { it.toDomain() }
     }
 
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState> {
+        return ChatApiClient.correctProfileField(
+            sessionId = sessionId,
+            field = field,
+            value = value
+        ).map { it.toDomain() }
+    }
+
     override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail> {
         return ChatApiClient.generatePersonalizedRoadmap(sessionId)
             .map { dto ->
@@ -300,6 +341,39 @@ class OnlineRoadmapRepository(
         val local = db?.getPersonalizedRoadmapById(roadmap.id, currentUserId) ?: roadmap
         return Result.success(local)
     }
+
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> {
+        val db = cacheDb
+        db?.deletePersonalizedRoadmap(roadmapId, currentUserId)
+        runCatching {
+            ChatApiClient.deletePersonalizedRoadmap(roadmapId).getOrThrow()
+        }
+        return Result.success(Unit)
+    }
+
+    override suspend fun renamePersonalizedRoadmap(
+        roadmapId: String,
+        newTitle: String
+    ): Result<PersonalizedRoadmapDetail> {
+        val db = cacheDb
+        val cleanTitle = newTitle.trim().ifEmpty { "Personalized Roadmap" }
+        db?.updatePersonalizedRoadmapTitle(roadmapId, cleanTitle, currentUserId)
+
+        runCatching {
+            val updatedDto = ChatApiClient.renamePersonalizedRoadmap(roadmapId, cleanTitle).getOrThrow()
+            val domain = updatedDto.toDomain()
+            db?.savePersonalizedRoadmap(domain, currentUserId, syncStatus = "synced")
+            return Result.success(domain)
+        }
+
+        val local = db?.getPersonalizedRoadmapById(roadmapId, currentUserId)
+        return if (local != null) {
+            Result.success(local)
+        } else {
+            Result.failure(NoSuchElementException("Roadmap not found"))
+        }
+    }
+
 
     override suspend fun syncPendingRoadmaps(): Result<Unit> {
         val db = cacheDb ?: return Result.success(Unit)
@@ -478,6 +552,19 @@ class OnlineRoadmapRepository(
                 objective = p.objective,
                 durationWeeks = p.durationWeeks,
                 topics = p.topics,
+                tasks = p.tasks.map { t ->
+                    PersonalizedTaskDto(
+                        id = t.id,
+                        title = t.title,
+                        description = t.description,
+                        instructions = t.instructions,
+                        estimatedHours = t.estimatedHours,
+                        resources = t.resources,
+                        completionCriteria = t.completionCriteria,
+                        isCompleted = t.isCompleted,
+                        dependencies = t.dependencies
+                    )
+                },
                 activities = p.activities,
                 resources = p.resources,
                 milestones = p.milestones.map { m ->
@@ -504,7 +591,17 @@ class OnlineRoadmapRepository(
             skillGaps = assessmentSummary.skillGaps,
             verifiedEvidence = assessmentSummary.verifiedEvidence,
             selfReportedInformation = assessmentSummary.selfReportedInformation,
-            unknowns = assessmentSummary.unknowns
+            unknowns = assessmentSummary.unknowns,
+            skillGapBreakdown = assessmentSummary.skillGapBreakdown.map {
+                SkillGapItemDto(
+                    skill = it.skill,
+                    status = it.status,
+                    source = it.source,
+                    confidence = it.confidence,
+                    rationale = it.rationale
+                )
+            },
+            curriculumRationale = assessmentSummary.curriculumRationale
         )
         val structureDto = PersonalizedRoadmapStructureDto(
             title = title,

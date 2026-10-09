@@ -29,7 +29,9 @@ enum class AssessmentSpeaker {
 data class DiagnosticQuiz(
     val question: String,
     val options: List<String>,
-    val skillTested: String? = null
+    val skillTested: String? = null,
+    val difficulty: String? = null,
+    val selectionRationale: String? = null
 )
 
 data class AssessmentMessage(
@@ -60,6 +62,18 @@ data class AssessmentSessionState(
     val messages: List<AssessmentMessage> = emptyList()
 )
 
+data class PersonalizedTask(
+    val id: String,
+    val title: String,
+    val description: String = "",
+    val instructions: String = "",
+    val estimatedHours: Double = 1.0,
+    val resources: List<String> = emptyList(),
+    val completionCriteria: String = "",
+    val isCompleted: Boolean = false,
+    val dependencies: List<String> = emptyList()
+)
+
 data class PersonalizedMilestone(
     val title: String,
     val completionCriteria: List<String> = emptyList(),
@@ -73,6 +87,7 @@ data class PersonalizedPhase(
     val objective: String,
     val durationWeeks: Int,
     val topics: List<String> = emptyList(),
+    val tasks: List<PersonalizedTask> = emptyList(),
     val activities: List<String> = emptyList(),
     val resources: List<String> = emptyList(),
     val milestones: List<PersonalizedMilestone> = emptyList(),
@@ -86,12 +101,22 @@ data class WeeklyScheduleItem(
     val tasks: List<String> = emptyList()
 )
 
+data class SkillGapItem(
+    val skill: String,
+    val status: String = "developing",
+    val source: String = "diagnostic_verified",
+    val confidence: Double = 1.0,
+    val rationale: String? = null
+)
+
 data class AssessmentSummary(
     val strengths: List<String> = emptyList(),
     val skillGaps: List<String> = emptyList(),
     val verifiedEvidence: List<String> = emptyList(),
     val selfReportedInformation: List<String> = emptyList(),
-    val unknowns: List<String> = emptyList()
+    val unknowns: List<String> = emptyList(),
+    val skillGapBreakdown: List<SkillGapItem> = emptyList(),
+    val curriculumRationale: String? = null
 )
 
 data class PersonalizedRoadmapDetail(

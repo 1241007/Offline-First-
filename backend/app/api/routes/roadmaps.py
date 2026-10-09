@@ -11,10 +11,12 @@ from app.schemas.roadmap import RoadmapListResponse, RoadmapDetailResponse
 from app.schemas.personalized_roadmap import (
     AssessmentSessionResponse,
     SubmitAssessmentAnswerRequest,
+    ProfileCorrectionRequest,
     PersonalizedRoadmapDetailResponse,
     SavePersonalizedRoadmapRequest,
     RoadmapMilestonesSyncRequest,
     RoadmapMilestonesSyncResponse,
+    RenamePersonalizedRoadmapRequest,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["roadmaps"])
@@ -119,6 +121,31 @@ async def submit_assessment_answer(
             session_id=session_id,
             answer=payload.answer,
             quiz_selected_index=payload.quiz_selected_index,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/roadmaps/personalized/session/{session_id}/correct-field",
+    response_model=AssessmentSessionResponse,
+)
+async def correct_profile_field(
+    session_id: str,
+    payload: ProfileCorrectionRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    In-place edit of learner profile fields during Stage E review without resetting assessment.
+    """
+    service = PersonalizedRoadmapService(db)
+    try:
+        return await service.correct_profile_field(
+            user_id=current_user_id,
+            session_id=session_id,
+            field=payload.field,
+            value=payload.value,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -263,6 +290,50 @@ async def sync_roadmap_milestones(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete(
+    "/roadmaps/personalized/{roadmap_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_personalized_roadmap(
+    roadmap_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a user's personalized roadmap.
+    """
+    service = PersonalizedRoadmapService(db)
+    success = await service.delete_personalized_roadmap(
+        roadmap_id=roadmap_id, user_id=current_user_id
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Personalized roadmap not found or unauthorized")
+    return None
+
+
+@router.patch(
+    "/roadmaps/personalized/{roadmap_id}/rename",
+    response_model=PersonalizedRoadmapDetailResponse,
+)
+async def rename_personalized_roadmap(
+    roadmap_id: str,
+    payload: RenamePersonalizedRoadmapRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Rename a user's personalized roadmap.
+    """
+    service = PersonalizedRoadmapService(db)
+    updated = await service.rename_personalized_roadmap(
+        roadmap_id=roadmap_id, user_id=current_user_id, new_title=payload.title
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Personalized roadmap not found or unauthorized")
+    return updated
+
 
 
 # --- General Roadmap Detail (System & User) ---
