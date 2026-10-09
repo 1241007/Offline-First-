@@ -110,6 +110,7 @@ class PersonalizedRoadmapSchema(BaseModel):
     assumptions: List[str] = Field(default_factory=list)
     capstone_project: str = Field(..., alias="capstoneProject")
     next_action: str = Field(..., alias="nextAction")
+    completed_milestones: List[str] = Field(default_factory=list, alias="completedMilestones")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -130,3 +131,35 @@ class PersonalizedRoadmapDetailResponse(BaseModel):
     created_at: Optional[str] = Field(None, alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class SavePersonalizedRoadmapRequest(BaseModel):
+    """Request to save or sync a personalized roadmap created locally or generated offline"""
+    id: Optional[str] = None
+    title: str
+    goal: str
+    category: Optional[str] = "General"
+    level: Optional[str] = "Beginner"
+    duration: Optional[str] = "8 weeks"
+    icon: Optional[str] = "school"
+    accent_theme: Optional[str] = Field("primary", alias="accentTheme")
+    structure: PersonalizedRoadmapSchema
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RoadmapMilestonesSyncRequest(BaseModel):
+    """Request to toggle or batch sync completed milestones"""
+    milestone_key: Optional[str] = Field(None, alias="milestoneKey")
+    is_completed: Optional[bool] = Field(None, alias="isCompleted")
+    completed_milestones: Optional[List[str]] = Field(None, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RoadmapMilestonesSyncResponse(BaseModel):
+    """Current state of completed milestones for a personalized roadmap"""
+    roadmap_id: str = Field(..., alias="roadmapId")
+    completed_milestones: List[str] = Field(default_factory=list, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)

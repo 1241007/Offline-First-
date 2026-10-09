@@ -29,7 +29,8 @@ data class RoadmapUiState(
     val generatedPersonalizedRoadmap: PersonalizedRoadmapDetail? = null,
     val generatedRoadmap: GeneratedRoadmapPreview? = null,
     val completedMilestones: Set<String> = emptySet(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val assessmentError: String? = null
 )
 
 class RoadmapViewModel(
@@ -73,12 +74,33 @@ class RoadmapViewModel(
     }
 
     fun loadMyPersonalizedRoadmaps() {
+        // 1. Immediately load durable cached roadmaps so screen displays with zero latency
+        val cached = repository.getMyPersonalizedRoadmapsCached()
+        if (cached.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(myPersonalizedRoadmaps = cached)
+        }
+
+        // 2. Fetch and merge cloud data asynchronously
         viewModelScope.launch {
             repository.getMyPersonalizedRoadmaps().onSuccess { list ->
                 _uiState.value = _uiState.value.copy(myPersonalizedRoadmaps = list)
             }
         }
     }
+
+    fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail) {
+        viewModelScope.launch {
+            repository.savePersonalizedRoadmap(roadmap).onSuccess { saved ->
+                val current = _uiState.value.myPersonalizedRoadmaps
+                val updated = (listOf(saved) + current).distinctBy { it.id }
+                _uiState.value = _uiState.value.copy(
+                    myPersonalizedRoadmaps = updated,
+                    selectedPersonalizedRoadmap = saved
+                )
+            }
+        }
+    }
+
 
     fun loadMoreRoadmaps() {
         val current = _uiState.value
@@ -117,6 +139,7 @@ class RoadmapViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isAssessmentLoading = true,
+                assessmentError = null,
                 errorMessage = null
             )
 
@@ -126,6 +149,7 @@ class RoadmapViewModel(
                 if (activeSession != null && activeSession.state != "COMPLETED") {
                     _uiState.value = _uiState.value.copy(
                         isAssessmentLoading = false,
+                        assessmentError = null,
                         assessmentSession = activeSession,
                         assessmentMessages = activeSession.messages,
                         selectedQuizIndex = null
@@ -140,6 +164,7 @@ class RoadmapViewModel(
                 onSuccess = { session ->
                     _uiState.value = _uiState.value.copy(
                         isAssessmentLoading = false,
+                        assessmentError = null,
                         assessmentSession = session,
                         assessmentMessages = session.messages,
                         generatedPersonalizedRoadmap = null,
@@ -147,13 +172,24 @@ class RoadmapViewModel(
                     )
                 },
                 onFailure = { err ->
+                    val friendlyMsg = when {
+                        err.message?.contains("500") == true -> "Server temporarily unavailable. Please tap Retry to reconnect."
+                        err.message?.contains("401") == true -> "Session expired. Please sign in again."
+                        err.message?.contains("Unable to resolve host") == true -> "Network connection unavailable. Please check your internet connection."
+                        else -> err.localizedMessage ?: "Failed to connect to EduNova AI Advisor."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isAssessmentLoading = false,
-                        errorMessage = err.localizedMessage ?: "Failed to connect to EduNova AI Advisor."
+                        assessmentError = friendlyMsg,
+                        errorMessage = friendlyMsg
                     )
                 }
             )
         }
+    }
+
+    fun retryAssessment() {
+        startOrResumeAssessment(forceNew = false)
     }
 
     fun selectQuizOption(index: Int) {
@@ -229,7 +265,8 @@ class RoadmapViewModel(
                         isGenerating = false,
                         generatedPersonalizedRoadmap = roadmapDetail,
                         generatedRoadmap = legacyPreview,
-                        selectedPersonalizedRoadmap = roadmapDetail
+                        selectedPersonalizedRoadmap = roadmapDetail,
+                        completedMilestones = roadmapDetail.completedMilestones.toSet()
                     )
                     loadMyPersonalizedRoadmaps()
                 },
@@ -245,9 +282,18 @@ class RoadmapViewModel(
 
     fun selectPersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail?) {
         _uiState.value = _uiState.value.copy(selectedPersonalizedRoadmap = roadmap)
+        if (roadmap != null) {
+            viewModelScope.launch {
+                val completed = repository.getCompletedMilestones(roadmap.id)
+                _uiState.value = _uiState.value.copy(
+                    completedMilestones = if (completed.isNotEmpty()) completed else roadmap.completedMilestones.toSet()
+                )
+            }
+        }
     }
 
     fun toggleMilestone(milestoneKey: String) {
+        val currentRoadmap = _uiState.value.selectedPersonalizedRoadmap ?: _uiState.value.generatedPersonalizedRoadmap
         val current = _uiState.value.completedMilestones
         val updated = if (current.contains(milestoneKey)) {
             current - milestoneKey
@@ -255,6 +301,23 @@ class RoadmapViewModel(
             current + milestoneKey
         }
         _uiState.value = _uiState.value.copy(completedMilestones = updated)
+
+        if (currentRoadmap != null) {
+            viewModelScope.launch {
+                repository.toggleMilestoneProgress(currentRoadmap.id, milestoneKey)
+                    .onSuccess { newSet ->
+                        _uiState.value = _uiState.value.copy(completedMilestones = newSet)
+                    }
+            }
+        }
+    }
+
+    fun syncPendingChanges() {
+        viewModelScope.launch {
+            repository.syncPendingRoadmaps()
+            repository.syncPendingMilestoneProgress()
+            loadMyPersonalizedRoadmaps()
+        }
     }
 
     fun resetAssessment() {

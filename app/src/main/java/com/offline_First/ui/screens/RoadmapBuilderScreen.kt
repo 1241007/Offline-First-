@@ -182,7 +182,7 @@ fun RoadmapBuilderScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            // Main content: either Generated Roadmap Review OR Conversation Chat List
+            // Main content: either Generated Roadmap Review, Loading, Error View, OR Conversation Chat List
             if (uiState.generatedPersonalizedRoadmap != null) {
                 PersonalizedRoadmapReviewView(
                     roadmap = uiState.generatedPersonalizedRoadmap!!,
@@ -191,6 +191,20 @@ fun RoadmapBuilderScreen(
                     onStartLearning = onStartLearning,
                     onAdjustAnswers = { viewModel.clearGeneratedRoadmap() },
                     primaryColor = primaryColor
+                )
+            } else if (uiState.isAssessmentLoading && uiState.assessmentMessages.isEmpty()) {
+                AssessmentInitialLoadingView(
+                    primaryColor = primaryColor,
+                    onSurfaceVariant = onSurfaceVariant
+                )
+            } else if (uiState.assessmentMessages.isEmpty() && (uiState.assessmentError != null || (uiState.assessmentSession == null && !uiState.isAssessmentLoading))) {
+                AssessmentErrorStateView(
+                    errorMessage = uiState.assessmentError ?: "Unable to connect to AI Advisor. Please check your internet connection.",
+                    onRetry = { viewModel.retryAssessment() },
+                    onBack = onBack,
+                    primaryColor = primaryColor,
+                    surfaceColor = surfaceColor,
+                    outlineColor = outlineColor
                 )
             } else {
                 LazyColumn(
@@ -202,27 +216,6 @@ fun RoadmapBuilderScreen(
                     contentPadding = PaddingValues(vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    if (uiState.isAssessmentLoading && uiState.assessmentMessages.isEmpty()) {
-                        item(key = "loading-initial-assessment") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(40.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CircularProgressIndicator(color = primaryColor)
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        "Consulting EduNova AI Advisor...",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     itemsIndexed(
                         items = uiState.assessmentMessages,
                         key = { index, msg -> "${msg.speaker}_${msg.id}_$index" }
@@ -875,3 +868,134 @@ private fun PersonalizedRoadmapReviewView(
         }
     }
 }
+
+@Composable
+private fun AssessmentInitialLoadingView(
+    primaryColor: Color,
+    onSurfaceVariant: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+            modifier = Modifier.fillMaxWidth(0.9f)
+        ) {
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(primaryColor.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        color = primaryColor,
+                        strokeWidth = 3.5.dp
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "Consulting AI Learning Advisor",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Analyzing your profile and curriculum goals to tailor your assessment...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssessmentErrorStateView(
+    errorMessage: String,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    primaryColor: Color,
+    surfaceColor: Color,
+    outlineColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+            border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.2f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(68.dp)
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = "Connection Error",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "AI Advisor Unavailable",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = onRetry,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Retry Connection", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onBack,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Back to Roadmaps")
+                }
+            }
+        }
+    }
+}
+

@@ -12,6 +12,9 @@ from app.schemas.personalized_roadmap import (
     AssessmentSessionResponse,
     SubmitAssessmentAnswerRequest,
     PersonalizedRoadmapDetailResponse,
+    SavePersonalizedRoadmapRequest,
+    RoadmapMilestonesSyncRequest,
+    RoadmapMilestonesSyncResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["roadmaps"])
@@ -144,6 +147,31 @@ async def generate_personalized_roadmap(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post(
+    "/roadmaps/personalized/save",
+    response_model=PersonalizedRoadmapDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@router.post(
+    "/roadmaps/personalized",
+    response_model=PersonalizedRoadmapDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def save_personalized_roadmap(
+    payload: SavePersonalizedRoadmapRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Save or synchronize a locally created or generated personalized roadmap to the cloud.
+    Ensures authenticated-user ownership, idempotency, and server-side authorization.
+    """
+    service = PersonalizedRoadmapService(db)
+    return await service.save_or_sync_personalized_roadmap(
+        user_id=current_user_id, payload=payload
+    )
+
+
 @router.get(
     "/roadmaps/personalized/my-roadmaps",
     response_model=List[PersonalizedRoadmapDetailResponse],
@@ -182,6 +210,59 @@ async def get_personalized_roadmap_detail(
     if not roadmap:
         raise HTTPException(status_code=404, detail="Personalized roadmap not found")
     return roadmap
+
+
+@router.get(
+    "/roadmaps/personalized/{roadmap_id}/milestones",
+    response_model=RoadmapMilestonesSyncResponse,
+)
+async def get_roadmap_milestones(
+    roadmap_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retrieve current completed milestones for a personalized roadmap.
+    """
+    service = PersonalizedRoadmapService(db)
+    completed = await service.get_roadmap_milestones(
+        roadmap_id=roadmap_id, user_id=current_user_id
+    )
+    return RoadmapMilestonesSyncResponse(
+        roadmapId=roadmap_id,
+        completedMilestones=completed,
+    )
+
+
+@router.put(
+    "/roadmaps/personalized/{roadmap_id}/milestones",
+    response_model=RoadmapMilestonesSyncResponse,
+)
+async def sync_roadmap_milestones(
+    roadmap_id: str,
+    payload: RoadmapMilestonesSyncRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update or merge completed milestones for a personalized roadmap.
+    Supports atomic single milestone toggle or batch list synchronization.
+    """
+    service = PersonalizedRoadmapService(db)
+    try:
+        updated = await service.sync_roadmap_milestones(
+            roadmap_id=roadmap_id,
+            user_id=current_user_id,
+            milestone_key=payload.milestone_key,
+            is_completed=payload.is_completed,
+            completed_milestones=payload.completed_milestones,
+        )
+        return RoadmapMilestonesSyncResponse(
+            roadmapId=roadmap_id,
+            completedMilestones=updated,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # --- General Roadmap Detail (System & User) ---

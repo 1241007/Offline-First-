@@ -137,6 +137,25 @@ object ChatApiClient {
             }
         }
 
+    private suspend fun put(path: String, bodyJson: String = ""): Pair<Int, String> =
+        withContext(Dispatchers.IO) {
+            val url = buildUrl(path)
+            retryOnNetworkError {
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val requestBody = bodyJson.toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url(url)
+                    .put(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .build()
+                okHttpClient.newCall(request).execute().use { response ->
+                    Pair(response.code, response.body?.string().orEmpty())
+                }
+            }
+        }
+
+
     private suspend fun delete(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
         val url = buildUrl(path)
         retryOnNetworkError {
@@ -490,4 +509,38 @@ object ChatApiClient {
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
     }
+
+    suspend fun getRoadmapMilestones(roadmapId: String): Result<RoadmapMilestonesSyncResponseDto> = runCatching {
+        val (code, body) = get("/roadmaps/personalized/$roadmapId/milestones")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<RoadmapMilestonesSyncResponseDto>(body)
+    }
+
+    suspend fun syncRoadmapMilestones(
+        roadmapId: String,
+        milestoneKey: String? = null,
+        isCompleted: Boolean? = null,
+        completedMilestones: List<String>? = null
+    ): Result<RoadmapMilestonesSyncResponseDto> = runCatching {
+        val payload = json.encodeToString(
+            RoadmapMilestonesSyncRequestDto(
+                milestoneKey = milestoneKey,
+                isCompleted = isCompleted,
+                completedMilestones = completedMilestones
+            )
+        )
+        val (code, body) = put("/roadmaps/personalized/$roadmapId/milestones", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<RoadmapMilestonesSyncResponseDto>(body)
+    }
+
+    suspend fun savePersonalizedRoadmap(
+        request: SavePersonalizedRoadmapRequestDto
+    ): Result<PersonalizedRoadmapDetailResponseDto> = runCatching {
+        val payload = json.encodeToString(request)
+        val (code, body) = post("/roadmaps/personalized/save", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
+    }
 }
+

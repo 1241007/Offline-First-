@@ -8,11 +8,35 @@ import android.database.Cursor
 import com.offline_First.domain.model.ChatMessage
 import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.UserMemoryItem
+import com.offline_First.domain.model.RoadmapOption
+import com.offline_First.domain.model.RoadmapAccentTheme
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
+import com.offline_First.domain.model.PersonalizedPhase
+import com.offline_First.domain.model.PersonalizedMilestone
+import com.offline_First.domain.model.WeeklyScheduleItem
+import com.offline_First.domain.model.AssessmentSummary
+import com.offline_First.data.remote.PersonalizedPhaseDto
+import com.offline_First.data.remote.PersonalizedMilestoneDto
+import com.offline_First.data.remote.WeeklyScheduleItemDto
+import com.offline_First.data.remote.AssessmentSummaryDto
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 
 private const val DB_NAME = "edunova_chat_cache.db"
-private const val DB_VERSION = 2
+private const val DB_VERSION = 3
+
+data class PendingMilestoneSync(
+    val roadmapId: String,
+    val userId: String,
+    val milestoneKey: String,
+    val isCompleted: Boolean,
+    val updatedAt: Long
+)
 
 class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -59,9 +83,75 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
             )
         """.trimIndent())
 
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_system_roadmaps (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT NOT NULL,
+                skills_json TEXT NOT NULL DEFAULT '[]',
+                level TEXT NOT NULL,
+                duration TEXT NOT NULL,
+                stages INTEGER NOT NULL,
+                icon TEXT NOT NULL,
+                accent_theme TEXT NOT NULL DEFAULT 'primary',
+                is_personalized INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL,
+                sync_status TEXT NOT NULL DEFAULT 'synced'
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_personalized_roadmaps (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                category TEXT NOT NULL,
+                level TEXT NOT NULL,
+                duration TEXT NOT NULL,
+                stages INTEGER NOT NULL,
+                icon TEXT NOT NULL,
+                accent_theme TEXT NOT NULL DEFAULT 'primary',
+                weekly_hours REAL NOT NULL DEFAULT 0.0,
+                assessment_summary_json TEXT NOT NULL DEFAULT '{}',
+                phases_json TEXT NOT NULL DEFAULT '[]',
+                weekly_schedule_json TEXT NOT NULL DEFAULT '[]',
+                assumptions_json TEXT NOT NULL DEFAULT '[]',
+                capstone_project TEXT NOT NULL DEFAULT '',
+                next_action TEXT NOT NULL DEFAULT '',
+                created_at TEXT DEFAULT NULL,
+                updated_at INTEGER NOT NULL,
+                sync_status TEXT NOT NULL DEFAULT 'synced'
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_milestone_progress (
+                roadmap_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                milestone_key TEXT NOT NULL,
+                is_completed INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL,
+                sync_status TEXT NOT NULL DEFAULT 'synced',
+                PRIMARY KEY (roadmap_id, user_id, milestone_key)
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_roadmap_categories (
+                name TEXT PRIMARY KEY,
+                updated_at INTEGER NOT NULL
+            )
+        """.trimIndent())
+
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_conv_user ON local_conversations(user_id, is_archived, updated_at DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON local_messages(user_id, conversation_id, created_at ASC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_user ON local_memories(user_id, active)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sys_roadmaps_user_cat ON local_system_roadmaps(user_id, category, updated_at DESC)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_pers_roadmaps_user ON local_personalized_roadmaps(user_id, updated_at DESC)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_milestone_sync ON local_milestone_progress(user_id, sync_status)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -109,6 +199,75 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_conv_user ON local_conversations(user_id, is_archived, updated_at DESC)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON local_messages(user_id, conversation_id, created_at ASC)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_user ON local_memories(user_id, active)")
+        }
+
+        if (oldVersion < 3) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_system_roadmaps (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    skills_json TEXT NOT NULL DEFAULT '[]',
+                    level TEXT NOT NULL,
+                    duration TEXT NOT NULL,
+                    stages INTEGER NOT NULL,
+                    icon TEXT NOT NULL,
+                    accent_theme TEXT NOT NULL DEFAULT 'primary',
+                    is_personalized INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    sync_status TEXT NOT NULL DEFAULT 'synced'
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_personalized_roadmaps (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    goal TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    duration TEXT NOT NULL,
+                    stages INTEGER NOT NULL,
+                    icon TEXT NOT NULL,
+                    accent_theme TEXT NOT NULL DEFAULT 'primary',
+                    weekly_hours REAL NOT NULL DEFAULT 0.0,
+                    assessment_summary_json TEXT NOT NULL DEFAULT '{}',
+                    phases_json TEXT NOT NULL DEFAULT '[]',
+                    weekly_schedule_json TEXT NOT NULL DEFAULT '[]',
+                    assumptions_json TEXT NOT NULL DEFAULT '[]',
+                    capstone_project TEXT NOT NULL DEFAULT '',
+                    next_action TEXT NOT NULL DEFAULT '',
+                    created_at TEXT DEFAULT NULL,
+                    updated_at INTEGER NOT NULL,
+                    sync_status TEXT NOT NULL DEFAULT 'synced'
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_milestone_progress (
+                    roadmap_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    milestone_key TEXT NOT NULL,
+                    is_completed INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    sync_status TEXT NOT NULL DEFAULT 'synced',
+                    PRIMARY KEY (roadmap_id, user_id, milestone_key)
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_roadmap_categories (
+                    name TEXT PRIMARY KEY,
+                    updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_sys_roadmaps_user_cat ON local_system_roadmaps(user_id, category, updated_at DESC)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_pers_roadmaps_user ON local_personalized_roadmaps(user_id, updated_at DESC)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_milestone_sync ON local_milestone_progress(user_id, sync_status)")
         }
     }
 
@@ -486,4 +645,512 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
     fun clearAllMemories(userId: String) {
         writableDatabase.delete("local_memories", "user_id = ?", arrayOf(userId))
     }
+
+    // --- System Roadmaps & Categories ---
+
+    fun upsertSystemRoadmaps(roadmaps: List<RoadmapOption>, userId: String) {
+        if (roadmaps.isEmpty()) return
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            for (r in roadmaps) {
+                val values = ContentValues().apply {
+                    put("id", r.id)
+                    put("user_id", userId)
+                    put("title", r.title)
+                    put("category", r.category)
+                    put("description", r.description)
+                    put("skills_json", json.encodeToString(r.skills))
+                    put("level", r.level)
+                    put("duration", r.duration)
+                    put("stages", r.stages)
+                    put("icon", r.icon)
+                    put("accent_theme", r.accentTheme.name)
+                    put("is_personalized", if (r.isPersonalized) 1 else 0)
+                    put("updated_at", now)
+                    put("sync_status", "synced")
+                }
+                db.insertWithOnConflict("local_system_roadmaps", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getSystemRoadmaps(userId: String, category: String? = null): List<RoadmapOption> {
+        val result = mutableListOf<RoadmapOption>()
+        val sql = if (category != null) {
+            "SELECT id, title, category, description, skills_json, level, duration, stages, icon, accent_theme, is_personalized FROM local_system_roadmaps WHERE (user_id = ? OR user_id = 'default_user') AND LOWER(category) = LOWER(?) ORDER BY updated_at DESC"
+        } else {
+            "SELECT id, title, category, description, skills_json, level, duration, stages, icon, accent_theme, is_personalized FROM local_system_roadmaps WHERE (user_id = ? OR user_id = 'default_user') ORDER BY updated_at DESC"
+        }
+        val args = if (category != null) arrayOf(userId, category) else arrayOf(userId)
+        val cursor = readableDatabase.rawQuery(sql, args)
+        cursor.use {
+            while (it.moveToNext()) {
+                val skillsJson = it.getString(4) ?: "[]"
+                val skills = runCatching { json.decodeFromString<List<String>>(skillsJson) }.getOrDefault(emptyList())
+                val themeStr = it.getString(9) ?: "PRIMARY"
+                val accent = mapAccentTheme(themeStr)
+                result.add(
+                    RoadmapOption(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        category = it.getString(2),
+                        description = it.getString(3),
+                        skills = skills,
+                        level = it.getString(5),
+                        duration = it.getString(6),
+                        stages = it.getInt(7),
+                        icon = it.getString(8),
+                        accentTheme = accent,
+                        isPersonalized = it.getInt(10) == 1
+                    )
+                )
+            }
+        }
+        return result.distinctBy { it.id }
+    }
+
+    fun upsertRoadmapCategories(categories: List<String>) {
+        if (categories.isEmpty()) return
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            for (cat in categories) {
+                val values = ContentValues().apply {
+                    put("name", cat)
+                    put("updated_at", now)
+                }
+                db.insertWithOnConflict("local_roadmap_categories", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getRoadmapCategories(): List<String> {
+        val result = mutableListOf<String>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT name FROM local_roadmap_categories ORDER BY name ASC",
+            null
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(it.getString(0))
+            }
+        }
+        return result
+    }
+
+    // --- Personalized Roadmaps ---
+
+    fun upsertPersonalizedRoadmaps(
+        roadmaps: List<PersonalizedRoadmapDetail>,
+        userId: String,
+        syncStatus: String = "synced"
+    ) {
+        if (roadmaps.isEmpty()) return
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            for (r in roadmaps) {
+                val phaseDtos = r.phases.map { p ->
+                    PersonalizedPhaseDto(
+                        title = p.title,
+                        objective = p.objective,
+                        durationWeeks = p.durationWeeks,
+                        topics = p.topics,
+                        activities = p.activities,
+                        resources = p.resources,
+                        milestones = p.milestones.map { m ->
+                            PersonalizedMilestoneDto(
+                                title = m.title,
+                                completionCriteria = m.completionCriteria,
+                                assessment = m.assessment,
+                                passingCriteria = m.passingCriteria
+                            )
+                        },
+                        recommendedCourseIds = p.recommendedCourseIds
+                    )
+                }
+                val schedDtos = r.weeklySchedule.map { s ->
+                    WeeklyScheduleItemDto(
+                        dayOrWeek = s.dayOrWeek,
+                        focusTopic = s.focusTopic,
+                        estimatedHours = s.estimatedHours,
+                        tasks = s.tasks
+                    )
+                }
+                val sumDto = AssessmentSummaryDto(
+                    strengths = r.assessmentSummary.strengths,
+                    skillGaps = r.assessmentSummary.skillGaps,
+                    verifiedEvidence = r.assessmentSummary.verifiedEvidence,
+                    selfReportedInformation = r.assessmentSummary.selfReportedInformation,
+                    unknowns = r.assessmentSummary.unknowns
+                )
+
+                val values = ContentValues().apply {
+                    put("id", r.id)
+                    put("user_id", userId)
+                    put("title", r.title)
+                    put("goal", r.goal)
+                    put("category", r.category)
+                    put("level", r.level)
+                    put("duration", r.duration)
+                    put("stages", r.stages)
+                    put("icon", r.icon)
+                    put("accent_theme", r.accentTheme.name)
+                    put("weekly_hours", r.weeklyHours)
+                    put("assessment_summary_json", json.encodeToString(sumDto))
+                    put("phases_json", json.encodeToString(phaseDtos))
+                    put("weekly_schedule_json", json.encodeToString(schedDtos))
+                    put("assumptions_json", json.encodeToString(r.assumptions))
+                    put("capstone_project", r.capstoneProject)
+                    put("next_action", r.nextAction)
+                    put("created_at", r.createdAt)
+                    put("updated_at", now)
+                    put("sync_status", syncStatus)
+                }
+                db.insertWithOnConflict("local_personalized_roadmaps", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+                // Batch upsert completed milestones if provided and not already pending local toggle
+                if (r.completedMilestones.isNotEmpty()) {
+                    for (mKey in r.completedMilestones) {
+                        // Check if local DB has a pending unsynced state for this milestone
+                        val checkCursor = db.rawQuery(
+                            "SELECT sync_status FROM local_milestone_progress WHERE roadmap_id = ? AND user_id = ? AND milestone_key = ?",
+                            arrayOf(r.id, userId, mKey)
+                        )
+                        val isPending = checkCursor.use {
+                            if (it.moveToFirst()) it.getString(0) == "pending_sync" else false
+                        }
+                        if (!isPending) {
+                            val mValues = ContentValues().apply {
+                                put("roadmap_id", r.id)
+                                put("user_id", userId)
+                                put("milestone_key", mKey)
+                                put("is_completed", 1)
+                                put("updated_at", now)
+                                put("sync_status", "synced")
+                            }
+                            db.insertWithOnConflict("local_milestone_progress", null, mValues, SQLiteDatabase.CONFLICT_REPLACE)
+                        }
+                    }
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun savePersonalizedRoadmap(
+        roadmap: PersonalizedRoadmapDetail,
+        userId: String,
+        syncStatus: String = "pending_sync"
+    ) {
+        upsertPersonalizedRoadmaps(listOf(roadmap), userId, syncStatus = syncStatus)
+    }
+
+    fun getPersonalizedRoadmaps(userId: String): List<PersonalizedRoadmapDetail> {
+        val result = mutableListOf<PersonalizedRoadmapDetail>()
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id, title, goal, category, level, duration, stages, icon, accent_theme, 
+                   weekly_hours, assessment_summary_json, phases_json, weekly_schedule_json, 
+                   assumptions_json, capstone_project, next_action, created_at 
+            FROM local_personalized_roadmaps 
+            WHERE user_id = ? OR user_id = 'default_user' 
+            ORDER BY updated_at DESC
+            """.trimIndent(),
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val roadmapId = it.getString(0)
+                val completed = getCompletedMilestones(roadmapId, userId).toList()
+                val item = parsePersonalizedRoadmapCursor(it, completed)
+                if (item != null) {
+                    result.add(item)
+                }
+            }
+        }
+        return result.distinctBy { it.id }
+    }
+
+    fun getPersonalizedRoadmapById(roadmapId: String, userId: String): PersonalizedRoadmapDetail? {
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id, title, goal, category, level, duration, stages, icon, accent_theme, 
+                   weekly_hours, assessment_summary_json, phases_json, weekly_schedule_json, 
+                   assumptions_json, capstone_project, next_action, created_at 
+            FROM local_personalized_roadmaps 
+            WHERE id = ? AND (user_id = ? OR user_id = 'default_user')
+            """.trimIndent(),
+            arrayOf(roadmapId, userId)
+        )
+        cursor.use {
+            if (it.moveToFirst()) {
+                val completed = getCompletedMilestones(roadmapId, userId).toList()
+                return parsePersonalizedRoadmapCursor(it, completed)
+            }
+        }
+        return null
+    }
+
+    fun getUnsyncedPersonalizedRoadmaps(userId: String): List<PersonalizedRoadmapDetail> {
+        val result = mutableListOf<PersonalizedRoadmapDetail>()
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id, title, goal, category, level, duration, stages, icon, accent_theme, 
+                   weekly_hours, assessment_summary_json, phases_json, weekly_schedule_json, 
+                   assumptions_json, capstone_project, next_action, created_at 
+            FROM local_personalized_roadmaps 
+            WHERE (user_id = ? OR user_id = 'default_user') AND sync_status = 'pending_sync'
+            ORDER BY updated_at ASC
+            """.trimIndent(),
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val roadmapId = it.getString(0)
+                val completed = getCompletedMilestones(roadmapId, userId).toList()
+                val item = parsePersonalizedRoadmapCursor(it, completed)
+                if (item != null) {
+                    result.add(item)
+                }
+            }
+        }
+        return result
+    }
+
+    fun markPersonalizedRoadmapSynced(roadmapId: String, userId: String) {
+        val values = ContentValues().apply { put("sync_status", "synced") }
+        writableDatabase.update(
+            "local_personalized_roadmaps",
+            values,
+            "id = ? AND (user_id = ? OR user_id = 'default_user')",
+            arrayOf(roadmapId, userId)
+        )
+    }
+
+    fun deletePersonalizedRoadmap(roadmapId: String, userId: String) {
+        writableDatabase.delete(
+            "local_personalized_roadmaps",
+            "id = ? AND (user_id = ? OR user_id = 'default_user')",
+            arrayOf(roadmapId, userId)
+        )
+        writableDatabase.delete(
+            "local_milestone_progress",
+            "roadmap_id = ? AND (user_id = ? OR user_id = 'default_user')",
+            arrayOf(roadmapId, userId)
+        )
+    }
+
+    private fun parsePersonalizedRoadmapCursor(
+        cursor: Cursor,
+        completedMilestones: List<String>
+    ): PersonalizedRoadmapDetail? {
+        return runCatching {
+            val id = cursor.getString(0)
+            val title = cursor.getString(1)
+            val goal = cursor.getString(2)
+            val category = cursor.getString(3)
+            val level = cursor.getString(4)
+            val duration = cursor.getString(5)
+            val stages = cursor.getInt(6)
+            val icon = cursor.getString(7)
+            val accentTheme = mapAccentTheme(cursor.getString(8) ?: "PRIMARY")
+            val weeklyHours = cursor.getDouble(9)
+            val sumJson = cursor.getString(10) ?: "{}"
+            val phasesJson = cursor.getString(11) ?: "[]"
+            val schedJson = cursor.getString(12) ?: "[]"
+            val assumptionsJson = cursor.getString(13) ?: "[]"
+            val capstone = cursor.getString(14).orEmpty()
+            val nextAction = cursor.getString(15).orEmpty()
+            val createdAt = cursor.getString(16)
+
+            val sumDto = json.decodeFromString<AssessmentSummaryDto>(sumJson)
+            val phaseDtos = json.decodeFromString<List<PersonalizedPhaseDto>>(phasesJson)
+            val schedDtos = json.decodeFromString<List<WeeklyScheduleItemDto>>(schedJson)
+            val assumptions = json.decodeFromString<List<String>>(assumptionsJson)
+
+            val phases = phaseDtos.mapIndexed { pIdx, p ->
+                PersonalizedPhase(
+                    title = p.title,
+                    objective = p.objective,
+                    durationWeeks = p.durationWeeks,
+                    topics = p.topics,
+                    activities = p.activities,
+                    resources = p.resources,
+                    milestones = p.milestones.mapIndexed { mIdx, m ->
+                        val mKey = "${id}_${pIdx}_${mIdx}_${m.title}"
+                        val isDone = completedMilestones.contains(mKey) || completedMilestones.contains(m.title)
+                        PersonalizedMilestone(
+                            title = m.title,
+                            completionCriteria = m.completionCriteria,
+                            assessment = m.assessment,
+                            passingCriteria = m.passingCriteria,
+                            isCompleted = isDone
+                        )
+                    },
+                    recommendedCourseIds = p.recommendedCourseIds
+                )
+            }
+
+            val schedules = schedDtos.map { s ->
+                WeeklyScheduleItem(
+                    dayOrWeek = s.dayOrWeek,
+                    focusTopic = s.focusTopic,
+                    estimatedHours = s.estimatedHours,
+                    tasks = s.tasks
+                )
+            }
+
+            val summary = AssessmentSummary(
+                strengths = sumDto.strengths,
+                skillGaps = sumDto.skillGaps,
+                verifiedEvidence = sumDto.verifiedEvidence,
+                selfReportedInformation = sumDto.selfReportedInformation,
+                unknowns = sumDto.unknowns
+            )
+
+            PersonalizedRoadmapDetail(
+                id = id,
+                title = title,
+                goal = goal,
+                category = category,
+                level = level,
+                duration = duration,
+                stages = stages,
+                icon = icon,
+                accentTheme = accentTheme,
+                weeklyHours = weeklyHours,
+                assessmentSummary = summary,
+                phases = phases,
+                weeklySchedule = schedules,
+                assumptions = assumptions,
+                capstoneProject = capstone,
+                nextAction = nextAction,
+                completedMilestones = completedMilestones,
+                createdAt = createdAt
+            )
+        }.getOrNull()
+    }
+
+
+    // --- Milestone Progress & Sync Queue ---
+
+    fun saveMilestoneProgress(
+        roadmapId: String,
+        userId: String,
+        milestoneKey: String,
+        isCompleted: Boolean,
+        syncStatus: String = "pending_sync"
+    ) {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("roadmap_id", roadmapId)
+            put("user_id", userId)
+            put("milestone_key", milestoneKey)
+            put("is_completed", if (isCompleted) 1 else 0)
+            put("updated_at", now)
+            put("sync_status", syncStatus)
+        }
+        writableDatabase.insertWithOnConflict("local_milestone_progress", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getCompletedMilestones(roadmapId: String, userId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT milestone_key FROM local_milestone_progress WHERE roadmap_id = ? AND (user_id = ? OR user_id = 'default_user') AND is_completed = 1",
+            arrayOf(roadmapId, userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(it.getString(0))
+            }
+        }
+        return result
+    }
+
+    fun getAllCompletedMilestones(userId: String): Map<String, Set<String>> {
+        val result = mutableMapOf<String, MutableSet<String>>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT roadmap_id, milestone_key FROM local_milestone_progress WHERE (user_id = ? OR user_id = 'default_user') AND is_completed = 1",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val rId = it.getString(0)
+                val mKey = it.getString(1)
+                result.getOrPut(rId) { mutableSetOf() }.add(mKey)
+            }
+        }
+        return result
+    }
+
+    fun getPendingSyncMilestones(userId: String): List<PendingMilestoneSync> {
+        val result = mutableListOf<PendingMilestoneSync>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT roadmap_id, user_id, milestone_key, is_completed, updated_at FROM local_milestone_progress WHERE user_id = ? AND sync_status = 'pending_sync' ORDER BY updated_at ASC",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    PendingMilestoneSync(
+                        roadmapId = it.getString(0),
+                        userId = it.getString(1),
+                        milestoneKey = it.getString(2),
+                        isCompleted = it.getInt(3) == 1,
+                        updatedAt = it.getLong(4)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    fun markMilestonesSynced(roadmapId: String, userId: String, milestoneKeys: List<String>) {
+        if (milestoneKeys.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (mKey in milestoneKeys) {
+                val values = ContentValues().apply {
+                    put("sync_status", "synced")
+                }
+                db.update(
+                    "local_milestone_progress",
+                    values,
+                    "roadmap_id = ? AND user_id = ? AND milestone_key = ?",
+                    arrayOf(roadmapId, userId, mKey)
+                )
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun mapAccentTheme(themeStr: String): RoadmapAccentTheme {
+        return try {
+            RoadmapAccentTheme.valueOf(themeStr.uppercase())
+        } catch (_: Exception) {
+            when (themeStr.lowercase()) {
+                "secondary", "purple", "teal", "orange" -> RoadmapAccentTheme.SECONDARY
+                "accent", "red" -> RoadmapAccentTheme.ACCENT
+                "success", "green" -> RoadmapAccentTheme.SUCCESS
+                else -> RoadmapAccentTheme.PRIMARY
+            }
+        }
+    }
 }
+

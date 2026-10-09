@@ -57,7 +57,10 @@ object AppContainer {
             context = appContext
         )
         val onlineRoadmapRepo = com.offline_First.data.remote.OnlineRoadmapRepository(
-            context = appContext
+            context = appContext,
+            userIdProvider = {
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+            }
         )
 
         _tokenStorage = tokenStorage

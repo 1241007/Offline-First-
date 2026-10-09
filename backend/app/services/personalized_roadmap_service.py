@@ -32,6 +32,7 @@ from app.schemas.personalized_roadmap import (
     AssessmentSessionResponse,
     PersonalizedRoadmapSchema,
     PersonalizedRoadmapDetailResponse,
+    SavePersonalizedRoadmapRequest,
 )
 from app.schemas.roadmap import RoadmapItemResponse
 from app.services.openrouter_service import openrouter_service
@@ -639,6 +640,64 @@ class PersonalizedRoadmapService:
 
         return self._format_roadmap_detail_response(roadmap)
 
+    async def save_or_sync_personalized_roadmap(
+        self, user_id: str, payload: SavePersonalizedRoadmapRequest
+    ) -> PersonalizedRoadmapDetailResponse:
+        """Saves or synchronizes a personalized roadmap created locally or generated offline."""
+        roadmap = None
+        if payload.id:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(payload.id, user_id)
+
+        structure_dict = payload.structure.model_dump(by_alias=True)
+        items = []
+        for phase in structure_dict.get("phases", []):
+            course_id = None
+            if phase.get("recommendedCourseIds"):
+                course_id = phase["recommendedCourseIds"][0]
+            items.append({
+                "title": phase["title"],
+                "description": phase.get("objective"),
+                "skills": phase.get("topics", []),
+                "duration": f"{phase.get('durationWeeks', 2)} weeks",
+                "course_id": course_id,
+            })
+
+        if roadmap:
+            # Update existing roadmap idempotently
+            roadmap = await self.roadmap_repo.update_personalized_roadmap(
+                roadmap=roadmap,
+                title=payload.title,
+                category=payload.category or "General",
+                description=payload.goal,
+                level=payload.level or "Beginner",
+                duration=payload.duration or "8 weeks",
+                icon=payload.icon or "school",
+                accent_theme=payload.accent_theme or "primary",
+                structure=structure_dict,
+                items=items,
+            )
+            await self.db.commit()
+        else:
+            roadmap_id = payload.id or str(uuid.uuid4())
+            slug = f"personalized-{uuid.uuid4().hex[:8]}"
+            roadmap = await self.roadmap_repo.create_personalized_roadmap(
+                user_id=user_id,
+                title=payload.title,
+                slug=slug,
+                category=payload.category or "General",
+                description=payload.goal,
+                level=payload.level or "Beginner",
+                duration=payload.duration or "8 weeks",
+                icon=payload.icon or "school",
+                accent_theme=payload.accent_theme or "primary",
+                structure=structure_dict,
+                items=items,
+                id=roadmap_id,
+            )
+            await self.db.commit()
+
+        return self._format_roadmap_detail_response(roadmap)
+
     async def get_user_personalized_roadmaps(
         self, user_id: str, limit: Optional[int] = None, offset: int = 0
     ) -> List[PersonalizedRoadmapDetailResponse]:
@@ -653,6 +712,44 @@ class PersonalizedRoadmapService:
         if not roadmap or not roadmap.structure:
             return None
         return self._format_roadmap_detail_response(roadmap)
+
+    async def get_roadmap_milestones(
+        self, roadmap_id: str, user_id: str
+    ) -> List[str]:
+        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or not roadmap.structure:
+            return []
+        return list(roadmap.structure.get("completedMilestones", []))
+
+    async def sync_roadmap_milestones(
+        self,
+        roadmap_id: str,
+        user_id: str,
+        milestone_key: Optional[str] = None,
+        is_completed: Optional[bool] = None,
+        completed_milestones: Optional[List[str]] = None,
+    ) -> List[str]:
+        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or not roadmap.structure:
+            raise ValueError("Personalized roadmap not found or unauthorized")
+
+        current_structure = dict(roadmap.structure)
+        current_completed = set(current_structure.get("completedMilestones", []))
+
+        if completed_milestones is not None:
+            current_completed.update(completed_milestones)
+
+        if milestone_key is not None:
+            if is_completed is True:
+                current_completed.add(milestone_key)
+            elif is_completed is False:
+                current_completed.discard(milestone_key)
+
+        updated_list = sorted(list(current_completed))
+        current_structure["completedMilestones"] = updated_list
+        roadmap.structure = current_structure
+        await self.db.commit()
+        return updated_list
 
     def _format_session_response(
         self, session: RoadmapAssessmentSession, completeness: Optional[int] = None

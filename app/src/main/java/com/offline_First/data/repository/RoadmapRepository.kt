@@ -39,7 +39,21 @@ interface RoadmapRepository {
         offset: Int = 0
     ): Result<List<PersonalizedRoadmapDetail>>
 
+    fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail>
+
     suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail>
+
+    suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail>
+
+    // --- Offline-First Milestone Progress & Sync ---
+
+    suspend fun getCompletedMilestones(roadmapId: String): Set<String>
+
+    suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>>
+
+    suspend fun syncPendingMilestoneProgress(): Result<Unit>
+
+    suspend fun syncPendingRoadmaps(): Result<Unit>
 
     // Legacy method for backward compatibility
     suspend fun generatePersonalizedRoadmap(

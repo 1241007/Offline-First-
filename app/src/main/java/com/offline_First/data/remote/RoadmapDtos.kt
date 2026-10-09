@@ -131,7 +131,8 @@ data class PersonalizedRoadmapStructureDto(
     @SerialName("weeklySchedule") val weeklySchedule: List<WeeklyScheduleItemDto> = emptyList(),
     val assumptions: List<String> = emptyList(),
     @SerialName("capstoneProject") val capstoneProject: String = "",
-    @SerialName("nextAction") val nextAction: String = ""
+    @SerialName("nextAction") val nextAction: String = "",
+    @SerialName("completedMilestones") val completedMilestones: List<String> = emptyList()
 )
 
 @Serializable
@@ -149,3 +150,30 @@ data class PersonalizedRoadmapDetailResponseDto(
     val items: List<RoadmapItemDto> = emptyList(),
     @SerialName("createdAt") val createdAt: String? = null
 )
+
+@Serializable
+data class RoadmapMilestonesSyncRequestDto(
+    @SerialName("milestoneKey") val milestoneKey: String? = null,
+    @SerialName("isCompleted") val isCompleted: Boolean? = null,
+    @SerialName("completedMilestones") val completedMilestones: List<String>? = null
+)
+
+@Serializable
+data class RoadmapMilestonesSyncResponseDto(
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("completedMilestones") val completedMilestones: List<String> = emptyList()
+)
+
+@Serializable
+data class SavePersonalizedRoadmapRequestDto(
+    val id: String? = null,
+    val title: String,
+    val goal: String,
+    val category: String? = "General",
+    val level: String? = "Beginner",
+    val duration: String? = "8 weeks",
+    val icon: String? = "school",
+    @SerialName("accentTheme") val accentTheme: String? = "primary",
+    val structure: PersonalizedRoadmapStructureDto
+)
+

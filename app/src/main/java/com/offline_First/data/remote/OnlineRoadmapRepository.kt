@@ -1,19 +1,19 @@
 package com.offline_First.data.remote
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.offline_First.data.local.ChatCacheDatabase
 import com.offline_First.data.repository.RoadmapRepository
 import com.offline_First.domain.model.*
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
 
 class OnlineRoadmapRepository(
-    context: Context? = null
+    context: Context? = null,
+    private val userIdProvider: () -> String = { "default_user" }
 ) : RoadmapRepository {
 
-    private val prefs: SharedPreferences? = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    val cacheDb: ChatCacheDatabase? = context?.let { ChatCacheDatabase(it.applicationContext) }
+
+    private val currentUserId: String
+        get() = userIdProvider().ifBlank { "default_user" }
 
     private fun mapAccentTheme(theme: String): RoadmapAccentTheme {
         return when (theme.lowercase()) {
@@ -139,62 +139,9 @@ class OnlineRoadmapRepository(
             assumptions = structure.assumptions,
             capstoneProject = structure.capstoneProject,
             nextAction = structure.nextAction,
+            completedMilestones = structure.completedMilestones,
             createdAt = createdAt
         )
-    }
-
-    @Volatile
-    private var cachedRoadmaps: List<RoadmapOption> = loadPersistedRoadmaps()
-
-    @Volatile
-    private var cachedCategories: List<String> = loadPersistedCategories()
-
-    @Volatile
-    private var cachedPersonalizedRoadmaps: List<PersonalizedRoadmapDetail> = loadPersistedPersonalizedRoadmaps()
-
-    private fun loadPersistedRoadmaps(): List<RoadmapOption> {
-        val sp = prefs ?: return emptyList()
-        val raw = sp.getString(KEY_ROADMAPS, null) ?: return emptyList()
-        return runCatching {
-            json.decodeFromString<List<RoadmapDto>>(raw).map { it.toDomain() }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun loadPersistedCategories(): List<String> {
-        val sp = prefs ?: return emptyList()
-        val raw = sp.getString(KEY_CATEGORIES, null) ?: return emptyList()
-        return runCatching {
-            json.decodeFromString<List<String>>(raw)
-        }.getOrDefault(emptyList())
-    }
-
-    private fun loadPersistedPersonalizedRoadmaps(): List<PersonalizedRoadmapDetail> {
-        val sp = prefs ?: return emptyList()
-        val raw = sp.getString(KEY_PERSONALIZED_ROADMAPS, null) ?: return emptyList()
-        return runCatching {
-            json.decodeFromString<List<PersonalizedRoadmapDetailResponseDto>>(raw).map { it.toDomain() }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun savePersistedRoadmaps(dtos: List<RoadmapDto>) {
-        val sp = prefs ?: return
-        runCatching {
-            sp.edit().putString(KEY_ROADMAPS, json.encodeToString(dtos)).apply()
-        }
-    }
-
-    private fun savePersistedCategories(cats: List<String>) {
-        val sp = prefs ?: return
-        runCatching {
-            sp.edit().putString(KEY_CATEGORIES, json.encodeToString(cats)).apply()
-        }
-    }
-
-    private fun savePersistedPersonalizedRoadmaps(dtos: List<PersonalizedRoadmapDetailResponseDto>) {
-        val sp = prefs ?: return
-        runCatching {
-            sp.edit().putString(KEY_PERSONALIZED_ROADMAPS, json.encodeToString(dtos)).apply()
-        }
     }
 
     override suspend fun getRoadmaps(
@@ -202,21 +149,23 @@ class OnlineRoadmapRepository(
         offset: Int,
         category: String?
     ): Result<List<RoadmapOption>> {
+        val db = cacheDb
+        val cached = db?.getSystemRoadmaps(currentUserId, category) ?: emptyList()
+
         return ChatApiClient.getRoadmaps(category = category, limit = limit, offset = offset)
             .map { dtos ->
                 val list = dtos.map { it.toDomain() }
-                if (offset == 0 && category == null) {
-                    cachedRoadmaps = list
-                    savePersistedRoadmaps(dtos)
+                if (offset == 0 && category == null && db != null) {
+                    db.upsertSystemRoadmaps(list, currentUserId)
                 }
                 list
             }
             .recoverCatching { error ->
-                if (cachedRoadmaps.isNotEmpty()) {
+                if (cached.isNotEmpty()) {
                     if (category != null) {
-                        cachedRoadmaps.filter { it.category.equals(category, ignoreCase = true) }
+                        cached.filter { it.category.equals(category, ignoreCase = true) }
                     } else {
-                        cachedRoadmaps
+                        cached
                     }
                 } else {
                     throw error
@@ -225,16 +174,18 @@ class OnlineRoadmapRepository(
     }
 
     override suspend fun getCategories(): List<String> {
+        val db = cacheDb
+        val cached = db?.getRoadmapCategories() ?: emptyList()
+
         return ChatApiClient.getRoadmapCategories()
             .map { cats ->
-                if (cats.isNotEmpty()) {
-                    cachedCategories = cats
-                    savePersistedCategories(cats)
+                if (cats.isNotEmpty() && db != null) {
+                    db.upsertRoadmapCategories(cats)
                 }
                 cats
             }
             .getOrElse {
-                if (cachedCategories.isNotEmpty()) cachedCategories else emptyList()
+                if (cached.isNotEmpty()) cached else emptyList()
             }
     }
 
@@ -271,37 +222,41 @@ class OnlineRoadmapRepository(
         return ChatApiClient.generatePersonalizedRoadmap(sessionId)
             .map { dto ->
                 val domain = dto.toDomain()
-                val updated = (listOf(dto) + loadPersistedPersonalizedRoadmapsDtos().filterNot { it.id == dto.id })
-                savePersistedPersonalizedRoadmaps(updated)
-                cachedPersonalizedRoadmaps = updated.map { it.toDomain() }
+                cacheDb?.upsertPersonalizedRoadmaps(listOf(domain), currentUserId, syncStatus = "synced")
                 domain
             }
     }
 
-    private fun loadPersistedPersonalizedRoadmapsDtos(): List<PersonalizedRoadmapDetailResponseDto> {
-        val sp = prefs ?: return emptyList()
-        val raw = sp.getString(KEY_PERSONALIZED_ROADMAPS, null) ?: return emptyList()
-        return runCatching {
-            json.decodeFromString<List<PersonalizedRoadmapDetailResponseDto>>(raw)
-        }.getOrDefault(emptyList())
+    override fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail> {
+        return cacheDb?.getPersonalizedRoadmaps(currentUserId) ?: emptyList()
     }
 
     override suspend fun getMyPersonalizedRoadmaps(
         limit: Int?,
         offset: Int
     ): Result<List<PersonalizedRoadmapDetail>> {
+        val db = cacheDb
+        val cached = db?.getPersonalizedRoadmaps(currentUserId) ?: emptyList()
+
+        // Sync any queued offline changes in background (both pending milestones and pending roadmaps)
+        runCatching {
+            syncPendingRoadmaps()
+            syncPendingMilestoneProgress()
+        }
+
         return ChatApiClient.getMyPersonalizedRoadmaps(limit = limit, offset = offset)
             .map { dtos ->
                 val list = dtos.map { it.toDomain() }
-                if (offset == 0) {
-                    cachedPersonalizedRoadmaps = list
-                    savePersistedPersonalizedRoadmaps(dtos)
+                if (db != null) {
+                    db.upsertPersonalizedRoadmaps(list, currentUserId, syncStatus = "synced")
+                    db.getPersonalizedRoadmaps(currentUserId)
+                } else {
+                    list
                 }
-                list
             }
             .recoverCatching { error ->
-                if (cachedPersonalizedRoadmaps.isNotEmpty()) {
-                    cachedPersonalizedRoadmaps
+                if (cached.isNotEmpty()) {
+                    cached
                 } else {
                     throw error
                 }
@@ -309,12 +264,113 @@ class OnlineRoadmapRepository(
     }
 
     override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail> {
+        val db = cacheDb
+        val cached = db?.getPersonalizedRoadmapById(roadmapId, currentUserId)
+
         return ChatApiClient.getPersonalizedRoadmapDetail(roadmapId)
-            .map { it.toDomain() }
-            .recoverCatching { error ->
-                val found = cachedPersonalizedRoadmaps.find { it.id == roadmapId }
-                found ?: throw error
+            .map { dto ->
+                val domain = dto.toDomain()
+                db?.upsertPersonalizedRoadmaps(listOf(domain), currentUserId, syncStatus = "synced")
+                domain
             }
+            .recoverCatching { error ->
+                cached ?: throw error
+            }
+    }
+
+    override suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail> {
+        val db = cacheDb
+        // 1. Save immediately to local persistent SQLite with pending_sync status
+        db?.savePersonalizedRoadmap(roadmap, currentUserId, syncStatus = "pending_sync")
+
+        // 2. Attempt immediate cloud synchronization
+        runCatching {
+            val req = roadmap.toSaveRequestDto()
+            val resp = ChatApiClient.savePersonalizedRoadmap(req).getOrThrow()
+            val domain = resp.toDomain()
+            db?.savePersonalizedRoadmap(domain, currentUserId, syncStatus = "synced")
+            domain
+        }.onFailure {
+            // Local state remains durably saved with sync_status = 'pending_sync'
+        }
+
+        val local = db?.getPersonalizedRoadmapById(roadmap.id, currentUserId) ?: roadmap
+        return Result.success(local)
+    }
+
+    override suspend fun syncPendingRoadmaps(): Result<Unit> {
+        val db = cacheDb ?: return Result.success(Unit)
+        val pendingRoadmaps = db.getUnsyncedPersonalizedRoadmaps(currentUserId)
+        if (pendingRoadmaps.isEmpty()) return Result.success(Unit)
+
+        for (roadmap in pendingRoadmaps) {
+            runCatching {
+                val req = roadmap.toSaveRequestDto()
+                val resp = ChatApiClient.savePersonalizedRoadmap(req).getOrThrow()
+                db.markPersonalizedRoadmapSynced(roadmap.id, currentUserId)
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    // --- Offline-First Milestone Progress & Cloud Sync ---
+
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> {
+        val db = cacheDb ?: return emptySet()
+        return db.getCompletedMilestones(roadmapId, currentUserId)
+    }
+
+    override suspend fun toggleMilestoneProgress(
+        roadmapId: String,
+        milestoneKey: String
+    ): Result<Set<String>> {
+        val db = cacheDb
+        val currentSet = db?.getCompletedMilestones(roadmapId, currentUserId) ?: emptySet()
+        val isCompleted = !currentSet.contains(milestoneKey)
+
+        // 1. Immediately persist change locally with pending_sync status
+        db?.saveMilestoneProgress(
+            roadmapId = roadmapId,
+            userId = currentUserId,
+            milestoneKey = milestoneKey,
+            isCompleted = isCompleted,
+            syncStatus = "pending_sync"
+        )
+
+        val updatedSet = if (isCompleted) currentSet + milestoneKey else currentSet - milestoneKey
+
+        // 2. Attempt immediate cloud synchronization
+        runCatching {
+            val syncResp = ChatApiClient.syncRoadmapMilestones(
+                roadmapId = roadmapId,
+                milestoneKey = milestoneKey,
+                isCompleted = isCompleted
+            ).getOrThrow()
+            db?.markMilestonesSynced(roadmapId, currentUserId, listOf(milestoneKey))
+            syncResp.completedMilestones.toSet()
+        }.onFailure {
+            // Remains pending_sync in SQLite and will be synchronized when connectivity returns
+        }
+
+        return Result.success(updatedSet)
+    }
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> {
+        val db = cacheDb ?: return Result.success(Unit)
+        val pending = db.getPendingSyncMilestones(currentUserId)
+        if (pending.isEmpty()) return Result.success(Unit)
+
+        for ((roadmapId, items) in pending.groupBy { it.roadmapId }) {
+            val completedSet = db.getCompletedMilestones(roadmapId, currentUserId)
+            runCatching {
+                ChatApiClient.syncRoadmapMilestones(
+                    roadmapId = roadmapId,
+                    completedMilestones = completedSet.toList()
+                ).getOrThrow()
+                db.markMilestonesSynced(roadmapId, currentUserId, items.map { it.milestoneKey })
+            }
+        }
+        return Result.success(Unit)
     }
 
     override suspend fun generatePersonalizedRoadmap(
@@ -323,25 +379,157 @@ class OnlineRoadmapRepository(
         studyTime: String,
         interest: String
     ): Result<GeneratedRoadmapPreview> {
+        val roadmapId = "pers-offline-${System.currentTimeMillis()}"
+        val phases = listOf(
+            PersonalizedPhase(
+                title = "Phase 1: $interest Core Foundations",
+                objective = "Master foundational concepts and tools",
+                durationWeeks = 2,
+                topics = listOf("$interest Basics", "Environment Setup", "Core Syntax"),
+                activities = listOf("Set up development workspace", "Complete initial project"),
+                resources = listOf("Official Documentation", "Getting Started Guide"),
+                milestones = listOf(
+                    PersonalizedMilestone(
+                        title = "Complete Foundation Lab",
+                        completionCriteria = listOf("Build and run starter application"),
+                        assessment = "Self Check",
+                        passingCriteria = "Application compiles without errors"
+                    )
+                )
+            ),
+            PersonalizedPhase(
+                title = "Phase 2: Applied Projects & Architecture",
+                objective = "Build scalable, production-ready features",
+                durationWeeks = 3,
+                topics = listOf("Architecture Patterns", "Data Persistence", "API Integration"),
+                activities = listOf("Implement offline storage", "Connect API client"),
+                resources = listOf("Best Practices Guide"),
+                milestones = listOf(
+                    PersonalizedMilestone(
+                        title = "Implement Offline Persistence",
+                        completionCriteria = listOf("Store state durably offline"),
+                        assessment = "Code review",
+                        passingCriteria = "Pass all offline tests"
+                    )
+                )
+            ),
+            PersonalizedPhase(
+                title = "Phase 3: Portfolio & Capstone Delivery",
+                objective = "Deliver polished, end-to-end capstone application",
+                durationWeeks = 3,
+                topics = listOf("Testing", "Optimization", "Deployment"),
+                activities = listOf("Write automated unit tests", "Prepare portfolio demo"),
+                resources = listOf("Deployment Checklist"),
+                milestones = listOf(
+                    PersonalizedMilestone(
+                        title = "Capstone Project Completion",
+                        completionCriteria = listOf("Ship complete project with tests"),
+                        assessment = "Capstone Evaluation",
+                        passingCriteria = "Complete end-to-end user journey"
+                    )
+                )
+            )
+        )
+
+        val detail = PersonalizedRoadmapDetail(
+            id = roadmapId,
+            title = "$interest Mastery Path",
+            goal = goal,
+            category = interest,
+            level = level,
+            duration = "8 weeks",
+            stages = phases.size,
+            icon = "school",
+            accentTheme = RoadmapAccentTheme.PRIMARY,
+            weeklyHours = 8.0,
+            phases = phases,
+            weeklySchedule = listOf(
+                WeeklyScheduleItem("Week 1-2", "Core Foundations", 8.0, listOf("Set up environment", "Build starter app")),
+                WeeklyScheduleItem("Week 3-5", "Applied Projects", 8.0, listOf("Build persistence layer", "Add network sync")),
+                WeeklyScheduleItem("Week 6-8", "Capstone & Polish", 8.0, listOf("Run tests", "Deploy final project"))
+            ),
+            assumptions = listOf("Basic computer literacy"),
+            capstoneProject = "$interest Production Showcase App",
+            nextAction = "Start Phase 1: $interest Core Foundations",
+            completedMilestones = emptyList()
+        )
+
+        // Save locally immediately into SQLite database with pending_sync
+        cacheDb?.savePersonalizedRoadmap(detail, currentUserId, syncStatus = "pending_sync")
+
         return Result.success(
             GeneratedRoadmapPreview(
                 goal = goal,
                 level = level,
                 studyTime = studyTime,
                 duration = "8 weeks",
-                stages = listOf(
-                    "Phase 1: $interest Core Foundations",
-                    "Phase 2: Applied Projects & Architecture",
-                    "Phase 3: Portfolio & Capstone Delivery"
-                )
+                stages = phases.map { it.title }
             )
         )
     }
 
-    companion object {
-        private const val PREFS_NAME = "edunova_roadmaps_cache"
-        private const val KEY_ROADMAPS = "persisted_roadmaps"
-        private const val KEY_CATEGORIES = "persisted_categories"
-        private const val KEY_PERSONALIZED_ROADMAPS = "persisted_personalized_roadmaps"
+    private fun PersonalizedRoadmapDetail.toSaveRequestDto(): SavePersonalizedRoadmapRequestDto {
+        val phaseDtos = phases.map { p ->
+            PersonalizedPhaseDto(
+                title = p.title,
+                objective = p.objective,
+                durationWeeks = p.durationWeeks,
+                topics = p.topics,
+                activities = p.activities,
+                resources = p.resources,
+                milestones = p.milestones.map { m ->
+                    PersonalizedMilestoneDto(
+                        title = m.title,
+                        completionCriteria = m.completionCriteria,
+                        assessment = m.assessment,
+                        passingCriteria = m.passingCriteria
+                    )
+                },
+                recommendedCourseIds = p.recommendedCourseIds
+            )
+        }
+        val schedDtos = weeklySchedule.map { s ->
+            WeeklyScheduleItemDto(
+                dayOrWeek = s.dayOrWeek,
+                focusTopic = s.focusTopic,
+                estimatedHours = s.estimatedHours,
+                tasks = s.tasks
+            )
+        }
+        val sumDto = AssessmentSummaryDto(
+            strengths = assessmentSummary.strengths,
+            skillGaps = assessmentSummary.skillGaps,
+            verifiedEvidence = assessmentSummary.verifiedEvidence,
+            selfReportedInformation = assessmentSummary.selfReportedInformation,
+            unknowns = assessmentSummary.unknowns
+        )
+        val structureDto = PersonalizedRoadmapStructureDto(
+            title = title,
+            goal = goal,
+            startingLevel = level,
+            category = category,
+            estimatedDuration = duration,
+            weeklyHours = weeklyHours,
+            assessmentSummary = sumDto,
+            phases = phaseDtos,
+            weeklySchedule = schedDtos,
+            assumptions = assumptions,
+            capstoneProject = capstoneProject,
+            nextAction = nextAction,
+            completedMilestones = completedMilestones
+        )
+        return SavePersonalizedRoadmapRequestDto(
+            id = id,
+            title = title,
+            goal = goal,
+            category = category,
+            level = level,
+            duration = duration,
+            icon = icon,
+            accentTheme = accentTheme.name.lowercase(),
+            structure = structureDto
+        )
     }
 }
+
+

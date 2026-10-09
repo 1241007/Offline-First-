@@ -102,21 +102,25 @@ class RoadmapRepository:
         accent_theme: str,
         structure: dict,
         items: list[dict],
+        id: Optional[str] = None,
     ) -> Roadmap:
         """Create a personalized roadmap with items and structure JSON"""
-        roadmap = Roadmap(
-            user_id=user_id,
-            is_system=False,
-            title=title,
-            slug=slug,
-            category=category,
-            description=description,
-            level=level,
-            duration=duration,
-            icon=icon,
-            accent_theme=accent_theme,
-            structure=structure,
-        )
+        kwargs = {
+            "user_id": user_id,
+            "is_system": False,
+            "title": title,
+            "slug": slug,
+            "category": category,
+            "description": description,
+            "level": level,
+            "duration": duration,
+            "icon": icon,
+            "accent_theme": accent_theme,
+            "structure": structure,
+        }
+        if id:
+            kwargs["id"] = id
+        roadmap = Roadmap(**kwargs)
         self.db.add(roadmap)
         await self.db.flush()
 
@@ -134,4 +138,48 @@ class RoadmapRepository:
 
         await self.db.flush()
         return await self.get_roadmap_by_id_and_user(roadmap.id, user_id)
+
+    async def update_personalized_roadmap(
+        self,
+        roadmap: Roadmap,
+        title: str,
+        category: str,
+        description: str,
+        level: str,
+        duration: str,
+        icon: str,
+        accent_theme: str,
+        structure: dict,
+        items: list[dict],
+    ) -> Roadmap:
+        """Update an existing personalized roadmap and refresh items"""
+        roadmap.title = title
+        roadmap.category = category
+        roadmap.description = description
+        roadmap.level = level
+        roadmap.duration = duration
+        roadmap.icon = icon
+        roadmap.accent_theme = accent_theme
+        roadmap.structure = structure
+
+        # Remove existing items and add updated items
+        if roadmap.items:
+            for it in list(roadmap.items):
+                await self.db.delete(it)
+            await self.db.flush()
+
+        for idx, item_data in enumerate(items):
+            item = RoadmapItem(
+                roadmap_id=roadmap.id,
+                course_id=item_data.get("course_id"),
+                title=item_data["title"],
+                description=item_data.get("description"),
+                skills=item_data.get("skills", []),
+                duration=item_data.get("duration"),
+                display_order=idx + 1,
+            )
+            self.db.add(item)
+
+        await self.db.flush()
+        return await self.get_roadmap_by_id_and_user(roadmap.id, roadmap.user_id)
 

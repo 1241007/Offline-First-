@@ -371,3 +371,217 @@ async def test_cross_user_isolation(client: AsyncClient, setup_learner_data, db_
     # The client fixture acts as 'test-user-id'
     resp = await client.get("/api/v1/roadmaps/personalized/session/session-user-1")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_empty_active_session_returns_null(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """Test that retrieving active session when none exists returns 200 OK with null body."""
+    # Ensure no active sessions for test-user-id
+    sessions = (await db_session.scalars(
+        select(RoadmapAssessmentSession).where(RoadmapAssessmentSession.user_id == "test-user-id")
+    )).all()
+    for s in sessions:
+        await db_session.delete(s)
+    await db_session.commit()
+
+    resp = await client.get("/api/v1/roadmaps/personalized/active")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+@pytest.mark.asyncio
+async def test_system_roadmaps_endpoint(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """Test that GET /api/v1/roadmaps succeeds and queries roadmaps table with structure column intact."""
+    resp = await client.get("/api/v1/roadmaps")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_milestone_progress_sync_and_retrieval(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """Test saving, retrieving, and syncing milestone completion state."""
+    # Create test personalized roadmap with structure
+    roadmap = Roadmap(
+        id="test-sync-roadmap-1",
+        user_id="test-user-id",
+        title="Offline Sync Roadmap",
+        slug="offline-sync-roadmap",
+        category="Mobile Development",
+        description="Learn Android Offline-First",
+        level="Intermediate",
+        duration="6 weeks",
+        icon="school",
+        accent_theme="primary",
+        structure={
+            "title": "Offline Sync Roadmap",
+            "goal": "Learn Android Offline-First",
+            "startingLevel": "Intermediate",
+            "category": "Mobile Development",
+            "estimatedDuration": "6 weeks",
+            "weeklyHours": 10.0,
+            "assessmentSummary": {
+                "strengths": ["Kotlin"],
+                "skillGaps": ["SQLite"],
+                "verifiedEvidence": [],
+                "selfReportedInformation": [],
+                "unknowns": [],
+            },
+            "phases": [
+                {
+                    "title": "Phase 1",
+                    "objective": "Basics",
+                    "durationWeeks": 2,
+                    "topics": ["SQLite"],
+                    "activities": ["Coding"],
+                    "resources": ["Docs"],
+                    "milestones": [
+                        {
+                            "title": "M1",
+                            "completionCriteria": ["Done"],
+                            "assessment": "Quiz",
+                            "passingCriteria": "Pass",
+                        }
+                    ],
+                }
+            ],
+            "weeklySchedule": [],
+            "assumptions": [],
+            "capstoneProject": "App",
+            "nextAction": "Start",
+            "completedMilestones": [],
+        },
+    )
+    db_session.add(roadmap)
+    await db_session.commit()
+
+    # 1. Check initial completed milestones is empty
+    resp = await client.get("/api/v1/roadmaps/personalized/test-sync-roadmap-1/milestones")
+    assert resp.status_code == 200
+    assert resp.json()["completedMilestones"] == []
+
+    # 2. Toggle single milestone to completed
+    resp = await client.put(
+        "/api/v1/roadmaps/personalized/test-sync-roadmap-1/milestones",
+        json={"milestoneKey": "Phase 1_M1", "isCompleted": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["completedMilestones"] == ["Phase 1_M1"]
+
+    # 3. Batch sync milestones
+    resp = await client.put(
+        "/api/v1/roadmaps/personalized/test-sync-roadmap-1/milestones",
+        json={"completedMilestones": ["Phase 1_M1", "Phase 2_M2", "Phase 3_M3"]},
+    )
+    assert resp.status_code == 200
+    assert set(resp.json()["completedMilestones"]) == {"Phase 1_M1", "Phase 2_M2", "Phase 3_M3"}
+
+    # 4. Untoggle single milestone
+    resp = await client.put(
+        "/api/v1/roadmaps/personalized/test-sync-roadmap-1/milestones",
+        json={"milestoneKey": "Phase 2_M2", "isCompleted": False},
+    )
+    assert resp.status_code == 200
+    assert set(resp.json()["completedMilestones"]) == {"Phase 1_M1", "Phase 3_M3"}
+
+    # 5. Verify GET reflects updated structure
+    resp = await client.get("/api/v1/roadmaps/personalized/test-sync-roadmap-1/milestones")
+    assert resp.status_code == 200
+    assert set(resp.json()["completedMilestones"]) == {"Phase 1_M1", "Phase 3_M3"}
+
+    # 6. Verify detail endpoint also has completedMilestones in structure
+    detail_resp = await client.get("/api/v1/roadmaps/personalized/test-sync-roadmap-1")
+    assert detail_resp.status_code == 200
+    assert set(detail_resp.json()["structure"]["completedMilestones"]) == {"Phase 1_M1", "Phase 3_M3"}
+
+
+@pytest.mark.asyncio
+async def test_save_or_sync_personalized_roadmap(client: AsyncClient, setup_learner_data, db_session: AsyncSession):
+    """Test saving offline-created or synchronized personalized roadmaps."""
+    payload = {
+        "id": "offline-created-roadmap-999",
+        "title": "Offline Created Machine Learning",
+        "goal": "Build Edge ML Apps",
+        "category": "Artificial Intelligence",
+        "level": "Intermediate",
+        "duration": "10 weeks",
+        "icon": "psychology",
+        "accentTheme": "secondary",
+        "structure": {
+            "title": "Offline Created Machine Learning",
+            "goal": "Build Edge ML Apps",
+            "startingLevel": "Intermediate",
+            "category": "Artificial Intelligence",
+            "estimatedDuration": "10 weeks",
+            "weeklyHours": 8.0,
+            "assessmentSummary": {
+                "strengths": ["Python", "NumPy"],
+                "skillGaps": ["TFLite", "ONNX"],
+                "verifiedEvidence": ["Completed Python 101"],
+                "selfReportedInformation": [],
+                "unknowns": []
+            },
+            "phases": [
+                {
+                    "title": "Phase 1: Edge Models",
+                    "objective": "Quantize models",
+                    "durationWeeks": 4,
+                    "topics": ["TFLite", "Quantization"],
+                    "activities": ["Export models"],
+                    "resources": ["TF Docs"],
+                    "milestones": [
+                        {
+                            "title": "Quantize first model",
+                            "completionCriteria": ["Model size < 50MB"],
+                            "assessment": "Benchmarking",
+                            "passingCriteria": "Speed > 30 FPS"
+                        }
+                    ],
+                    "recommendedCourseIds": []
+                }
+            ],
+            "weeklySchedule": [
+                {
+                    "dayOrWeek": "Week 1",
+                    "focusTopic": "Quantization",
+                    "estimatedHours": 8.0,
+                    "tasks": ["Read docs", "Run script"]
+                }
+            ],
+            "assumptions": ["GPU available for training"],
+            "capstoneProject": "Edge Camera App",
+            "nextAction": "Download dataset",
+            "completedMilestones": ["Phase 1_M1"]
+        }
+    }
+
+    # 1. Create roadmap via POST /save
+    resp = await client.post("/api/v1/roadmaps/personalized/save", json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["id"] == "offline-created-roadmap-999"
+    assert data["title"] == "Offline Created Machine Learning"
+    assert data["goal"] == "Build Edge ML Apps"
+    assert len(data["structure"]["phases"]) == 1
+    assert data["structure"]["phases"][0]["title"] == "Phase 1: Edge Models"
+
+    # 2. Verify roadmap is returned in user's roadmaps list
+    list_resp = await client.get("/api/v1/roadmaps/personalized/my-roadmaps")
+    assert list_resp.status_code == 200
+    my_roadmaps = list_resp.json()
+    assert any(r["id"] == "offline-created-roadmap-999" for r in my_roadmaps)
+
+    # 3. Idempotent sync: Repeat save with updated milestone/tasks
+    payload["structure"]["completedMilestones"] = ["Phase 1_M1", "Phase 1_M2"]
+    resp2 = await client.post("/api/v1/roadmaps/personalized/save", json=payload)
+    assert resp2.status_code == 201
+    data2 = resp2.json()
+    assert data2["id"] == "offline-created-roadmap-999"
+    assert set(data2["structure"]["completedMilestones"]) == {"Phase 1_M1", "Phase 1_M2"}
+
+    # 4. Verify no duplicates were created
+    list_resp2 = await client.get("/api/v1/roadmaps/personalized/my-roadmaps")
+    assert list_resp2.status_code == 200
+    matching = [r for r in list_resp2.json() if r["id"] == "offline-created-roadmap-999"]
+    assert len(matching) == 1, "Must not create duplicate roadmaps on repeated sync"
+
+

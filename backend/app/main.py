@@ -1,6 +1,7 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -93,6 +94,34 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"code": "VALIDATION_ERROR", "message": "; ".join(messages)},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_unhandled_exception_handler(request: Request, exc: Exception):
+    """Log server-side traceback with correlation ID and return safe, sanitized error response."""
+    # If it is an HTTPException, let FastAPI's default handling or re-wrap safely
+    from fastapi import HTTPException
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"code": "HTTP_ERROR", "message": exc.detail},
+            headers=exc.headers,
+        )
+
+    cid = getattr(request.state, "correlation_id", None) or str(uuid.uuid4())
+    logger.error(
+        f"Unhandled Server Error [Correlation-ID: {cid}] on {request.method} {request.url.path}: {exc}",
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "code": "INTERNAL_SERVER_ERROR",
+            "message": "An unexpected error occurred. Please try again later.",
+            "correlationId": cid,
+        },
+        headers={"X-Correlation-ID": cid},
     )
 
 

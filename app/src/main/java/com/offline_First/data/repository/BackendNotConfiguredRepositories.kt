@@ -186,8 +186,23 @@ class BackendNotConfiguredRepositories :
     ): Result<List<com.offline_First.domain.model.PersonalizedRoadmapDetail>> =
         unavailable("User personalized roadmaps")
 
+    override fun getMyPersonalizedRoadmapsCached(): List<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        emptyList()
+
     override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
         unavailable("Personalized roadmap detail")
+
+    override suspend fun savePersonalizedRoadmap(roadmap: com.offline_First.domain.model.PersonalizedRoadmapDetail): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Save personalized roadmap")
+
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
+
+    override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
+        unavailable("Milestone sync")
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

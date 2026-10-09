@@ -108,6 +108,7 @@ data class PersonalizedRoadmapDetail(
     val assumptions: List<String> = emptyList(),
     val capstoneProject: String = "",
     val nextAction: String = "",
+    val completedMilestones: List<String> = emptyList(),
     val createdAt: String? = null
 )
 
