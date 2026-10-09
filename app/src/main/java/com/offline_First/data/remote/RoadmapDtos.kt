@@ -56,6 +56,7 @@ data class AssessmentMessageItemDto(
     val text: String,
     val options: List<String> = emptyList(),
     val quiz: AssessmentQuizPublicDto? = null,
+    @SerialName("stepId") val stepId: String? = null,
     val timestamp: String? = null
 )
 
@@ -63,6 +64,8 @@ data class AssessmentMessageItemDto(
 data class AssessmentSessionResponseDto(
     val id: String,
     val state: String,
+    @SerialName("currentStepId") val currentStepId: String? = null,
+    @SerialName("completedSteps") val completedSteps: List<String> = emptyList(),
     val goal: String? = null,
     @SerialName("targetLevel") val targetLevel: String? = null,
     @SerialName("targetTimeline") val targetTimeline: String? = null,

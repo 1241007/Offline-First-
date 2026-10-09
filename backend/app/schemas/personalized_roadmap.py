@@ -21,6 +21,7 @@ class AssessmentMessageItem(BaseModel):
     text: str
     options: List[str] = Field(default_factory=list)
     quiz: Optional[AssessmentQuizPublicDto] = None
+    step_id: Optional[str] = Field(None, alias="stepId")
     timestamp: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True)
@@ -30,6 +31,8 @@ class AssessmentSessionResponse(BaseModel):
     """Full assessment session state response for the client"""
     id: str
     state: str
+    current_step_id: Optional[str] = Field(None, alias="currentStepId")
+    completed_steps: List[str] = Field(default_factory=list, alias="completedSteps")
     goal: Optional[str] = None
     target_level: Optional[str] = Field(None, alias="targetLevel")
     target_timeline: Optional[str] = Field(None, alias="targetTimeline")

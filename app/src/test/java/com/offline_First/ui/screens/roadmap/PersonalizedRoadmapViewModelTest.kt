@@ -599,6 +599,106 @@ class PersonalizedRoadmapViewModelTest {
         val matching = viewModel.uiState.value.myPersonalizedRoadmaps.filter { it.id == "roadmap-idempotent-test" }
         assertEquals(1, matching.size)
     }
+
+    @Test
+    fun submitAssessmentAnswer_chip_and_freeText_unified_pipeline() = runTest {
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.startOrResumeAssessment()
+
+        var chipCallbackSuccess = false
+        // Submit answer from predefined chip
+        viewModel.submitAssessmentAnswer("2-4 hours/week") { success ->
+            chipCallbackSuccess = success
+        }
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(chipCallbackSuccess)
+        val state = viewModel.uiState.value
+        assertFalse(state.isSendingAssessmentMessage)
+        assertNotNull(state.assessmentSession)
+        assertEquals(2, state.assessmentMessages.size)
+        assertEquals("2-4 hours/week", state.assessmentMessages[0].text)
+
+        var textCallbackSuccess = false
+        // Submit answer from free-text
+        viewModel.submitAssessmentAnswer("I want to master Kotlin Coroutines") { success ->
+            textCallbackSuccess = success
+        }
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(textCallbackSuccess)
+    }
+
+    @Test
+    fun submitAssessmentAnswer_failure_rollsBack_and_calls_completion_with_false() = runTest {
+        fakeRepo.submitAnswerResult = Result.failure(RuntimeException("Network timeout"))
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.startOrResumeAssessment()
+        testScheduler.advanceUntilIdle()
+
+        val initialMessages = viewModel.uiState.value.assessmentMessages
+        val initialCount = initialMessages.size
+
+        var completionResult: Boolean? = null
+        viewModel.submitAssessmentAnswer("Failed answer attempt") { success ->
+            completionResult = success
+        }
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(false, completionResult)
+        val state = viewModel.uiState.value
+        assertFalse(state.isSendingAssessmentMessage)
+        assertNotNull(state.errorMessage)
+        assertTrue(state.errorMessage!!.contains("Network timeout"))
+        // Assert optimistic message was rolled back to prevent ghost/duplicate entries
+        assertEquals(initialCount, state.assessmentMessages.size)
+    }
+
+    @Test
+    fun startOrResumeAssessment_preserves_inMemory_session_when_not_forced() = runTest {
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.startOrResumeAssessment(forceNew = false)
+        testScheduler.advanceUntilIdle()
+
+        val session1 = viewModel.uiState.value.assessmentSession
+        assertNotNull(session1)
+
+        // Calling startOrResumeAssessment again without forceNew retains in-memory session without resetting
+        viewModel.startOrResumeAssessment(forceNew = false)
+        testScheduler.advanceUntilIdle()
+
+        assertSame(session1, viewModel.uiState.value.assessmentSession)
+    }
+
+    @Test
+    fun assessment_quick_reply_options_update_from_server_response() = runTest {
+        fakeRepo.submitAnswerResult = Result.success(
+            AssessmentSessionState(
+                id = "sess-101",
+                state = "ASSESSING_AVAILABILITY",
+                options = listOf("2-4 hours/week", "5-10 hours/week", "15+ hours/week"),
+                messages = listOf(
+                    AssessmentMessage(
+                        speaker = AssessmentSpeaker.MENTOR,
+                        text = "How many hours per week can you study?",
+                        options = listOf("2-4 hours/week", "5-10 hours/week", "15+ hours/week")
+                    )
+                ),
+                completenessPercentage = 60
+            )
+        )
+
+        val viewModel = RoadmapViewModel(repository = fakeRepo)
+        viewModel.startOrResumeAssessment()
+        testScheduler.advanceUntilIdle()
+
+        viewModel.submitAssessmentAnswer("Learn Python")
+        testScheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("ASSESSING_AVAILABILITY", state.assessmentSession?.state)
+        assertEquals(listOf("2-4 hours/week", "5-10 hours/week", "15+ hours/week"), state.assessmentSession?.options)
+    }
 }
 
 

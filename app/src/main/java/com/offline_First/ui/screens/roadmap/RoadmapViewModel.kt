@@ -136,6 +136,15 @@ class RoadmapViewModel(
     // --- Interactive Assessment Advisor Actions ---
 
     fun startOrResumeAssessment(forceNew: Boolean = false) {
+        if (!forceNew && _uiState.value.assessmentSession != null && _uiState.value.assessmentSession?.state != "COMPLETED") {
+            _uiState.value = _uiState.value.copy(
+                isAssessmentLoading = false,
+                assessmentError = null,
+                errorMessage = null
+            )
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isAssessmentLoading = true,
@@ -196,20 +205,26 @@ class RoadmapViewModel(
         _uiState.value = _uiState.value.copy(selectedQuizIndex = index)
     }
 
-    fun submitAssessmentAnswer(answer: String, quizSelectedIndex: Int? = null) {
+    fun submitAssessmentAnswer(
+        answer: String,
+        quizSelectedIndex: Int? = null,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
         val currentSession = _uiState.value.assessmentSession ?: return
         if (_uiState.value.isSendingAssessmentMessage) return
 
         val text = answer.trim()
         if (text.isEmpty() && quizSelectedIndex == null) return
 
+        val previousMessages = _uiState.value.assessmentMessages
         val localStudentMsg = AssessmentMessage(
             speaker = AssessmentSpeaker.LEARNER,
-            text = text
+            text = text,
+            stepId = currentSession.currentStepId
         )
 
         // Optimistically add user turn to message list
-        val updatedList = _uiState.value.assessmentMessages + localStudentMsg
+        val updatedList = previousMessages + localStudentMsg
         _uiState.value = _uiState.value.copy(
             assessmentMessages = updatedList,
             isSendingAssessmentMessage = true,
@@ -231,12 +246,16 @@ class RoadmapViewModel(
                         assessmentMessages = updatedSession.messages,
                         selectedQuizIndex = null
                     )
+                    onComplete?.invoke(true)
                 },
                 onFailure = { err ->
+                    // Roll back optimistic message to prevent duplicate ghost messages
                     _uiState.value = _uiState.value.copy(
                         isSendingAssessmentMessage = false,
+                        assessmentMessages = previousMessages,
                         errorMessage = err.localizedMessage ?: "Unable to send message to advisor."
                     )
+                    onComplete?.invoke(false)
                 }
             )
         }

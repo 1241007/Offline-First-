@@ -269,10 +269,6 @@ fun RoadmapBuilderScreen(
                 }
 
                 // Ready for Generation Banner CTA
-                val latestMsg = uiState.assessmentMessages.lastOrNull()
-                val latestHasQuiz = latestMsg?.quiz != null
-                val showQuickOptions = latestMsg?.options?.isNotEmpty() == true && !latestHasQuiz && !isBusy
-
                 if (session?.state == "READY_FOR_GENERATION" && !uiState.isGenerating) {
                     Card(
                         modifier = Modifier
@@ -320,7 +316,12 @@ fun RoadmapBuilderScreen(
                 }
 
                 // Quick Option Chips
-                if (showQuickOptions && latestMsg != null) {
+                val latestMentorMsg = uiState.assessmentMessages.lastOrNull { it.speaker == AssessmentSpeaker.MENTOR }
+                val hasPendingQuiz = uiState.assessmentSession?.quiz != null || uiState.assessmentMessages.lastOrNull()?.quiz != null
+                val activeOptions = uiState.assessmentSession?.options?.ifEmpty { latestMentorMsg?.options ?: emptyList() } ?: latestMentorMsg?.options ?: emptyList()
+                val showQuickOptions = activeOptions.isNotEmpty() && !hasPendingQuiz && !isBusy && session?.state != "READY_FOR_GENERATION" && session?.state != "COMPLETED"
+
+                if (showQuickOptions) {
                     FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -328,9 +329,14 @@ fun RoadmapBuilderScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        latestMsg.options.forEach { optionText ->
+                        activeOptions.forEach { optionText ->
                             SuggestionChip(
-                                onClick = { viewModel.submitAssessmentAnswer(optionText) },
+                                onClick = {
+                                    if (!isBusy) {
+                                        viewModel.submitAssessmentAnswer(optionText)
+                                    }
+                                },
+                                enabled = !isBusy,
                                 label = { Text(optionText, fontSize = 13.sp) },
                                 colors = SuggestionChipDefaults.suggestionChipColors(
                                     containerColor = primaryColor.copy(alpha = 0.06f),
@@ -372,9 +378,13 @@ fun RoadmapBuilderScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = {
-                                if (draftText.isNotBlank()) {
-                                    viewModel.submitAssessmentAnswer(draftText)
-                                    draftText = ""
+                                if (draftText.isNotBlank() && !isBusy) {
+                                    val textToSend = draftText
+                                    viewModel.submitAssessmentAnswer(textToSend) { success ->
+                                        if (success) {
+                                            draftText = ""
+                                        }
+                                    }
                                 }
                             },
                             enabled = draftText.isNotBlank() && !isBusy,

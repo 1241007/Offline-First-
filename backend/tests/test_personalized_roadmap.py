@@ -585,3 +585,179 @@ async def test_save_or_sync_personalized_roadmap(client: AsyncClient, setup_lear
     assert len(matching) == 1, "Must not create duplicate roadmaps on repeated sync"
 
 
+@pytest.mark.asyncio
+async def test_assessment_sequence_goal_level_hours_progression_no_repeated_question(
+    client: AsyncClient, setup_learner_data, db_session: AsyncSession
+):
+    """
+    Specifically reproduces and tests the reported sequence:
+    1. Goal: learn Python
+    2. Experience level: advanced
+    3. Study availability: 2-4 hours/week
+    Verifies that after the study-hours answer is accepted:
+    - The advisor either asks a genuinely new relevant question / diagnostic quiz or reaches READY_FOR_GENERATION.
+    - It must NEVER repeat the study-hours question.
+    """
+    # 1. Start assessment session
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    assert start_resp.status_code == 201
+    start_data = start_resp.json()
+    session_id = start_data["id"]
+    assert start_data["state"] == "COLLECTING_GOALS"
+    assert "currentStepId" in start_data
+
+    # 2. Turn 1: Submit Goal "learn Python"
+    resp1 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "learn Python"},
+    )
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    assert data1["goal"] == "Python"
+    assert data1["state"] == "COLLECTING_PROGRESS"
+    assert "experience level" in data1["latestMessage"].lower() or "level" in data1["latestMessage"].lower()
+    assert "STEP_GOAL" in data1.get("completedSteps", [])
+
+    # 3. Turn 2: Submit Level "advanced"
+    resp2 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "advanced"},
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["targetLevel"] == "Advanced"
+    assert data2["state"] == "ASSESSING_AVAILABILITY"
+    assert "hours" in data2["latestMessage"].lower()
+    assert "STEP_LEVEL" in data2.get("completedSteps", [])
+
+    # 4. Turn 3: Submit Study availability "2–4 hours/week"
+    resp3 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "2–4 hours/week"},
+    )
+    assert resp3.status_code == 200
+    data3 = resp3.json()
+    assert data3["weeklyHours"] == 3.0
+    assert "STEP_AVAILABILITY" in data3.get("completedSteps", [])
+
+    # CRITICAL ACCEPTANCE CHECK: Must NOT repeat the study-hours question!
+    msg3_lower = data3["latestMessage"].lower()
+    assert "how many hours" not in msg3_lower, "Advisor must not repeat the study-hours question!"
+    assert data3["state"] in ("ASSESSING_SKILLS", "READY_FOR_GENERATION")
+
+    # If a diagnostic quiz was presented, answer it
+    if data3.get("quiz"):
+        quiz = data3["quiz"]
+        assert "question" in quiz
+        assert len(quiz["options"]) == 4
+
+        resp4 = await client.post(
+            f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+            json={"answer": quiz["options"][0], "quizSelectedIndex": 0},
+        )
+        assert resp4.status_code == 200
+        data4 = resp4.json()
+        assert data4["state"] == "READY_FOR_GENERATION"
+        assert data4["completenessPercentage"] == 100
+        assert "STEP_SKILLS" in data4.get("completedSteps", [])
+
+
+@pytest.mark.asyncio
+async def test_free_text_normalization_variants(client: AsyncClient, setup_learner_data):
+    """Test robust normalization of varied free-text responses."""
+    # Start session
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # Goal free-text: "I want to become a Senior Android Engineer!"
+    resp1 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "I want to become a Senior Android Engineer!"},
+    )
+    assert resp1.status_code == 200
+    assert "Android Engineer" in resp1.json()["goal"]
+
+    # Level free-text: "I am an advanced Kotlin developer with 4 years experience"
+    resp2 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "I am an advanced Kotlin developer with 4 years experience"},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["targetLevel"] == "Advanced"
+
+    # Availability free-text: "I can study around 10 hours every week"
+    resp3 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "I can study around 10 hours every week"},
+    )
+    assert resp3.status_code == 200
+    assert resp3.json()["weeklyHours"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_corrections_and_feedback_handling(client: AsyncClient, setup_learner_data):
+    """Test that corrections update structured fields and feedback is not misclassified as an answer."""
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # Answer Goal
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Full-Stack Development"},
+    )
+    # Answer Level
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Beginner"},
+    )
+
+    # User corrects their level: "Actually, change my level to Intermediate"
+    correction_resp = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Actually, change my level to Intermediate"},
+    )
+    assert correction_resp.status_code == 200
+    corr_data = correction_resp.json()
+    assert corr_data["targetLevel"] == "Intermediate"
+    assert "updated" in corr_data["latestMessage"].lower() or "intermediate" in corr_data["latestMessage"].lower()
+
+
+@pytest.mark.asyncio
+async def test_invalid_empty_submission_handling(client: AsyncClient, setup_learner_data):
+    """Test that blank/empty submission returns 400 Bad Request and does not corrupt session state."""
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    resp = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "   "},
+    )
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_idempotent_duplicate_message_submission(client: AsyncClient, setup_learner_data):
+    """Test that sending the exact same response twice does not create duplicate messages."""
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start")
+    session_id = start_resp.json()["id"]
+
+    # First send
+    resp1 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Master AI and LLMs"},
+    )
+    assert resp1.status_code == 200
+    msg_count_1 = len(resp1.json()["messages"])
+
+    # Duplicate send of identical text
+    resp2 = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Master AI and LLMs"},
+    )
+    assert resp2.status_code == 200
+    msg_count_2 = len(resp2.json()["messages"])
+    assert msg_count_1 == msg_count_2, "Duplicate submission must be idempotent"
+
+
+

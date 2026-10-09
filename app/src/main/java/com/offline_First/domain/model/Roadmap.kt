@@ -38,12 +38,15 @@ data class AssessmentMessage(
     val text: String,
     val options: List<String> = emptyList(),
     val quiz: DiagnosticQuiz? = null,
+    val stepId: String? = null,
     val timestamp: String? = null
 )
 
 data class AssessmentSessionState(
     val id: String,
     val state: String,
+    val currentStepId: String? = null,
+    val completedSteps: List<String> = emptyList(),
     val goal: String? = null,
     val targetLevel: String? = null,
     val targetTimeline: String? = null,

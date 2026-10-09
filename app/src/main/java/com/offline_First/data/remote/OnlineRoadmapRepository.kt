@@ -59,6 +59,7 @@ class OnlineRoadmapRepository(
             text = text,
             options = options,
             quiz = quiz?.toDomain(),
+            stepId = stepId,
             timestamp = timestamp
         )
     }
@@ -67,6 +68,8 @@ class OnlineRoadmapRepository(
         return AssessmentSessionState(
             id = id,
             state = state,
+            currentStepId = currentStepId,
+            completedSteps = completedSteps,
             goal = goal,
             targetLevel = targetLevel,
             targetTimeline = targetTimeline,

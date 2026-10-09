@@ -73,6 +73,132 @@ def _extract_json_from_response(raw_text: str) -> Optional[dict]:
     return None
 
 
+# Step Identifiers for deterministic assessment state machine
+STEP_GOAL = "STEP_GOAL"
+STEP_LEVEL = "STEP_LEVEL"
+STEP_AVAILABILITY = "STEP_AVAILABILITY"
+STEP_SKILLS = "STEP_SKILLS"
+STEP_READY = "READY_FOR_GENERATION"
+
+_FALLBACK_DIAGNOSTIC_QUIZZES = {
+    "python": {
+        "question": "Which keyword in Python is used to define an asynchronous coroutine function?",
+        "options": ["async def", "def async", "coroutine def", "yield from"],
+        "correct_index": 0,
+        "explanation": "'async def' defines native coroutines and asynchronous generators in Python.",
+        "skill_tested": "Python Asynchronous Programming",
+    },
+    "android": {
+        "question": "Which Jetpack Compose effect handler is designed for running suspend coroutines tied to a key?",
+        "options": ["LaunchedEffect", "rememberCoroutineScope", "DisposableEffect", "SideEffect"],
+        "correct_index": 0,
+        "explanation": "LaunchedEffect runs suspend code within Compose lifecycle and cancels/restarts on key changes.",
+        "skill_tested": "Jetpack Compose Coroutines",
+    },
+    "ai": {
+        "question": "In Retrieval-Augmented Generation (RAG), what is the primary role of a vector embedding?",
+        "options": [
+            "Represent semantic text meaning as high-dimensional numerical vectors for similarity search",
+            "Compress text to save database disk space",
+            "Encrypt sensitive user prompts for compliance",
+            "Speed up token generation in decoder-only LLMs",
+        ],
+        "correct_index": 0,
+        "explanation": "Vector embeddings project semantic meaning into dense vectors to calculate cosine similarity.",
+        "skill_tested": "Vector Embeddings & RAG",
+    },
+    "general": {
+        "question": "Which data structure provides average O(1) time complexity for lookup, insert, and delete operations?",
+        "options": ["Hash Table / HashMap", "Binary Search Tree", "Linked List", "Array"],
+        "correct_index": 0,
+        "explanation": "Hash tables use hash functions to index keys directly into buckets, giving O(1) average lookup.",
+        "skill_tested": "Data Structures & Algorithms",
+    },
+}
+
+
+def _normalize_experience_level(text: str) -> Optional[str]:
+    t = text.lower().strip()
+    if re.search(r"\b(advanced|expert|experienced|mastery)\b", t) or "senior level" in t:
+        return "Advanced"
+    if re.search(r"\b(intermediate|medium|moderate|mid-level|mid level)\b", t) or "some experience" in t:
+        return "Intermediate"
+    if re.search(r"\b(beginner|novice|starter|basics|entry-level)\b", t) or "no experience" in t or "new to" in t:
+        return "Beginner"
+    return None
+
+
+def _normalize_weekly_hours(text: str) -> Optional[float]:
+    t = text.lower().strip()
+    range_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|to|–)\s*(\d+(?:\.\d+)?)", t)
+    if range_match:
+        low = float(range_match.group(1))
+        high = float(range_match.group(2))
+        return (low + high) / 2.0
+    plus_match = re.search(r"(\d+(?:\.\d+)?)\s*\+", t)
+    if plus_match:
+        return float(plus_match.group(1))
+    hours_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)", t)
+    if hours_match:
+        return float(hours_match.group(1))
+    num_match = re.search(r"\b(\d+(?:\.\d+)?)\b", t)
+    if num_match:
+        val = float(num_match.group(1))
+        if 1.0 <= val <= 80.0:
+            return val
+    return None
+
+
+def _normalize_goal(text: str) -> str:
+    cleaned = text.strip()
+    prefixes = [
+        r"^(?:i\s+want\s+to\s+become\s+(?:an?|the)?\s*)",
+        r"^(?:i\s+want\s+to\s+learn\s+(?:about\s+)?(?:how\s+to\s+)?(?:an?|the)?\s*)",
+        r"^(?:i\s+want\s+to\s+master\s+(?:an?|the)?\s*)",
+        r"^(?:i\'?d\s+like\s+to\s+(?:learn|become|master)\s+(?:an?|the)?\s*)",
+        r"^(?:learn\s+(?:about\s+)?(?:how\s+to\s+)?(?:an?|the)?\s*)",
+        r"^(?:master\s+(?:an?|the)?\s*)",
+        r"^(?:become\s+(?:an?|the)?\s*)",
+        r"^(?:build\s+(?:an?|the)?\s*)",
+    ]
+    for p in prefixes:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = cleaned.rstrip(".!?,")
+    if not cleaned:
+        cleaned = text.strip().rstrip(".!?,")
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
+def _get_fallback_diagnostic_quiz(goal: Optional[str]) -> dict:
+    g = (goal or "").lower()
+    if "python" in g:
+        return _FALLBACK_DIAGNOSTIC_QUIZZES["python"].copy()
+    elif "android" in g or "kotlin" in g or "mobile" in g:
+        return _FALLBACK_DIAGNOSTIC_QUIZZES["android"].copy()
+    elif "ai" in g or "data" in g or "ml" in g or "machine learning" in g:
+        return _FALLBACK_DIAGNOSTIC_QUIZZES["ai"].copy()
+    return _FALLBACK_DIAGNOSTIC_QUIZZES["general"].copy()
+
+
+def _determine_next_step(
+    session: RoadmapAssessmentSession,
+    completed_steps: List[str],
+    has_pending_quiz: bool,
+    quiz_history_count: int,
+) -> str:
+    if STEP_GOAL not in completed_steps and not session.goal:
+        return STEP_GOAL
+    if STEP_LEVEL not in completed_steps and not session.target_level:
+        return STEP_LEVEL
+    if STEP_AVAILABILITY not in completed_steps and not session.weekly_hours:
+        return STEP_AVAILABILITY
+    if STEP_SKILLS not in completed_steps and not has_pending_quiz and quiz_history_count == 0:
+        return STEP_SKILLS
+    return STEP_READY
+
+
 class PersonalizedRoadmapService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -94,7 +220,6 @@ class PersonalizedRoadmapService:
         )
         memories = await self.memory_repo.list_memories(user_id=user_id, active_only=True)
 
-        # Count completed lessons
         lesson_query = select(UserLessonProgress).where(
             UserLessonProgress.user_id == user_id,
             UserLessonProgress.completed == True,
@@ -139,7 +264,6 @@ class PersonalizedRoadmapService:
     async def start_assessment_session(self, user_id: str) -> AssessmentSessionResponse:
         """Starts a new assessment session and generates the mentor's greeting and first question."""
         context = await self._gather_learner_context(user_id)
-        catalog = await self._get_catalog_summary()
 
         initial_profile = {
             "verified_evidence": context["verified_evidence"],
@@ -151,9 +275,11 @@ class PersonalizedRoadmapService:
             "stated_level": context["stated_level"],
             "interests": context["interests"],
             "memories": context["memories"],
+            "current_step_id": STEP_GOAL,
+            "completed_step_ids": [],
+            "quiz_history": [],
         }
 
-        # Prompt AI to craft an initial welcoming message acknowledging verified background if present
         system_prompt = (
             "You are EduNova's AI Learning Advisor. Your goal is to guide learners to a tailored roadmap.\n"
             "You ask ONE focused question at a time. Do not overwhelm the learner.\n"
@@ -163,7 +289,7 @@ class PersonalizedRoadmapService:
             '  "mentor_message": "Warm, personalized greeting + first question about their primary learning/career goal.",\n'
             '  "quick_options": ["Option 1", "Option 2", "Option 3", "Option 4"],\n'
             '  "assessment_state": "COLLECTING_GOALS",\n'
-            '  "completeness_percentage": 15\n'
+            '  "completeness_percentage": 20\n'
             "}"
         )
 
@@ -181,7 +307,7 @@ class PersonalizedRoadmapService:
         mentor_text = f"Hi {context['name']}! I'm your EduNova learning mentor. I'll help you build a personalized roadmap tailored to your goals and pace. What is your primary learning or career goal?"
         quick_opts = ["Land a Software Developer Job", "Master Android & AI", "Prepare for Technical Exams", "Build Full-Stack Projects"]
         state = "COLLECTING_GOALS"
-        completeness = 15
+        completeness = 20
 
         try:
             raw_resp = await openrouter_service.generate_response(
@@ -204,6 +330,7 @@ class PersonalizedRoadmapService:
                 "text": mentor_text,
                 "options": quick_opts,
                 "quiz": None,
+                "step_id": STEP_GOAL,
                 "timestamp": None,
             }
         ]
@@ -217,7 +344,16 @@ class PersonalizedRoadmapService:
         )
         await self.db.commit()
 
-        return self._format_session_response(session)
+        logger.info(
+            "ASSESSMENT_TRANSITION: session_id=%s prev_step=START current_step=%s intent=INITIALIZE next_step=%s state=%s completeness=%s",
+            session.id,
+            STEP_GOAL,
+            STEP_GOAL,
+            state,
+            completeness,
+        )
+
+        return self._format_session_response(session, completeness)
 
     async def get_active_session(self, user_id: str) -> Optional[AssessmentSessionResponse]:
         session = await self.assessment_repo.get_active_session_for_user(user_id)
@@ -248,54 +384,173 @@ class PersonalizedRoadmapService:
         if session.state in ("COMPLETED", "ERROR"):
             raise ValueError(f"Session is in {session.state} state and cannot accept further messages")
 
-        collected_profile = session.collected_profile or {}
+        user_turn_text = (answer or "").strip()
+        if not user_turn_text and quiz_selected_index is None:
+            raise ValueError("Answer text or quiz selection cannot be empty")
+
+        collected_profile = dict(session.collected_profile or {})
         messages = list(session.messages or [])
         pending_quiz = session.pending_quiz
+        completed_steps = list(collected_profile.get("completed_step_ids", []))
+        current_step = collected_profile.get("current_step_id", STEP_GOAL)
+        prev_step = current_step
 
-        # 1. Record user message in history
-        user_turn_text = answer.strip()
+        # Duplicate submission check (Idempotency)
+        last_learner_msg = next((m for m in reversed(messages) if m.get("sender") == "learner"), None)
+        if (
+            last_learner_msg is not None
+            and last_learner_msg.get("text") == user_turn_text
+            and quiz_selected_index is None
+        ):
+            return self._format_session_response(session)
+
+        # 1. Intent Classification & Input Processing
+        intent = "STEP_ANSWER"
         quiz_feedback_note = ""
+        correction_acknowledged_field = None
 
-        # 2. Evaluate pending quiz if one was answered
-        if pending_quiz is not None and quiz_selected_index is not None:
+        # Check if Quiz Answer
+        if pending_quiz is not None and (quiz_selected_index is not None or any(opt.lower() == user_turn_text.lower() for opt in pending_quiz.get("options", []))):
+            intent = "QUIZ_ANSWER"
+            if quiz_selected_index is None:
+                # Find matching option index
+                for idx, opt in enumerate(pending_quiz.get("options", [])):
+                    if opt.lower() == user_turn_text.lower():
+                        quiz_selected_index = idx
+                        break
+
             correct_idx = pending_quiz.get("correct_index", 0)
-            is_correct = quiz_selected_index == correct_idx
+            is_correct = (quiz_selected_index == correct_idx)
             skill = pending_quiz.get("skill_tested", "Skill check")
             explanation = pending_quiz.get("explanation", "")
+
+            # Record in quiz history
+            quiz_history = collected_profile.setdefault("quiz_history", [])
+            quiz_history.append({
+                "question": pending_quiz.get("question"),
+                "selected_index": quiz_selected_index,
+                "correct_index": correct_idx,
+                "is_correct": is_correct,
+                "skill_tested": skill,
+                "explanation": explanation,
+            })
 
             if is_correct:
                 quiz_feedback_note = f"[QUIZ RESULT: CORRECT for '{skill}'. Explanation: {explanation}]"
                 collected_profile.setdefault("strengths", []).append(f"Demonstrated proficiency in {skill}")
             else:
-                quiz_feedback_note = f"[QUIZ RESULT: INCORRECT for '{skill}'. Chosen option #{quiz_selected_index + 1}, correct was #{correct_idx + 1}. Explanation: {explanation}]"
+                quiz_feedback_note = f"[QUIZ RESULT: INCORRECT for '{skill}'. Chosen option #{((quiz_selected_index or 0) + 1)}, correct was #{correct_idx + 1}. Explanation: {explanation}]"
                 collected_profile.setdefault("skill_gaps", []).append(f"Needs foundation in {skill}")
 
-            # Clear pending quiz once answered
+            if STEP_SKILLS not in completed_steps:
+                completed_steps.append(STEP_SKILLS)
             pending_quiz = None
-        else:
-            # Self-reported answer
-            collected_profile.setdefault("self_reported_information", []).append(user_turn_text)
 
+        else:
+            # Check for explicit corrections
+            low_text = user_turn_text.lower()
+            is_correction_phrase = any(w in low_text for w in ["actually", "change my", "update my", "i meant", "correct my", "switch to", "make it", "instead of", "not beginner", "not advanced", "not intermediate"])
+
+            norm_level = _normalize_experience_level(user_turn_text)
+            norm_hours = _normalize_weekly_hours(user_turn_text)
+
+            if is_correction_phrase:
+                if norm_level:
+                    session.target_level = norm_level
+                    collected_profile["stated_level"] = norm_level
+                    if STEP_LEVEL not in completed_steps:
+                        completed_steps.append(STEP_LEVEL)
+                    correction_acknowledged_field = f"experience level to {norm_level}"
+                    intent = "CORRECTION"
+                elif norm_hours is not None:
+                    session.weekly_hours = norm_hours
+                    if STEP_AVAILABILITY not in completed_steps:
+                        completed_steps.append(STEP_AVAILABILITY)
+                    correction_acknowledged_field = f"weekly study time to {norm_hours} hours/week"
+                    intent = "CORRECTION"
+                elif "goal" in low_text or "learn" in low_text or "career" in low_text:
+                    norm_goal = _normalize_goal(user_turn_text)
+                    session.goal = norm_goal
+                    if STEP_GOAL not in completed_steps:
+                        completed_steps.append(STEP_GOAL)
+                    correction_acknowledged_field = f"goal to {norm_goal}"
+                    intent = "CORRECTION"
+
+            # If not an explicit correction, process according to current step
+            if intent != "CORRECTION":
+                # Check for general question or feedback
+                is_question = user_turn_text.endswith("?") or any(low_text.startswith(q) for q in ["what is", "can you explain", "how does", "why do", "why should", "could you explain"])
+                if is_question and not norm_level and norm_hours is None and current_step != STEP_GOAL:
+                    intent = "FEEDBACK_OR_QUESTION"
+                    collected_profile.setdefault("self_reported_information", []).append(user_turn_text)
+                else:
+                    # Normal step answer
+                    intent = "STEP_ANSWER"
+                    collected_profile.setdefault("self_reported_information", []).append(user_turn_text)
+
+                    if current_step == STEP_GOAL or not session.goal:
+                        session.goal = _normalize_goal(user_turn_text)
+                        if STEP_GOAL not in completed_steps:
+                            completed_steps.append(STEP_GOAL)
+
+                    elif current_step == STEP_LEVEL or (not session.target_level and norm_level):
+                        session.target_level = norm_level or "Intermediate"
+                        if STEP_LEVEL not in completed_steps:
+                            completed_steps.append(STEP_LEVEL)
+
+                    elif current_step == STEP_AVAILABILITY or (session.weekly_hours is None and norm_hours is not None):
+                        session.weekly_hours = norm_hours if norm_hours is not None else 5.0
+                        if STEP_AVAILABILITY not in completed_steps:
+                            completed_steps.append(STEP_AVAILABILITY)
+
+                    elif current_step == STEP_SKILLS:
+                        if STEP_SKILLS not in completed_steps:
+                            completed_steps.append(STEP_SKILLS)
+
+        # 2. Append learner turn to messages
         messages.append({
             "sender": "learner",
             "text": user_turn_text,
             "options": [],
             "quiz": None,
+            "step_id": current_step,
             "timestamp": None,
         })
 
-        # 3. Prompt OpenRouter Claude Sonnet to evaluate and choose next action
+        # 3. Deduplicate completed_steps and determine next step
+        completed_steps = list(dict.fromkeys(completed_steps))
+        quiz_hist_len = len(collected_profile.get("quiz_history", []))
+        next_step = _determine_next_step(session, completed_steps, pending_quiz is not None, quiz_hist_len)
+
+        # Map next_step to assessment_state and progress completeness
+        if next_step == STEP_GOAL:
+            next_state = "COLLECTING_GOALS"
+            completeness = 20
+        elif next_step == STEP_LEVEL:
+            next_state = "COLLECTING_PROGRESS"
+            completeness = 40
+        elif next_step == STEP_AVAILABILITY:
+            next_state = "ASSESSING_AVAILABILITY"
+            completeness = 60
+        elif next_step == STEP_SKILLS:
+            next_state = "ASSESSING_SKILLS"
+            completeness = 80
+        else:
+            next_state = "READY_FOR_GENERATION"
+            completeness = 100
+
+        # 4. Craft Prompt & Call AI (with Deterministic Next Step Guidance)
         system_prompt = (
             "You are EduNova's AI Learning Advisor managing an interactive assessment conversation.\n"
             "Rules:\n"
-            "1. Ask ONE question at a time.\n"
+            "1. Ask ONE concise question at a time.\n"
             "2. If the user answered a quiz, acknowledge their result with encouragement and clear explanation.\n"
-            "3. If their skill level on a core prerequisite is unclear or they express uncertainty, create a diagnostic multiple-choice quiz (4 options) to test them.\n"
-            "4. Progress through states: COLLECTING_GOALS -> COLLECTING_PROGRESS -> ASSESSING_SKILLS -> CLARIFYING_GAPS -> READY_FOR_GENERATION.\n"
-            "5. When you have collected Goal, Proficiency Level, Strengths/Gaps, and Weekly Study Hours (or have enough context to make reasonable assumptions), set assessment_state to 'READY_FOR_GENERATION'.\n"
+            "3. If the user corrected a previous answer, acknowledge the correction.\n"
+            f"4. Next required step is: '{next_step}'. You MUST address this next required step.\n"
+            "5. If state is 'READY_FOR_GENERATION', conclude warmly and encourage generating the personalized roadmap.\n"
             "6. You must return ONLY valid JSON in this exact schema:\n"
             "{\n"
-            '  "mentor_message": "Your response to the learner + the single next question or encouragement.",\n'
+            '  "mentor_message": "Response text to learner + the next question.",\n'
             '  "quick_options": ["Option 1", "Option 2", "Option 3"],\n'
             '  "diagnostic_quiz": null or {\n'
             '    "question": "Diagnostic question text",\n'
@@ -312,8 +567,8 @@ class PersonalizedRoadmapService:
             '    "skill_gaps": ["..."],\n'
             '    "unknowns": ["..."]\n'
             '  },\n'
-            '  "assessment_state": "COLLECTING_GOALS | COLLECTING_PROGRESS | ASSESSING_SKILLS | CLARIFYING_GAPS | READY_FOR_GENERATION",\n'
-            '  "completeness_percentage": 60\n'
+            f'  "assessment_state": "{next_state}",\n'
+            f'  "completeness_percentage": {completeness}\n'
             "}"
         )
 
@@ -325,15 +580,42 @@ class PersonalizedRoadmapService:
         if quiz_feedback_note:
             history_payload.append({"role": "system", "content": quiz_feedback_note})
 
-        user_context_info = f"Gathered Profile so far: {json.dumps(collected_profile)}"
-        history_payload.append({"role": "user", "content": f"User replied: '{user_turn_text}'. Current context: {user_context_info}. Produce the next advisor response."})
+        if correction_acknowledged_field:
+            history_payload.append({"role": "system", "content": f"User corrected {correction_acknowledged_field}."})
 
-        # Default fallback values in case of transient model issue
-        next_mentor_text = "Got it! Could you also share how many hours per week you can dedicate to studying?"
-        next_options = ["2-4 hours/week", "5-10 hours/week", "15+ hours/week"]
-        next_state = "ASSESSING_SKILLS"
-        completeness = min(90, int(len(messages) * 15))
-        new_pending_quiz = None
+        user_context_info = f"Current Session Facts: Goal={session.goal}, Level={session.target_level}, WeeklyHours={session.weekly_hours}, NextStep={next_step}."
+        history_payload.append({"role": "user", "content": f"User replied: '{user_turn_text}'. Intent={intent}. Context: {user_context_info}. Produce the next advisor response."})
+
+        # 5. Build Dynamic Deterministic Fallback (NEVER repeat the same study-hours question!)
+        if next_step == STEP_GOAL:
+            fallback_mentor_text = "What is your primary learning or career goal?"
+            fallback_options = ["Master Python Backend", "Android & Kotlin AI Apps", "Full-Stack Development", "Cloud Architecture"]
+            fallback_quiz = None
+        elif next_step == STEP_LEVEL:
+            fallback_mentor_text = f"Got it! What is your current experience level with {session.goal or 'this area'}?"
+            fallback_options = ["Beginner (Starting fresh)", "Intermediate (Know fundamentals)", "Advanced (Built projects)"]
+            fallback_quiz = None
+        elif next_step == STEP_AVAILABILITY:
+            fallback_mentor_text = "How many hours per week can you dedicate to studying and practice?"
+            fallback_options = ["2-4 hours/week", "5-10 hours/week", "15+ hours/week"]
+            fallback_quiz = None
+        elif next_step == STEP_SKILLS:
+            diag = _get_fallback_diagnostic_quiz(session.goal)
+            fallback_mentor_text = f"Awesome! Let's do a quick diagnostic check on your {session.goal or 'technical'} foundation:"
+            fallback_options = []
+            fallback_quiz = diag
+        else:
+            # READY_FOR_GENERATION
+            fallback_mentor_text = f"Excellent! I've gathered all your details ({session.goal}, {session.target_level} level, {session.weekly_hours or 5.0} hrs/week). We are ready to build your tailored learning roadmap!"
+            fallback_options = ["Generate My Personalized Roadmap"]
+            fallback_quiz = None
+
+        if correction_acknowledged_field:
+            fallback_mentor_text = f"Got it, I've updated your {correction_acknowledged_field}! " + fallback_mentor_text
+
+        next_mentor_text = fallback_mentor_text
+        next_options = fallback_options
+        new_pending_quiz = fallback_quiz
 
         try:
             raw_resp = await openrouter_service.generate_response(
@@ -344,29 +626,30 @@ class PersonalizedRoadmapService:
             parsed = _extract_json_from_response(raw_resp)
             if parsed and "mentor_message" in parsed:
                 next_mentor_text = parsed["mentor_message"]
-                next_options = parsed.get("quick_options", next_options)
-                next_state = parsed.get("assessment_state", next_state)
-                completeness = parsed.get("completeness_percentage", completeness)
+                if "quick_options" in parsed and isinstance(parsed["quick_options"], list):
+                    next_options = parsed["quick_options"]
+                if parsed.get("assessment_state") in ("COLLECTING_GOALS", "COLLECTING_PROGRESS", "ASSESSING_AVAILABILITY", "ASSESSING_SKILLS", "READY_FOR_GENERATION"):
+                    next_state = parsed["assessment_state"]
+                if "completeness_percentage" in parsed and isinstance(parsed["completeness_percentage"], (int, float)):
+                    completeness = int(parsed["completeness_percentage"])
 
-                # Check extracted data
                 extracted = parsed.get("extracted_data", {})
-                if extracted.get("goal"):
+                if extracted.get("goal") and not session.goal:
                     session.goal = extracted["goal"]
-                if extracted.get("target_level"):
+                if extracted.get("target_level") and not session.target_level:
                     session.target_level = extracted["target_level"]
-                if extracted.get("weekly_hours"):
-                    session.weekly_hours = float(extracted["weekly_hours"])
+                if extracted.get("weekly_hours") and not session.weekly_hours:
+                    try:
+                        session.weekly_hours = float(extracted["weekly_hours"])
+                    except (ValueError, TypeError):
+                        pass
                 if extracted.get("strengths"):
                     collected_profile.setdefault("strengths", []).extend(extracted["strengths"])
                 if extracted.get("skill_gaps"):
                     collected_profile.setdefault("skill_gaps", []).extend(extracted["skill_gaps"])
-                if extracted.get("unknowns"):
-                    collected_profile["unknowns"] = extracted["unknowns"]
 
-                # Process diagnostic quiz if AI generated one
                 diag_quiz = parsed.get("diagnostic_quiz")
                 if diag_quiz and isinstance(diag_quiz, dict) and "question" in diag_quiz and "options" in diag_quiz:
-                    # Save answer key on backend
                     new_pending_quiz = {
                         "question": diag_quiz["question"],
                         "options": diag_quiz["options"],
@@ -377,20 +660,19 @@ class PersonalizedRoadmapService:
         except Exception as e:
             logger.warning(f"Error calling OpenRouter for assessment turn: {e}")
 
-        # Ensure unique items in strengths and skill gaps
+        # Ensure unique items in strengths and gaps
         if "strengths" in collected_profile:
             collected_profile["strengths"] = list(dict.fromkeys(collected_profile["strengths"]))
         if "skill_gaps" in collected_profile:
             collected_profile["skill_gaps"] = list(dict.fromkeys(collected_profile["skill_gaps"]))
 
-        # Application-level sanity check for readiness (Mandatory Correction 3)
-        # If learner has provided 4+ turns and stated a goal, allow READY_FOR_GENERATION
-        if len(messages) >= 6 and session.goal and next_state != "READY_FOR_GENERATION":
-            if not collected_profile.get("unknowns") or len(collected_profile["unknowns"]) <= 1:
-                next_state = "READY_FOR_GENERATION"
-                completeness = 100
+        # Enforce deterministic readiness: if all 3 core dimensions are satisfied and quiz evaluated or reached ready
+        if next_step == STEP_READY:
+            next_state = "READY_FOR_GENERATION"
+            completeness = 100
+            new_pending_quiz = None
 
-        # Build public quiz object for message (without answer or explanation!)
+        # Build public quiz object for client message (WITHOUT answer key!)
         public_quiz_dto = None
         if new_pending_quiz:
             public_quiz_dto = {
@@ -399,22 +681,43 @@ class PersonalizedRoadmapService:
                 "skill_tested": new_pending_quiz.get("skill_tested"),
             }
 
+        # Append mentor response
         messages.append({
             "sender": "mentor",
             "text": next_mentor_text,
             "options": next_options,
             "quiz": public_quiz_dto,
+            "step_id": next_step,
             "timestamp": None,
         })
+
+        # Update tracking fields in collected_profile
+        collected_profile["current_step_id"] = next_step
+        collected_profile["completed_step_ids"] = completed_steps
 
         session = await self.assessment_repo.update_session(
             session=session,
             state=next_state,
+            goal=session.goal,
+            target_level=session.target_level,
+            weekly_hours=session.weekly_hours,
             collected_profile=collected_profile,
             messages=messages,
             pending_quiz=new_pending_quiz,
         )
         await self.db.commit()
+
+        # Structured non-sensitive logging
+        logger.info(
+            "ASSESSMENT_TRANSITION: session_id=%s prev_step=%s current_step=%s intent=%s next_step=%s state=%s completeness=%s",
+            session.id,
+            prev_step,
+            current_step,
+            intent,
+            next_step,
+            next_state,
+            completeness,
+        )
 
         return self._format_session_response(session, completeness)
 
@@ -789,14 +1092,21 @@ class PersonalizedRoadmapService:
                     options=m["quiz"]["options"],
                     skill_tested=m["quiz"].get("skill_tested"),
                 ) if m.get("quiz") else None,
+                step_id=m.get("step_id"),
                 timestamp=m.get("timestamp"),
             )
             for m in messages
         ]
 
+        collected = session.collected_profile or {}
+        current_step = collected.get("current_step_id", STEP_GOAL)
+        completed_steps = collected.get("completed_step_ids", [])
+
         return AssessmentSessionResponse(
             id=session.id,
             state=session.state,
+            current_step_id=current_step,
+            completed_steps=completed_steps,
             goal=session.goal,
             targetLevel=session.target_level,
             targetTimeline=session.target_timeline,
