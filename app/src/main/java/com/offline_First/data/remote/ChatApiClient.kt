@@ -428,4 +428,66 @@ object ChatApiClient {
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<String>>(body)
     }
+
+    // --- Personalized Roadmap Assessment & Generation API ---
+
+    suspend fun startPersonalizedAssessment(): Result<AssessmentSessionResponseDto> = runCatching {
+        val (code, body) = post("/roadmaps/personalized/start", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
+    suspend fun getActiveAssessmentSession(): Result<AssessmentSessionResponseDto?> = runCatching {
+        val (code, body) = get("/roadmaps/personalized/active")
+        if (code == 404 || body.trim() == "null" || body.trim().isEmpty()) return@runCatching null
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
+    suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionResponseDto> = runCatching {
+        val (code, body) = get("/roadmaps/personalized/session/$sessionId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
+    suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int? = null
+    ): Result<AssessmentSessionResponseDto> = runCatching {
+        val payload = json.encodeToString(
+            SubmitAssessmentAnswerRequestDto(
+                answer = answer,
+                quizSelectedIndex = quizSelectedIndex
+            )
+        )
+        val (code, body) = post("/roadmaps/personalized/session/$sessionId/message", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
+    suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetailResponseDto> = runCatching {
+        val (code, body) = post("/roadmaps/personalized/session/$sessionId/generate", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
+    }
+
+    suspend fun getMyPersonalizedRoadmaps(
+        limit: Int? = null,
+        offset: Int = 0
+    ): Result<List<PersonalizedRoadmapDetailResponseDto>> = runCatching {
+        val params = mutableListOf<String>()
+        if (limit != null) params.add("limit=$limit")
+        if (offset > 0) params.add("offset=$offset")
+        val path = if (params.isEmpty()) "/roadmaps/personalized/my-roadmaps" else "/roadmaps/personalized/my-roadmaps?" + params.joinToString("&")
+        val (code, body) = get(path)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<PersonalizedRoadmapDetailResponseDto>>(body)
+    }
+
+    suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetailResponseDto> = runCatching {
+        val (code, body) = get("/roadmaps/personalized/$roadmapId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailResponseDto>(body)
+    }
 }

@@ -161,6 +161,34 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun getCategories(): List<String> = emptyList()
 
+    override suspend fun startPersonalizedAssessment(): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Personalized roadmap assessment")
+
+    override suspend fun getActiveAssessmentSession(): Result<com.offline_First.domain.model.AssessmentSessionState?> =
+        unavailable("Active assessment session")
+
+    override suspend fun getAssessmentSession(sessionId: String): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Assessment session")
+
+    override suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int?
+    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Assessment message")
+
+    override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap generation")
+
+    override suspend fun getMyPersonalizedRoadmaps(
+        limit: Int?,
+        offset: Int
+    ): Result<List<com.offline_First.domain.model.PersonalizedRoadmapDetail>> =
+        unavailable("User personalized roadmaps")
+
+    override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap detail")
+
     override suspend fun generatePersonalizedRoadmap(
         goal: String,
         level: String,

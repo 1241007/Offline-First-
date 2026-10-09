@@ -160,14 +160,14 @@ def upgrade() -> None:
     # -----------------------------------------------------------------------
     # 5. Add FK constraint from user_profiles.user_id → users.id
     # -----------------------------------------------------------------------
-    op.create_foreign_key(
-        'fk_user_profiles_user_id',
-        'user_profiles',
-        'users',
-        ['user_id'],
-        ['id'],
-        ondelete='CASCADE',
-    )
+    with op.batch_alter_table('user_profiles') as batch_op:
+        batch_op.create_foreign_key(
+            'fk_user_profiles_user_id',
+            'users',
+            ['user_id'],
+            ['id'],
+            ondelete='CASCADE',
+        )
 
     # -----------------------------------------------------------------------
     # 6. Add user_id column to conversations (nullable — existing rows keep NULL)

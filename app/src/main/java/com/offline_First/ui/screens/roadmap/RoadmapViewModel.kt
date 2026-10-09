@@ -4,9 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.offline_First.data.AppContainer
 import com.offline_First.data.repository.RoadmapRepository
-import com.offline_First.domain.model.GeneratedRoadmapPreview
-import com.offline_First.domain.model.RoadmapOption
-import com.offline_First.domain.model.UiState
+import com.offline_First.domain.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,8 +16,19 @@ data class RoadmapUiState(
     val selectedCategory: String = "All",
     val isLoadingMore: Boolean = false,
     val hasMore: Boolean = true,
+    // Personalized Roadmaps
+    val myPersonalizedRoadmaps: List<PersonalizedRoadmapDetail> = emptyList(),
+    val selectedPersonalizedRoadmap: PersonalizedRoadmapDetail? = null,
+    // Assessment State Machine
+    val isAssessmentLoading: Boolean = false,
+    val isSendingAssessmentMessage: Boolean = false,
+    val assessmentSession: AssessmentSessionState? = null,
+    val assessmentMessages: List<AssessmentMessage> = emptyList(),
+    val selectedQuizIndex: Int? = null,
     val isGenerating: Boolean = false,
+    val generatedPersonalizedRoadmap: PersonalizedRoadmapDetail? = null,
     val generatedRoadmap: GeneratedRoadmapPreview? = null,
+    val completedMilestones: Set<String> = emptySet(),
     val errorMessage: String? = null
 )
 
@@ -32,6 +41,7 @@ class RoadmapViewModel(
 
     init {
         loadData()
+        loadMyPersonalizedRoadmaps()
     }
 
     fun loadData() {
@@ -59,6 +69,14 @@ class RoadmapViewModel(
                     )
                 }
             )
+        }
+    }
+
+    fun loadMyPersonalizedRoadmaps() {
+        viewModelScope.launch {
+            repository.getMyPersonalizedRoadmaps().onSuccess { list ->
+                _uiState.value = _uiState.value.copy(myPersonalizedRoadmaps = list)
+            }
         }
     }
 
@@ -93,34 +111,168 @@ class RoadmapViewModel(
         loadData()
     }
 
-    fun generatePersonalizedRoadmap(
-        goal: String,
-        level: String,
-        studyTime: String,
-        interest: String
-    ) {
+    // --- Interactive Assessment Advisor Actions ---
+
+    fun startOrResumeAssessment(forceNew: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isGenerating = true, errorMessage = null)
-            val result = repository.generatePersonalizedRoadmap(goal, level, studyTime, interest)
-            result.fold(
-                onSuccess = { generated ->
+            _uiState.value = _uiState.value.copy(
+                isAssessmentLoading = true,
+                errorMessage = null
+            )
+
+            if (!forceNew) {
+                val activeResult = repository.getActiveAssessmentSession()
+                val activeSession = activeResult.getOrNull()
+                if (activeSession != null && activeSession.state != "COMPLETED") {
                     _uiState.value = _uiState.value.copy(
-                        isGenerating = false,
-                        generatedRoadmap = generated
+                        isAssessmentLoading = false,
+                        assessmentSession = activeSession,
+                        assessmentMessages = activeSession.messages,
+                        selectedQuizIndex = null
+                    )
+                    return@launch
+                }
+            }
+
+            // Start fresh session
+            val startResult = repository.startPersonalizedAssessment()
+            startResult.fold(
+                onSuccess = { session ->
+                    _uiState.value = _uiState.value.copy(
+                        isAssessmentLoading = false,
+                        assessmentSession = session,
+                        assessmentMessages = session.messages,
+                        generatedPersonalizedRoadmap = null,
+                        selectedQuizIndex = null
                     )
                 },
-                onFailure = {
+                onFailure = { err ->
                     _uiState.value = _uiState.value.copy(
-                        isGenerating = false,
-                        errorMessage = it.localizedMessage ?: "Unable to generate a roadmap."
+                        isAssessmentLoading = false,
+                        errorMessage = err.localizedMessage ?: "Failed to connect to EduNova AI Advisor."
                     )
                 }
             )
         }
     }
 
+    fun selectQuizOption(index: Int) {
+        _uiState.value = _uiState.value.copy(selectedQuizIndex = index)
+    }
+
+    fun submitAssessmentAnswer(answer: String, quizSelectedIndex: Int? = null) {
+        val currentSession = _uiState.value.assessmentSession ?: return
+        if (_uiState.value.isSendingAssessmentMessage) return
+
+        val text = answer.trim()
+        if (text.isEmpty() && quizSelectedIndex == null) return
+
+        val localStudentMsg = AssessmentMessage(
+            speaker = AssessmentSpeaker.LEARNER,
+            text = text
+        )
+
+        // Optimistically add user turn to message list
+        val updatedList = _uiState.value.assessmentMessages + localStudentMsg
+        _uiState.value = _uiState.value.copy(
+            assessmentMessages = updatedList,
+            isSendingAssessmentMessage = true,
+            selectedQuizIndex = null,
+            errorMessage = null
+        )
+
+        viewModelScope.launch {
+            val result = repository.submitAssessmentAnswer(
+                sessionId = currentSession.id,
+                answer = text,
+                quizSelectedIndex = quizSelectedIndex
+            )
+            result.fold(
+                onSuccess = { updatedSession ->
+                    _uiState.value = _uiState.value.copy(
+                        isSendingAssessmentMessage = false,
+                        assessmentSession = updatedSession,
+                        assessmentMessages = updatedSession.messages,
+                        selectedQuizIndex = null
+                    )
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isSendingAssessmentMessage = false,
+                        errorMessage = err.localizedMessage ?: "Unable to send message to advisor."
+                    )
+                }
+            )
+        }
+    }
+
+    fun generatePersonalizedRoadmap() {
+        val currentSession = _uiState.value.assessmentSession ?: return
+        if (_uiState.value.isGenerating) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isGenerating = true,
+                errorMessage = null
+            )
+            val result = repository.generatePersonalizedRoadmap(currentSession.id)
+            result.fold(
+                onSuccess = { roadmapDetail ->
+                    val legacyPreview = GeneratedRoadmapPreview(
+                        goal = roadmapDetail.goal,
+                        level = roadmapDetail.level,
+                        studyTime = "${roadmapDetail.weeklyHours} hrs/week",
+                        duration = roadmapDetail.duration,
+                        stages = roadmapDetail.phases.map { it.title }
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isGenerating = false,
+                        generatedPersonalizedRoadmap = roadmapDetail,
+                        generatedRoadmap = legacyPreview,
+                        selectedPersonalizedRoadmap = roadmapDetail
+                    )
+                    loadMyPersonalizedRoadmaps()
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isGenerating = false,
+                        errorMessage = err.localizedMessage ?: "Failed to generate personalized roadmap."
+                    )
+                }
+            )
+        }
+    }
+
+    fun selectPersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail?) {
+        _uiState.value = _uiState.value.copy(selectedPersonalizedRoadmap = roadmap)
+    }
+
+    fun toggleMilestone(milestoneKey: String) {
+        val current = _uiState.value.completedMilestones
+        val updated = if (current.contains(milestoneKey)) {
+            current - milestoneKey
+        } else {
+            current + milestoneKey
+        }
+        _uiState.value = _uiState.value.copy(completedMilestones = updated)
+    }
+
+    fun resetAssessment() {
+        _uiState.value = _uiState.value.copy(
+            assessmentSession = null,
+            assessmentMessages = emptyList(),
+            generatedPersonalizedRoadmap = null,
+            generatedRoadmap = null,
+            selectedQuizIndex = null
+        )
+        startOrResumeAssessment(forceNew = true)
+    }
+
     fun clearGeneratedRoadmap() {
-        _uiState.value = _uiState.value.copy(generatedRoadmap = null)
+        _uiState.value = _uiState.value.copy(
+            generatedRoadmap = null,
+            generatedPersonalizedRoadmap = null
+        )
     }
 
     fun clearError() {

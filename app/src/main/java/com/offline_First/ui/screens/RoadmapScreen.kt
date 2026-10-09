@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offline_First.domain.model.GeneratedRoadmapPreview
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapAccentTheme
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.UiState
@@ -98,6 +102,7 @@ fun RoadmapScreen(
     }
 
     var selectedRoadmap by remember { mutableStateOf<RoadmapOption?>(null) }
+    var selectedPersonalizedRoadmap by remember { mutableStateOf<PersonalizedRoadmapDetail?>(null) }
     var showPersonalizationSheet by rememberSaveable { mutableStateOf(false) }
 
     var selectedGoal by rememberSaveable { mutableStateOf("Get a job") }
@@ -234,6 +239,35 @@ fun RoadmapScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Chat & Build")
+                        }
+                    }
+                }
+            }
+
+            if (uiState.myPersonalizedRoadmaps.isNotEmpty()) {
+                item(key = "my-personalized-roadmaps-section") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "My Personalized Roadmaps",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            EduNovaBadge("AI Generated", containerColor = EduNovaSuccess.copy(alpha = 0.12f), contentColor = EduNovaSuccess)
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            uiState.myPersonalizedRoadmaps.forEach { pRoadmap ->
+                                PersonalizedRoadmapCard(
+                                    roadmap = pRoadmap,
+                                    roadmapPrimary = roadmapPrimary,
+                                    onClick = { selectedPersonalizedRoadmap = pRoadmap }
+                                )
+                            }
                         }
                     }
                 }
@@ -517,20 +551,14 @@ fun RoadmapScreen(
 
                 Button(
                     onClick = {
-                        viewModel.generatePersonalizedRoadmap(
-                            goal = selectedGoal,
-                            level = selectedLevel,
-                            studyTime = selectedStudyTime,
-                            interest = selectedInterest
-                        )
                         showPersonalizationSheet = false
+                        onBuildRoadmap()
                     },
-                    enabled = !uiState.isGenerating,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
                 ) {
-                    Text("Generate roadmap")
+                    Text("Start AI Assessment & Generate Roadmap")
                 }
             }
         }
@@ -541,6 +569,16 @@ fun RoadmapScreen(
             roadmap = roadmap,
             roadmapPrimary = roadmapPrimary,
             onDismiss = { selectedRoadmap = null }
+        )
+    }
+
+    selectedPersonalizedRoadmap?.let { pRoadmap ->
+        PersonalizedRoadmapDetailDialog(
+            roadmap = pRoadmap,
+            completedMilestones = uiState.completedMilestones,
+            onToggleMilestone = { key -> viewModel.toggleMilestone(key) },
+            roadmapPrimary = roadmapPrimary,
+            onDismiss = { selectedPersonalizedRoadmap = null }
         )
     }
 }
@@ -873,6 +911,229 @@ private fun RoadmapDetailDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
             ) {
                 Text("Start Roadmap")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PersonalizedRoadmapCard(
+    roadmap: PersonalizedRoadmapDetail,
+    roadmapPrimary: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.5.dp, roadmapPrimary.copy(alpha = 0.3f)),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(roadmapPrimary.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✦", color = roadmapPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = roadmap.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Goal: ${roadmap.goal}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                EduNovaBadge("${roadmap.level}")
+                EduNovaBadge("${roadmap.phases.size} Phases")
+                EduNovaBadge("${roadmap.weeklyHours} hrs/wk")
+                EduNovaBadge("${roadmap.duration}")
+            }
+
+            Button(
+                onClick = onClick,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("View Detailed Roadmap & Track", fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PersonalizedRoadmapDetailDialog(
+    roadmap: PersonalizedRoadmapDetail,
+    completedMilestones: Set<String>,
+    onToggleMilestone: (String) -> Unit,
+    roadmapPrimary: Color,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✦", color = roadmapPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = roadmap.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "Goal: ${roadmap.goal}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        EduNovaBadge("Level: ${roadmap.level}")
+                        EduNovaBadge("Duration: ${roadmap.duration}")
+                        EduNovaBadge("${roadmap.weeklyHours} hrs/week")
+                    }
+                }
+
+                if (roadmap.assessmentSummary.strengths.isNotEmpty() || roadmap.assessmentSummary.skillGaps.isNotEmpty()) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (roadmap.assessmentSummary.strengths.isNotEmpty()) {
+                                    Text("Verified Strengths:", style = MaterialTheme.typography.labelSmall, color = EduNovaSuccess, fontWeight = FontWeight.Bold)
+                                    Text(roadmap.assessmentSummary.strengths.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (roadmap.assessmentSummary.skillGaps.isNotEmpty()) {
+                                    Text("Skill Gaps to Bridge:", style = MaterialTheme.typography.labelSmall, color = EduNovaAccent, fontWeight = FontWeight.Bold)
+                                    Text(roadmap.assessmentSummary.skillGaps.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                itemsIndexed(roadmap.phases) { pIdx, phase ->
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = phase.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = roadmapPrimary
+                            )
+                            Text(
+                                text = "${phase.durationWeeks} weeks • ${phase.objective}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+
+                            if (phase.milestones.isNotEmpty()) {
+                                phase.milestones.forEachIndexed { mIdx, milestone ->
+                                    val key = "${roadmap.id}_${pIdx}_${mIdx}_${milestone.title}"
+                                    val isDone = completedMilestones.contains(key)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onToggleMilestone(key) }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = isDone,
+                                            onCheckedChange = { onToggleMilestone(key) },
+                                            colors = CheckboxDefaults.colors(checkedColor = EduNovaSuccess)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = milestone.title,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = if (isDone) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                            if (milestone.passingCriteria.isNotBlank()) {
+                                                Text(
+                                                    text = "Criteria: ${milestone.passingCriteria}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (roadmap.capstoneProject.isNotBlank()) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = roadmapPrimary.copy(alpha = 0.08f)),
+                            border = BorderStroke(1.dp, roadmapPrimary.copy(alpha = 0.2f))
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("Capstone Project:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text(roadmap.capstoneProject, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
+            ) {
+                Text("Continue Learning")
             }
         },
         dismissButton = {

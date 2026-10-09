@@ -17,6 +17,18 @@ from .roadmap import (
     RoadmapDetailResponse,
     RoadmapItemResponse
 )
+from .personalized_roadmap import (
+    AssessmentQuizPublicDto,
+    AssessmentMessageItem,
+    AssessmentSessionResponse,
+    SubmitAssessmentAnswerRequest,
+    PersonalizedMilestoneSchema,
+    PersonalizedPhaseSchema,
+    WeeklyScheduleItemSchema,
+    AssessmentSummarySchema,
+    PersonalizedRoadmapSchema,
+    PersonalizedRoadmapDetailResponse
+)
 from .learning import (
     LearningCourseResponse,
     EnrollmentResponse,
@@ -41,6 +53,16 @@ __all__ = [
     "RoadmapListResponse",
     "RoadmapDetailResponse",
     "RoadmapItemResponse",
+    "AssessmentQuizPublicDto",
+    "AssessmentMessageItem",
+    "AssessmentSessionResponse",
+    "SubmitAssessmentAnswerRequest",
+    "PersonalizedMilestoneSchema",
+    "PersonalizedPhaseSchema",
+    "WeeklyScheduleItemSchema",
+    "AssessmentSummarySchema",
+    "PersonalizedRoadmapSchema",
+    "PersonalizedRoadmapDetailResponse",
     "LearningCourseResponse",
     "EnrollmentResponse",
     "LessonCompleteResponse",

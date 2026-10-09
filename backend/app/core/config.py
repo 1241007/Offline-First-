@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     database_url: str
     openrouter_api_key: str = ""
     openrouter_model: str = "google/gemini-3.8-flash"
+    openrouter_roadmap_model: str = "anthropic/claude-sonnet-4.5"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_max_tokens: int = 1024
     gemini_api_key: Optional[str] = None
@@ -80,6 +81,11 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         raw_url = self.database_url
+        if raw_url.startswith("sqlite://") or raw_url.startswith("sqlite+aiosqlite://"):
+            if not raw_url.startswith("sqlite+aiosqlite://"):
+                return raw_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+            return raw_url
+
         if raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
             raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 

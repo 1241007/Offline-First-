@@ -15,9 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models.conversation import Conversation
-from app.models.message import Message
-from app.models.user import User, RefreshToken, PasswordResetToken  # noqa: F401
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB
+
+@compiles(JSONB, "sqlite")
+def compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 config = context.config
 
@@ -33,6 +36,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,
     )
 
     with context.begin_transaction():
@@ -40,7 +44,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
