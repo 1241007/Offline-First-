@@ -39,7 +39,9 @@ class MainActivity : ComponentActivity() {
                 var openWorkspaceTools by rememberSaveable { mutableStateOf(false) }
                 var selectedLanguage by rememberSaveable { mutableStateOf("English") }
                 val profileRepository = remember { AppContainer.profileRepository }
-                val profile by profileRepository.observeUserProfile().collectAsState(initial = null)
+                val profile by profileRepository.observeUserProfile().collectAsState(
+                    initial = com.offline_First.data.local.LocalProfileRepository.defaultProfile()
+                )
 
                 val pushDestination: (AppDestination) -> Unit = { next ->
                     if (destination != next) {

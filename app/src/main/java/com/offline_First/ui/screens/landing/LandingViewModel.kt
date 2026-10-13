@@ -105,4 +105,21 @@ class LandingViewModel(
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
+
+    fun toggleEducationMode() {
+        val next = if (_uiState.value.educationMode == EducationMode.SCHOOL) {
+            EducationMode.GENERAL
+        } else {
+            EducationMode.SCHOOL
+        }
+        setEducationMode(next)
+    }
+
+    fun setEducationMode(mode: EducationMode) {
+        viewModelScope.launch(coroutineContext) {
+            val updated = (_uiState.value.profile ?: com.offline_First.data.local.LocalProfileRepository.defaultProfile())
+                .copy(educationMode = mode)
+            profileRepository.updateUserProfile(updated)
+        }
+    }
 }

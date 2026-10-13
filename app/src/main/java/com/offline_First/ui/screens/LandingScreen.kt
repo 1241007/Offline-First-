@@ -216,7 +216,11 @@ fun LandingScreen(
                         SchoolTopBar(
                             onSearch = { showMessage("Search will be available soon.") },
                             onNotifications = { showMessage("No new notifications") },
-                            onProfile = onOpenProfile
+                            onProfile = onOpenProfile,
+                            onToggleMode = {
+                                viewModel.toggleEducationMode()
+                                showMessage("Switched to General Mode")
+                            }
                         )
                     } else {
                         TopBar(
@@ -227,7 +231,11 @@ fun LandingScreen(
                             onOpenMyLearning = onOpenMyLearning,
                             onOpenSettings = onOpenSettings,
                             onLanguageSelected = onLanguageSelected,
-                            onLogout = onLogout
+                            onLogout = onLogout,
+                            onToggleMode = {
+                                viewModel.toggleEducationMode()
+                                showMessage("Switched to CBSE School Mode")
+                            }
                         )
                     }
 
@@ -343,7 +351,8 @@ fun LandingScreen(
 private fun SchoolTopBar(
     onSearch: () -> Unit,
     onNotifications: () -> Unit,
-    onProfile: () -> Unit
+    onProfile: () -> Unit,
+    onToggleMode: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -356,6 +365,21 @@ private fun SchoolTopBar(
             BrandMark()
             Spacer(Modifier.width(8.dp))
             EduNovaBrandName()
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                onClick = onToggleMode,
+                shape = RoundedCornerShape(12.dp),
+                color = EduNovaPrimary.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.35f))
+            ) {
+                Text(
+                    text = "🏫 School",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = EduNovaPrimary,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                )
+            }
         }
 
         Row(
@@ -1792,7 +1816,8 @@ private fun TopBar(
     onOpenMyLearning: () -> Unit,
     onOpenSettings: () -> Unit,
     onLanguageSelected: (String) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onToggleMode: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var languageDialogVisible by remember { mutableStateOf(false) }
@@ -1808,6 +1833,21 @@ private fun TopBar(
             BrandMark()
             Spacer(Modifier.width(9.dp))
             EduNovaBrandName()
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                onClick = onToggleMode,
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFF1F5F9),
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Text(
+                    text = "🎓 General",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF475569),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                )
+            }
             Spacer(Modifier.weight(1f))
             Surface(
                 onClick = onSearch,
