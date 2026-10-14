@@ -68,13 +68,27 @@ data class SendMessageResponseDto(
 )
 
 @Serializable
+data class CitationDto(
+    @SerialName("chunk_id") val chunkId: String? = null,
+    @SerialName("textbook_title") val textbookTitle: String? = null,
+    val chapter: String? = null,
+    val section: String? = null,
+    @SerialName("page_reference") val pageReference: String? = null,
+    val score: Float? = null
+)
+
+@Serializable
 data class StreamEventDto(
-    val type: String, // "metadata" | "token" | "done" | "error"
+    val type: String, // "metadata" | "route" | "citations" | "token" | "done" | "error"
     val content: String? = null,
     val detail: String? = null,
     @SerialName("user_message_id") val userMessageId: String? = null,
     @SerialName("assistant_message_id") val assistantMessageId: String? = null,
-    val title: String? = null
+    val title: String? = null,
+    val decision: String? = null,
+    val query: String? = null,
+    val outcome: String? = null,
+    val citations: List<CitationDto>? = null
 )
 
 @Serializable

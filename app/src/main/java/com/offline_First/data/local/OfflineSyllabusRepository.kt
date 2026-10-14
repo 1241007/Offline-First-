@@ -27,6 +27,11 @@ class OfflineSyllabusRepository(
             return emptyList<RetrievedChunk>() to EvidenceOutcome.CORPUS_NOT_CONFIGURED
         }
 
+        // Student mode requires board and classGrade to prevent cross-curriculum broadening
+        if (context.board.isNullOrBlank() || context.classGrade.isNullOrBlank()) {
+            return emptyList<RetrievedChunk>() to EvidenceOutcome.MISSING
+        }
+
         val chunks = database.searchChunks(
             query = query,
             board = context.board,

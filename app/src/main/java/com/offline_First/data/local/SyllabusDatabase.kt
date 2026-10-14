@@ -224,6 +224,22 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
             .filter { it.isNotBlank() }
             .joinToString(" OR ") { "$it*" }
 
+        val whereClauses = mutableListOf("chunks_fts MATCH ?")
+        val args = mutableListOf(ftsMatchQuery)
+
+        if (!board.isNullOrBlank()) {
+            whereClauses.add("c.board = ?")
+            args.add(board.trim())
+        }
+        if (!classGrade.isNullOrBlank()) {
+            whereClauses.add("c.class_grade = ?")
+            args.add(classGrade.trim())
+        }
+        if (!subject.isNullOrBlank()) {
+            whereClauses.add("c.subject LIKE ?")
+            args.add("%${subject.trim()}%")
+        }
+
         val db = readableDatabase
         val sql = """
             SELECT c.chunk_id, c.content, c.board, c.class_grade, c.subject,
@@ -231,23 +247,13 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
                    bm25(chunks_fts) as rank_score
             FROM chunks_fts f
             JOIN syllabus_chunks c ON f.rowid = c.id
-            WHERE chunks_fts MATCH ?
-              AND (? IS NULL OR c.board = ?)
-              AND (? IS NULL OR c.class_grade = ?)
-              AND (? IS NULL OR c.subject LIKE ?)
+            WHERE ${whereClauses.joinToString(" AND ")}
             ORDER BY rank_score ASC
             LIMIT ?
         """.trimIndent()
 
-        val args = arrayOf(
-            ftsMatchQuery,
-            board, board,
-            classGrade, classGrade,
-            if (subject != null) "%$subject%" else null, if (subject != null) "%$subject%" else null,
-            limit.toString()
-        )
-
-        val cursor = db.rawQuery(sql, args)
+        args.add(limit.toString())
+        val cursor = db.rawQuery(sql, args.toTypedArray())
         val results = mutableListOf<RetrievedChunk>()
 
         cursor.use { c ->

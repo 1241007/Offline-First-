@@ -120,4 +120,30 @@ class RouteHeaderParserTest {
         val parser = RouteHeaderParser()
         parser.feed("ROUTE: INVALID\n")
     }
+
+    @Test
+    fun testCrlfLineEndingsAndSplits() {
+        val parser = RouteHeaderParser()
+        val p1 = "ROUTE: RAG\r"
+        val p2 = "\nQUERY: Chemical reactions\r\n"
+        assertNull(parser.feed(p1))
+        assertFalse(parser.isComplete)
+        assertNull(parser.feed(p2))
+        assertTrue(parser.isComplete)
+        assertTrue(parser.isRag)
+        assertEquals("Chemical reactions", parser.query)
+    }
+
+    @Test
+    fun testDirectRouteCrlfSplit() {
+        val parser = RouteHeaderParser()
+        val p1 = "ROUTE: DIRECT\r"
+        val p2 = "\nBody starts here"
+        assertNull(parser.feed(p1))
+        assertFalse(parser.isComplete)
+        assertEquals("Body starts here", parser.feed(p2))
+        assertTrue(parser.isComplete)
+        assertTrue(parser.isDirect)
+    }
 }
+

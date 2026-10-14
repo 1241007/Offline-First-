@@ -120,3 +120,27 @@ def test_premature_eof_finalize():
     parser.feed("ROUTE: RA")
     with pytest.raises(ValueError, match="Stream ended before"):
         parser.finalize()
+
+
+def test_crlf_line_endings_and_splits():
+    parser = RouteHeaderParser()
+    p1 = "ROUTE: RAG\r"
+    p2 = "\nQUERY: Chemical reactions\r\n"
+    assert parser.feed(p1) is None
+    assert not parser.is_complete
+    assert parser.feed(p2) is None
+    assert parser.is_complete
+    assert parser.is_rag
+    assert parser.query == "Chemical reactions"
+
+
+def test_direct_route_crlf_split():
+    parser = RouteHeaderParser()
+    p1 = "ROUTE: DIRECT\r"
+    p2 = "\nBody starts here"
+    assert parser.feed(p1) is None
+    assert not parser.is_complete
+    assert parser.feed(p2) == "Body starts here"
+    assert parser.is_complete
+    assert parser.is_direct
+

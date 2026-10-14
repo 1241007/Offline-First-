@@ -105,6 +105,17 @@ class SupabaseRetrievalService:
                 error_detail="General Mode RAG is disabled because no document corpus is configured for general queries in this release."
             )
 
+        # Enforce curriculum target to prevent silent cross-curriculum broadening
+        if context.app_mode == AppMode.STUDENT or context.corpus_scope == CorpusScope.CURRICULUM:
+            if not context.board or not context.class_grade:
+                return RetrieveResponse(
+                    chunks=[],
+                    evidence_outcome=EvidenceOutcome.MISSING,
+                    query_used=query,
+                    search_time_ms=(time.perf_counter() - start_time) * 1000,
+                    error_detail="Curriculum target (board and class grade) is required for syllabus retrieval to prevent cross-curriculum broadening."
+                )
+
         # Check embedding service credentials
         if not embedding_service.is_configured:
             return RetrieveResponse(
