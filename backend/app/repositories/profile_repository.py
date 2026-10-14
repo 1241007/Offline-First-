@@ -27,7 +27,11 @@ class ProfileRepository:
         mobile: Optional[str],
         interests: Optional[str],
         level: str,
-        education_mode: str
+        education_mode: str,
+        board: Optional[str] = None,
+        class_grade: Optional[str] = None,
+        subject: Optional[str] = None,
+        preferred_language: Optional[str] = "en"
     ) -> UserProfile:
         """Create new user profile"""
         profile = UserProfile(
@@ -37,7 +41,11 @@ class ProfileRepository:
             mobile=mobile,
             interests=interests,
             level=level,
-            education_mode=education_mode
+            education_mode=education_mode,
+            board=board,
+            class_grade=class_grade,
+            subject=subject,
+            preferred_language=preferred_language
         )
         
         self.db.add(profile)
@@ -52,7 +60,11 @@ class ProfileRepository:
         mobile: Optional[str],
         interests: Optional[str],
         level: str,
-        education_mode: str
+        education_mode: str,
+        board: Optional[str] = None,
+        class_grade: Optional[str] = None,
+        subject: Optional[str] = None,
+        preferred_language: Optional[str] = "en"
     ) -> Optional[UserProfile]:
         """Update existing user profile"""
         profile = await self.get_by_user_id(user_id)
@@ -66,6 +78,14 @@ class ProfileRepository:
         profile.interests = interests
         profile.level = level
         profile.education_mode = education_mode
+        if board is not None:
+            profile.board = board
+        if class_grade is not None:
+            profile.class_grade = class_grade
+        if subject is not None:
+            profile.subject = subject
+        if preferred_language is not None:
+            profile.preferred_language = preferred_language
         
         await self.db.flush()
         return profile

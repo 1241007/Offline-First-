@@ -52,7 +52,13 @@ data class SendMessageRequestDto(
     val content: String,
     @SerialName("explanation_mode") val explanationMode: String,
     @SerialName("client_message_id") val clientMessageId: String? = null,
-    @SerialName("parent_id") val parentId: String? = null
+    @SerialName("parent_id") val parentId: String? = null,
+    @SerialName("app_mode") val appMode: String? = null,
+    @SerialName("board") val board: String? = null,
+    @SerialName("class_grade") val classGrade: String? = null,
+    @SerialName("subject") val subject: String? = null,
+    @SerialName("language") val language: String? = "en",
+    @SerialName("selected_chapter") val selectedChapter: String? = null
 )
 
 @Serializable

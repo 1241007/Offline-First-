@@ -3,13 +3,19 @@ package com.offline_First.domain.model
 /**
  * Domain model representing a school subject (e.g. Mathematics, Physics, Chemistry, Biology).
  */
+fun formatGradeLevel(board: String?, classGrade: String?): String {
+    val b = board?.trim()?.ifEmpty { null } ?: "CBSE"
+    val g = classGrade?.trim()?.ifEmpty { null } ?: "10"
+    return "Class $g • $b"
+}
+
 data class Subject(
     val id: String,
     val name: String,
     val icon: String,
     val progress: Float? = null,
     val totalTopics: Int = 0,
-    val gradeLevel: String = "Class 10 • CBSE",
+    val gradeLevel: String = formatGradeLevel(null, null),
     val completedChapters: Int = 8,
     val totalChapters: Int = 12
 )

@@ -10,7 +10,15 @@ import kotlinx.coroutines.flow.flow
 /**
  * Online LLM Provider communicating with FastAPI & OpenRouter via SSE streaming.
  */
-class OnlineGeminiProvider : LLMProvider {
+class OnlineGeminiProvider(
+    private val profileProvider: () -> com.offline_First.domain.model.UserProfile? = {
+        try {
+            com.offline_First.data.AppContainer.profileRepository.currentProfile
+        } catch (_: Throwable) {
+            null
+        }
+    }
+) : LLMProvider {
     override val name: String = "Online"
     private var activeJob: Job? = null
 
@@ -29,12 +37,25 @@ class OnlineGeminiProvider : LLMProvider {
             else -> "general"
         }
 
+        val profile = profileProvider()
+        val isSchool = profile?.educationMode == com.offline_First.domain.model.EducationMode.SCHOOL
+        val appMode = if (isSchool) "student" else "general"
+        val board = if (isSchool) profile?.board else null
+        val classGrade = if (isSchool) profile?.classGrade else null
+        val subject = if (isSchool) profile?.subject else null
+        val language = profile?.preferredLanguage ?: "en"
+
         ChatApiClient.streamMessage(
             conversationId = conversationId,
             content = prompt,
             explanationMode = modeStr,
             clientMessageId = clientMessageId,
-            parentId = parentId
+            parentId = parentId,
+            appMode = appMode,
+            board = board,
+            classGrade = classGrade,
+            subject = subject,
+            language = language
         ).collect { chunk ->
             if (chunk.type == "token" && chunk.content != null) {
                 emit(chunk.content)

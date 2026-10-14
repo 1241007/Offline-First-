@@ -66,6 +66,10 @@ class UserMeResponse(BaseModel):
     interests: Optional[str] = None
     level: str = "Beginner"
     education_mode: str = Field("general", alias="educationMode")
+    board: Optional[str] = None
+    class_grade: Optional[str] = Field(None, alias="classGrade")
+    subject: Optional[str] = None
+    preferred_language: Optional[str] = Field("en", alias="preferredLanguage")
     is_active: bool = Field(True, alias="isActive")
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)

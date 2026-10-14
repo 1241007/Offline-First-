@@ -4,8 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.offline_First.data.local.ChatCacheDatabase
 import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.local.SyllabusDatabase
 import com.offline_First.data.repository.AIRepository
 import com.offline_First.domain.model.ChatMessage
+import com.offline_First.domain.model.RetrievedChunk
 import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
@@ -324,7 +326,21 @@ class OnlineAIRepository(
                 relevantMemories.joinToString("\n") { "- [${it.category}] ${it.content}" }
         } else ""
 
-        val systemPrompt = systemPromptFor(_currentExplanationMode) + memoryContext
+        val syllabusDb = SyllabusDatabase(context)
+        val profile = try {
+            com.offline_First.data.AppContainer.profileRepository.currentProfile
+        } catch (_: Throwable) { null }
+        val isSchool = profile?.educationMode == com.offline_First.domain.model.EducationMode.SCHOOL
+        val syllabusContext = if (isOffline && isSchool) {
+            val chunks = syllabusDb.searchChunks(prompt, profile?.board, profile?.classGrade, profile?.subject, limit = 3)
+            if (chunks.isNotEmpty()) {
+                "\nOffline Curriculum References:\n" + chunks.mapIndexed { idx: Int, c: RetrievedChunk ->
+                    "[${idx + 1}] ${c.textbookTitle ?: ""} (Chapter: ${c.chapter ?: "N/A"}): ${c.content}"
+                }.joinToString("\n\n")
+            } else ""
+        } else ""
+
+        val systemPrompt = systemPromptFor(_currentExplanationMode) + memoryContext + syllabusContext
 
         // 3. Select active provider: Gemini for ONLINE, llama.cpp for OFFLINE
         val activeProvider: LLMProvider = if (isOffline) {

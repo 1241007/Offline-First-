@@ -408,5 +408,9 @@ class AuthService:
             interests=profile.interests if profile else None,
             level=profile.level if profile else "Beginner",
             educationMode=profile.education_mode if profile else "general",
+            board=profile.board if profile else None,
+            classGrade=profile.class_grade if profile else None,
+            subject=profile.subject if profile else None,
+            preferredLanguage=profile.preferred_language if profile else "en",
             isActive=user.is_active,
         )

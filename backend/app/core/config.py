@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     backend_public_url: str = "http://localhost:8000"
 
+    # Embedding and RAG configuration
+    embedding_provider: str = "openai"  # "openai", "openrouter", "custom"
+    embedding_api_key: Optional[str] = None
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    embedding_timeout_seconds: float = 3.0
+    router_timeout_seconds: float = 2.0
+    retrieval_timeout_seconds: float = 3.0
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
