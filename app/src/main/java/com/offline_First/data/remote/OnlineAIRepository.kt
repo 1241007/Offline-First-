@@ -45,7 +45,11 @@ class OnlineAIRepository(
 
     init {
         // Load cached conversations immediately
-        val cached = cacheDb.getAllConversations()
+        val cached = try {
+            cacheDb.getAllConversations()
+        } catch (_: Exception) {
+            emptyList()
+        }
         _sessionsFlow.value = cached
     }
 

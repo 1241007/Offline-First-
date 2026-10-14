@@ -9,7 +9,7 @@ import com.offline_First.domain.model.ChatMessage
 import com.offline_First.domain.model.ChatSession
 
 private const val DB_NAME = "edunova_chat_cache.db"
-private const val DB_VERSION = 1
+private const val DB_VERSION = 3
 
 class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
 
@@ -44,6 +44,10 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         db.execSQL("DROP TABLE IF EXISTS local_messages")
         db.execSQL("DROP TABLE IF EXISTS local_conversations")
         onCreate(db)
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        onUpgrade(db, oldVersion, newVersion)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
