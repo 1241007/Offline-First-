@@ -5,12 +5,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Root .env is two directories above the backend/app/ package
 _ROOT_ENV = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+_BACKEND_ENV = Path(__file__).resolve().parent.parent.parent / ".env"
+
+
+_DB_PATH = (Path(__file__).resolve().parent.parent.parent / "edunova_dev.db").as_posix()
 
 
 class Settings(BaseSettings):
     environment: str = "development"
-    database_url: str
-    gemini_api_key: str
+    database_url: str = f"sqlite+aiosqlite:///{_DB_PATH}"
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     chat_context_messages: int = 12
     gemini_max_output_tokens: int = 1024
@@ -19,7 +23,7 @@ class Settings(BaseSettings):
     allow_dev_user_id: bool = False  # DEVELOPMENT ONLY: Allow user_id query parameter
 
     model_config = SettingsConfigDict(
-        env_file=str(_ROOT_ENV),
+        env_file=(str(_ROOT_ENV), str(_BACKEND_ENV)),
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -27,6 +31,9 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         raw_url = self.database_url
+        if "sqlite" in raw_url:
+            return raw_url
+
         if raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
             raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 

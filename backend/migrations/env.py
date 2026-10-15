@@ -15,8 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models.conversation import Conversation
-from app.models.message import Message
+import app.models  # Registers all models on Base.metadata
 
 config = context.config
 

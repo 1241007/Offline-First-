@@ -17,8 +17,12 @@ import com.offline_First.data.repository.ModeAwareAIRepository
 import com.offline_First.data.repository.ProfileRepository
 import com.offline_First.data.repository.RoadmapRepository
 import com.offline_First.domain.model.Course
+import com.offline_First.domain.model.CourseDetail
 import com.offline_First.domain.model.GeneratedRoadmapPreview
+import com.offline_First.domain.model.RevisionItem
 import com.offline_First.domain.model.RoadmapOption
+import java.io.File
+
 
 object AppContainer {
     private val backendFallback = BackendNotConfiguredRepositories()
@@ -32,6 +36,10 @@ object AppContainer {
     val onlineRoadmapRepository = OnlineRoadmapRepository()
 
     fun initialize(context: Context) {
+        val storageFile = File(context.applicationContext.filesDir, "edunova_course_storage.json")
+        onlineCourseRepository.bindStorageFile(storageFile)
+        localCourseRepository.bindStorageFile(storageFile)
+
         val localRepository = LocalAIRepository(context.applicationContext)
         val onlineRepository = OnlineAIRepository(context.applicationContext, localRepository)
         aiRepoOverride = ModeAwareAIRepository(localRepository, onlineRepository)
@@ -39,42 +47,13 @@ object AppContainer {
 
     val authRepository get() = backendFallback
     val aiRepository: AIRepository get() = aiRepoOverride ?: backendFallback
-    val courseRepository: CourseRepository = FallbackCourseRepository(onlineCourseRepository, localCourseRepository)
+    val courseRepository: CourseRepository = onlineCourseRepository
     val learningRepository: LearningRepository = localLearningRepository
     val profileRepository: ProfileRepository = localProfileRepository
     val roadmapRepository: RoadmapRepository = FallbackRoadmapRepository(onlineRoadmapRepository, localRoadmapRepository)
 }
 
-private class FallbackCourseRepository(
-    private val onlineRepo: CourseRepository,
-    private val localRepo: CourseRepository
-) : CourseRepository {
-    override suspend fun getCourses(): Result<List<Course>> {
-        val remote = try {
-            onlineRepo.getCourses()
-        } catch (_: Exception) {
-            null
-        }
-        val remoteList = remote?.getOrNull()
-        if (remote?.isSuccess == true && !remoteList.isNullOrEmpty()) {
-            return remote
-        }
-        return localRepo.getCourses()
-    }
 
-    override suspend fun getFeaturedCourses(): Result<List<Course>> {
-        val remote = try {
-            onlineRepo.getFeaturedCourses()
-        } catch (_: Exception) {
-            null
-        }
-        val remoteList = remote?.getOrNull()
-        if (remote?.isSuccess == true && !remoteList.isNullOrEmpty()) {
-            return remote
-        }
-        return localRepo.getFeaturedCourses()
-    }
-}
 
 private class FallbackRoadmapRepository(
     private val onlineRepo: RoadmapRepository,

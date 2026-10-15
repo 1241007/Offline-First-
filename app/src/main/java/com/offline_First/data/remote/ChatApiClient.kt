@@ -40,21 +40,30 @@ object ChatApiClient {
     }
 
     private suspend fun get(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
-        val url = buildUrl(path)
-        android.util.Log.d("ChatApiClient", "GET request: $url")
-        val conn = openConnection(url, "GET")
-        try {
-            conn.connect()
-            val code = conn.responseCode
-            val body = readResponse(conn)
-            android.util.Log.d("ChatApiClient", "GET $url -> code $code")
-            Pair(code, body)
-        } catch (e: Exception) {
-            android.util.Log.e("ChatApiClient", "GET $url failed with ${e.javaClass.simpleName}: ${e.message}")
-            throw e
-        } finally {
-            conn.disconnect()
+        val candidateBases = listOf(
+            ChatApiConfig.BASE_URL,
+            "http://127.0.0.1:8000"
+        ).distinct()
+
+        var lastException: Exception? = null
+        for (base in candidateBases) {
+            val url = URL("$base${ChatApiConfig.API_PREFIX}$path")
+            android.util.Log.d("ChatApiClient", "GET request: $url")
+            val conn = openConnection(url, "GET")
+            try {
+                conn.connect()
+                val code = conn.responseCode
+                val body = readResponse(conn)
+                android.util.Log.d("ChatApiClient", "GET $url -> code $code")
+                return@withContext Pair(code, body)
+            } catch (e: Exception) {
+                android.util.Log.e("ChatApiClient", "GET $url failed with ${e.javaClass.simpleName}: ${e.message}")
+                lastException = e
+            } finally {
+                conn.disconnect()
+            }
         }
+        throw lastException ?: java.io.IOException("Unable to connect to $path")
     }
 
     private suspend fun post(path: String, bodyJson: String = ""): Pair<Int, String> =
@@ -115,15 +124,28 @@ object ChatApiClient {
 
     // --- Courses API ---
 
-    suspend fun getCourses(featured: Boolean? = null): Result<List<CourseDto>> = runCatching {
-        val path = if (featured == true) "/courses?featured=true" else "/courses"
-        val (code, body) = get(path)
+    suspend fun getCourses(
+        featured: Boolean? = null,
+        category: String? = null
+    ): Result<List<CourseDto>> = runCatching {
+        val params = mutableListOf<String>()
+        if (featured != null) {
+            params.add("featured=$featured")
+        }
+        if (!category.isNullOrBlank()) {
+            val encodedCategory = java.net.URLEncoder.encode(category, "UTF-8")
+            params.add("category=$encodedCategory")
+        }
+        val query = if (params.isNotEmpty()) "?" + params.joinToString("&") else ""
+        val (code, body) = get("/courses$query")
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<CourseDto>>(body)
     }
 
-    suspend fun getCourseDetail(courseId: String): Result<CourseDetailDto> = runCatching {
-        val (code, body) = get("/courses/$courseId")
+    suspend fun getCourseDetail(courseId: String): Result<CourseDetailDto?> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(courseId, "UTF-8")
+        val (code, body) = get("/courses/$encodedId")
+        if (code == 404) return@runCatching null
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<CourseDetailDto>(body)
     }

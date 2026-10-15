@@ -49,7 +49,10 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.AlertDialog
@@ -98,6 +101,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -162,8 +166,10 @@ fun LandingScreen(
     onOpenSettings: () -> Unit = {},
     onLanguageSelected: (String) -> Unit = {},
     onLogout: () -> Unit = {},
+    onCourseClick: (String) -> Unit = {},
     viewModel: LandingViewModel = viewModel()
 ) {
+
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -275,11 +281,20 @@ fun LandingScreen(
                             EducationMode.GENERAL -> {
                                 GeneralHomeContent(
                                     uiState = uiState,
-                                    onCourseClick = { showMessage("Course content will be available soon.") },
-                                    onStartLearning = { showMessage("Your learning journey will be ready soon.") },
+                                    onCourseClick = { course -> onCourseClick(course.id) },
+                                    onRetryCourses = { viewModel.retryCourses() },
+                                    onStartLearning = {
+                                        val targetCourse = uiState.exploreCourses.firstOrNull() ?: uiState.featuredCourses.firstOrNull()
+                                        if (targetCourse != null) {
+                                            onCourseClick(targetCourse.id)
+                                        } else {
+                                            showMessage("Your learning journey will be ready soon.")
+                                        }
+                                    },
                                     onSupportAction = showMessage
                                 )
                             }
+
                         }
                     }
                 }
@@ -299,7 +314,17 @@ fun LandingScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
                 ) {
-                    Text("✦  Ask AI", fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text("Ask AI", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -372,13 +397,24 @@ private fun SchoolTopBar(
                 color = EduNovaPrimary.copy(alpha = 0.12f),
                 border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.35f))
             ) {
-                Text(
-                    text = "🏫 School",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = EduNovaPrimary,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.School,
+                        contentDescription = null,
+                        tint = EduNovaPrimary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "School",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = EduNovaPrimary
+                    )
+                }
             }
         }
 
@@ -939,9 +975,9 @@ private fun SchoolSubjectCardHorizontal(
                 when (subject.name.lowercase()) {
                     "math", "mathematics" -> Icon(Icons.Default.Calculate, null, tint = iconTint, modifier = Modifier.size(24.dp))
                     "physics" -> Icon(Icons.Default.Science, null, tint = iconTint, modifier = Modifier.size(24.dp))
-                    "chemistry" -> Text("🧪", fontSize = 20.sp)
+                    "chemistry" -> Icon(Icons.Default.Science, null, tint = iconTint, modifier = Modifier.size(24.dp))
                     "biology" -> Icon(Icons.Default.Eco, null, tint = iconTint, modifier = Modifier.size(24.dp))
-                    else -> Text(subject.icon, fontSize = 20.sp)
+                    else -> Icon(IconResolver.resolve(subject.icon), null, tint = iconTint, modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -1562,7 +1598,7 @@ private fun SchoolSubjectDetailScreen(
                                                 .background(Color(0xFFFFF3E0)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Text("🎯", fontSize = 20.sp)
+                                            Icon(Icons.Default.Quiz, null, tint = Color(0xFFF57C00), modifier = Modifier.size(20.dp))
                                         }
                                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                                     }
@@ -1772,35 +1808,146 @@ private fun SchoolSubjectDetailScreen(
 private fun GeneralHomeContent(
     uiState: LandingUiState,
     onCourseClick: (Course) -> Unit,
+    onRetryCourses: () -> Unit = {},
     onStartLearning: () -> Unit,
     onSupportAction: (String) -> Unit
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
 
     Column {
-        if (uiState.featuredCourses.isNotEmpty()) {
-            FeaturedCourseSection(
-                featured = uiState.featuredCourses,
-                onCourseClick = { onCourseClick(uiState.featuredCourses.first()) }
-            )
-        }
+        when {
+            uiState.isCoursesLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(color = primaryColor, modifier = Modifier.size(36.dp))
+                        Text(
+                            text = "Loading courses...",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            uiState.coursesError != null -> {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "Courses require an internet connection.",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Text(
+                            text = "Connect to the internet to explore interactive lessons, syllabus, and resources.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+                        Button(
+                            onClick = onRetryCourses,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Retry", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+            !uiState.isCoursesLoading && uiState.coursesError == null && uiState.exploreCourses.isEmpty() -> {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, EduNovaBorder)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "No courses available",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Check back soon for new courses and learning paths.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+            else -> {
+                if (uiState.featuredCourses.isNotEmpty()) {
+                    FeaturedCourseSection(
+                        featured = uiState.featuredCourses,
+                        onCourseClick = onCourseClick
+                    )
+                }
 
-        CourseCatalogue(
-            courses = uiState.exploreCourses,
-            onCourseClick = onCourseClick
-        )
+                CourseCatalogue(
+                    courses = uiState.exploreCourses,
+                    onCourseClick = onCourseClick
+                )
 
-        Button(
-            onClick = onStartLearning,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = 22.dp)
-                .semantics { contentDescription = "Start learning" },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-        ) {
-            Text("Start Learning", fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = onStartLearning,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 22.dp)
+                        .semantics { contentDescription = "Start learning" },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text("Start Learning", fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         SupportSection(onSupportAction = onSupportAction)
@@ -1840,13 +1987,24 @@ private fun TopBar(
                 color = Color(0xFFF1F5F9),
                 border = BorderStroke(1.dp, Color(0xFFCBD5E1))
             ) {
-                Text(
-                    text = "🎓 General",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF475569),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.School,
+                        contentDescription = null,
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "General",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF475569)
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
             Surface(
@@ -1988,7 +2146,7 @@ private fun BrandMark() {
 @Composable
 private fun FeaturedCourseSection(
     featured: List<Course>,
-    onCourseClick: () -> Unit
+    onCourseClick: (Course) -> Unit
 ) {
     var selectedIndex by remember { mutableIntStateOf(0) }
     val course = featured.getOrElse(selectedIndex) { featured.first() }
@@ -2003,7 +2161,8 @@ private fun FeaturedCourseSection(
     ) {
         Text("Top Courses", color = ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Card(
-            onClick = onCourseClick,
+            onClick = { onCourseClick(course) },
+
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2033,7 +2192,7 @@ private fun FeaturedCourseSection(
                         letterSpacing = 0.8.sp
                     )
                     Text(
-                        "${course.name} Programming",
+                        course.name,
                         color = ink,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -2105,6 +2264,9 @@ private fun CourseCatalogue(
                 rowCourses.forEach { course ->
                     CourseCard(course, Modifier.weight(1f)) { onCourseClick(course) }
                 }
+                if (rowCourses.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
     }
@@ -2118,20 +2280,106 @@ private fun CourseCard(course: Course, modifier: Modifier, onClick: () -> Unit) 
 
     Card(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.height(180.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, EduNovaBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(13.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            CourseIcon(course)
-            Text(course.name, color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(course.description, color = mutedInk, fontSize = 12.sp, lineHeight = 17.sp)
-            Text("View course  →", color = primaryColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CourseIcon(course)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = course.level.replaceFirstChar { it.uppercase() },
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = mutedInk,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Text(
+                    text = course.name,
+                    color = ink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = course.description,
+                    color = mutedInk,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (course.totalLessons > 0 && course.completedLessons > 0) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (course.progress >= 1f) "Completed" else "${course.completedLessons}/${course.totalLessons} lessons",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (course.progress >= 1f) EduNovaSecondary else primaryColor,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${(course.progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = mutedInk,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { course.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = if (course.progress >= 1f) EduNovaSecondary else primaryColor,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (course.totalLessons > 0) "${course.totalLessons} lessons" else "View course",
+                            color = primaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = primaryColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2141,8 +2389,8 @@ private fun CourseIcon(course: Course, large: Boolean = false) {
     val courseColor = course.accent.toColor()
     Box(
         modifier = Modifier
-            .size(if (large) 70.dp else 42.dp)
-            .clip(RoundedCornerShape(if (large) 20.dp else 12.dp))
+            .size(if (large) 70.dp else 38.dp)
+            .clip(RoundedCornerShape(if (large) 20.dp else 10.dp))
             .background(EduNovaPrimaryContainer),
         contentAlignment = Alignment.Center
     ) {
@@ -2150,7 +2398,7 @@ private fun CourseIcon(course: Course, large: Boolean = false) {
             imageVector = IconResolver.resolve(course.icon),
             contentDescription = "${course.name} course",
             tint = courseColor,
-            modifier = Modifier.size(if (large) 34.dp else 24.dp)
+            modifier = Modifier.size(if (large) 34.dp else 20.dp)
         )
     }
 }

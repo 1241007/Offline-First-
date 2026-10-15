@@ -17,12 +17,13 @@ import asyncio
 import os
 import uuid
 from datetime import date, datetime, timezone
+from typing import Optional
 from sqlalchemy import select, text
 from app.core.database import get_session_factory
 from app.core.config import settings
 from app.models import (
     CourseCategory, Course, CourseModule, Lesson,
-    Roadmap, RoadmapItem
+    Roadmap, RoadmapItem, UserRevisionItem
 )
 
 # Deterministic UUID generation using namespace
@@ -78,7 +79,7 @@ async def reset_seed_data(session):
 
     print("[RESET] Reset mode activated.")
     print("[RESET] Tables that will be cleared:")
-    print("         user_lesson_progress, user_course_progress")
+    print("         user_revision_items, user_lesson_progress, user_course_progress")
     print("         lessons, course_modules, courses, course_categories")
     print("         roadmap_items, roadmaps (is_system=true only)")
     print("[RESET] Tables that will be PRESERVED:")
@@ -94,6 +95,7 @@ async def reset_seed_data(session):
     print("\n[RESET] Deleting seed data...")
 
     # Delete in foreign-key-safe order
+    await session.execute(text("DELETE FROM user_revision_items"))
     await session.execute(text("DELETE FROM user_lesson_progress"))
     await session.execute(text("DELETE FROM user_course_progress"))
     await session.execute(text("DELETE FROM lessons"))
@@ -120,9 +122,21 @@ CATEGORIES = [
     {"slug": "practical-skills", "name": "Practical & Career Skills", "description": "Essential career skills", "order": 5},
 ]
 
-# Courses Data - 18 curated courses (3 per category)
+# Courses Data - 19 curated courses (including all 7 canonical EduNova tracks)
 COURSES = [
-    # Programming (3 courses)
+    # Programming (4 courses)
+    {
+        "slug": "cpp-programming",
+        "category_slug": "programming",
+        "name": "C++ Programming",
+        "description": "High-performance systems and OOP.",
+        "icon": "cpp",
+        "level": "Intermediate",
+        "duration_hours": 40,
+        "accent_color": "blue",
+        "is_featured": True,
+        "prerequisites": ["Basic computer literacy", "Problem-solving fundamentals"],
+    },
     {
         "slug": "python-fundamentals",
         "category_slug": "programming",
@@ -133,6 +147,7 @@ COURSES = [
         "duration_hours": 40,
         "accent_color": "blue",
         "is_featured": True,
+        "prerequisites": ["None - beginner friendly"],
     },
     {
         "slug": "java-programming",
@@ -144,6 +159,7 @@ COURSES = [
         "duration_hours": 50,
         "accent_color": "orange",
         "is_featured": False,
+        "prerequisites": ["Basic computer literacy"],
     },
     {
         "slug": "javascript-essentials",
@@ -155,6 +171,7 @@ COURSES = [
         "duration_hours": 45,
         "accent_color": "yellow",
         "is_featured": True,
+        "prerequisites": ["Basic HTML/CSS knowledge"],
     },
     # Data & AI (3 courses)
     {
@@ -167,6 +184,7 @@ COURSES = [
         "duration_hours": 60,
         "accent_color": "purple",
         "is_featured": True,
+        "prerequisites": ["Basic Python knowledge", "High-school algebra and statistics"],
     },
     {
         "slug": "machine-learning-fundamentals",
@@ -178,6 +196,7 @@ COURSES = [
         "duration_hours": 55,
         "accent_color": "indigo",
         "is_featured": False,
+        "prerequisites": ["Python proficiency", "Linear algebra and calculus basics"],
     },
     {
         "slug": "deep-learning-neural-networks",
@@ -189,6 +208,7 @@ COURSES = [
         "duration_hours": 70,
         "accent_color": "purple",
         "is_featured": False,
+        "prerequisites": ["Machine Learning Fundamentals", "Linear Algebra", "Python"],
     },
     # Development (3 courses)
     {
@@ -201,6 +221,7 @@ COURSES = [
         "duration_hours": 65,
         "accent_color": "green",
         "is_featured": True,
+        "prerequisites": ["Basic object-oriented programming", "Kotlin fundamentals"],
     },
     {
         "slug": "web-development-fundamentals",
@@ -212,6 +233,7 @@ COURSES = [
         "duration_hours": 40,
         "accent_color": "cyan",
         "is_featured": False,
+        "prerequisites": ["Basic computer literacy"],
     },
     {
         "slug": "full-stack-development",
@@ -223,6 +245,7 @@ COURSES = [
         "duration_hours": 80,
         "accent_color": "green",
         "is_featured": True,
+        "prerequisites": ["Basic HTML & web concepts"],
     },
     # Computer Science (3 courses)
     {
@@ -235,6 +258,7 @@ COURSES = [
         "duration_hours": 50,
         "accent_color": "blue",
         "is_featured": False,
+        "prerequisites": ["Basic programming experience in any language"],
     },
     {
         "slug": "database-management",
@@ -246,6 +270,7 @@ COURSES = [
         "duration_hours": 35,
         "accent_color": "indigo",
         "is_featured": False,
+        "prerequisites": ["Basic computer literacy", "Basic data handling"],
     },
     {
         "slug": "operating-systems",
@@ -257,6 +282,7 @@ COURSES = [
         "duration_hours": 45,
         "accent_color": "gray",
         "is_featured": False,
+        "prerequisites": ["Computer architecture basics", "C or C++ basics"],
     },
     # Cloud & Cybersecurity (3 courses)
     {
@@ -269,6 +295,7 @@ COURSES = [
         "duration_hours": 40,
         "accent_color": "blue",
         "is_featured": False,
+        "prerequisites": ["Basic networking and command-line knowledge"],
     },
     {
         "slug": "cybersecurity-essentials",
@@ -280,6 +307,7 @@ COURSES = [
         "duration_hours": 45,
         "accent_color": "red",
         "is_featured": True,
+        "prerequisites": ["Computer networking fundamentals", "Basic Linux knowledge"],
     },
     {
         "slug": "computer-networks",
@@ -291,6 +319,7 @@ COURSES = [
         "duration_hours": 40,
         "accent_color": "indigo",
         "is_featured": False,
+        "prerequisites": ["Basic computer concepts"],
     },
     # Practical & Career Skills (3 courses)
     {
@@ -303,6 +332,7 @@ COURSES = [
         "duration_hours": 20,
         "accent_color": "orange",
         "is_featured": False,
+        "prerequisites": ["Basic command line familiarity"],
     },
     {
         "slug": "generative-ai-fundamentals",
@@ -314,6 +344,7 @@ COURSES = [
         "duration_hours": 30,
         "accent_color": "purple",
         "is_featured": True,
+        "prerequisites": ["None - beginner friendly"],
     },
     {
         "slug": "software-engineering-fundamentals",
@@ -325,6 +356,7 @@ COURSES = [
         "duration_hours": 50,
         "accent_color": "blue",
         "is_featured": False,
+        "prerequisites": ["Solid understanding of DSA", "Backend programming foundation"],
     },
 ]
 
@@ -343,6 +375,202 @@ LESSON_TEMPLATES = [
     {"order": 3, "title_suffix": "Hands-on Exercise", "type": "exercise", "duration": 30},
     {"order": 4, "title_suffix": "Quiz", "type": "quiz", "duration": 10},
 ]
+
+# Curated educational resource links matching authentic documentation/tutorials
+# Key: (course_slug, module_order, lesson_order) -> (resource_url, resource_provider)
+SPECIFIC_LESSON_RESOURCES: dict[tuple[str, int, int], tuple[str, str]] = {
+    # 1. C++ Programming
+    ("cpp-programming", 0, 0): ("https://en.cppreference.com/w/cpp/language/basic_concepts", "cppreference.com"),
+    ("cpp-programming", 0, 1): ("https://www.learncpp.com/cpp-tutorial/introduction-to-functions/", "LearnCpp.com"),
+    ("cpp-programming", 0, 2): ("https://www.learncpp.com/cpp-tutorial/introduction-to-pointers/", "LearnCpp.com"),
+    ("cpp-programming", 0, 3): ("https://www.learncpp.com/cpp-tutorial/introduction-to-compound-data-types/", "LearnCpp.com"),
+    ("cpp-programming", 0, 4): ("https://en.cppreference.com/w/cpp/language/expressions", "cppreference.com"),
+    ("cpp-programming", 1, 0): ("https://www.learncpp.com/cpp-tutorial/welcome-to-object-oriented-programming/", "LearnCpp.com"),
+    ("cpp-programming", 1, 1): ("https://en.cppreference.com/w/cpp/language/virtual", "cppreference.com"),
+    ("cpp-programming", 1, 2): ("https://en.cppreference.com/w/cpp/language/templates", "cppreference.com"),
+    ("cpp-programming", 1, 3): ("https://en.cppreference.com/w/cpp/language/raii", "cppreference.com"),
+    ("cpp-programming", 1, 4): ("https://en.cppreference.com/w/cpp/language/classes", "cppreference.com"),
+    ("cpp-programming", 2, 0): ("https://en.cppreference.com/w/cpp/container", "cppreference.com"),
+    ("cpp-programming", 2, 1): ("https://en.cppreference.com/w/cpp/algorithm", "cppreference.com"),
+    ("cpp-programming", 2, 2): ("https://en.cppreference.com/w/cpp/memory", "cppreference.com"),
+    ("cpp-programming", 2, 3): ("https://www.learncpp.com/cpp-tutorial/introduction-to-standard-library-algorithms/", "LearnCpp.com"),
+    ("cpp-programming", 2, 4): ("https://en.cppreference.com/w/cpp/language/exceptions", "cppreference.com"),
+
+    # 2. Data Structures & Algorithms
+    ("data-structures-algorithms", 0, 0): ("https://en.wikipedia.org/wiki/Big_O_notation", "Wikipedia"),
+    ("data-structures-algorithms", 0, 1): ("https://www.geeksforgeeks.org/data-structures/linked-list/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 0, 2): ("https://www.geeksforgeeks.org/hash-table-data-structure/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 0, 3): ("https://www.geeksforgeeks.org/stack-data-structure/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 0, 4): ("https://www.geeksforgeeks.org/queue-data-structure/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 1, 0): ("https://www.geeksforgeeks.org/binary-search-tree-data-structure/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 1, 1): ("https://www.geeksforgeeks.org/graph-data-structure-and-algorithms/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 1, 2): ("https://en.wikipedia.org/wiki/Dynamic_programming", "Wikipedia"),
+    ("data-structures-algorithms", 1, 3): ("https://www.geeksforgeeks.org/sorting-algorithms/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 1, 4): ("https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm", "Wikipedia"),
+    ("data-structures-algorithms", 2, 0): ("https://www.geeksforgeeks.org/trie-insert-and-search/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 2, 1): ("https://www.geeksforgeeks.org/heap-data-structure/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 2, 2): ("https://www.geeksforgeeks.org/disjoint-set-data-structures/", "GeeksforGeeks"),
+    ("data-structures-algorithms", 2, 3): ("https://leetcode.com/explore/", "LeetCode"),
+    ("data-structures-algorithms", 2, 4): ("https://en.wikipedia.org/wiki/A*_search_algorithm", "Wikipedia"),
+
+    # 3. Data Science with Python
+    ("data-science-python", 0, 0): ("https://numpy.org/doc/stable/user/quickstart.html", "NumPy Documentation"),
+    ("data-science-python", 0, 1): ("https://pandas.pydata.org/docs/user_guide/10min.html", "Pandas Documentation"),
+    ("data-science-python", 0, 2): ("https://pandas.pydata.org/docs/user_guide/indexing.html", "Pandas Documentation"),
+    ("data-science-python", 0, 3): ("https://pandas.pydata.org/docs/user_guide/reshaping.html", "Pandas Documentation"),
+    ("data-science-python", 0, 4): ("https://numpy.org/doc/stable/user/basics.broadcasting.html", "NumPy Documentation"),
+    ("data-science-python", 1, 0): ("https://matplotlib.org/stable/tutorials/introductory/quick_start.html", "Matplotlib Documentation"),
+    ("data-science-python", 1, 1): ("https://seaborn.pydata.org/tutorial.html", "Seaborn Documentation"),
+    ("data-science-python", 1, 2): ("https://en.wikipedia.org/wiki/Exploratory_data_analysis", "Wikipedia"),
+    ("data-science-python", 1, 3): ("https://docs.scipy.org/doc/scipy/tutorial/stats.html", "SciPy Documentation"),
+    ("data-science-python", 1, 4): ("https://en.wikipedia.org/wiki/Statistical_hypothesis_testing", "Wikipedia"),
+    ("data-science-python", 2, 0): ("https://scikit-learn.org/stable/modules/preprocessing.html", "Scikit-Learn Documentation"),
+    ("data-science-python", 2, 1): ("https://scikit-learn.org/stable/modules/feature_extraction.html", "Scikit-Learn Documentation"),
+    ("data-science-python", 2, 2): ("https://kaggle.com/learn", "Kaggle"),
+    ("data-science-python", 2, 3): ("https://pandas.pydata.org/docs/user_guide/timeseries.html", "Pandas Documentation"),
+    ("data-science-python", 2, 4): ("https://scikit-learn.org/stable/modules/clustering.html", "Scikit-Learn Documentation"),
+
+    # 4. Python Fundamentals
+    ("python-fundamentals", 0, 0): ("https://docs.python.org/3/tutorial/introduction.html", "Python Software Foundation"),
+    ("python-fundamentals", 0, 1): ("https://docs.python.org/3/tutorial/controlflow.html", "Python Software Foundation"),
+    ("python-fundamentals", 0, 2): ("https://docs.python.org/3/tutorial/controlflow.html#defining-functions", "Python Software Foundation"),
+    ("python-fundamentals", 0, 3): ("https://docs.python.org/3/tutorial/datastructures.html", "Python Software Foundation"),
+    ("python-fundamentals", 0, 4): ("https://docs.python.org/3/tutorial/datastructures.html#list-comprehensions", "Python Software Foundation"),
+    ("python-fundamentals", 1, 0): ("https://docs.python.org/3/tutorial/modules.html", "Python Software Foundation"),
+    ("python-fundamentals", 1, 1): ("https://docs.python.org/3/tutorial/inputoutput.html", "Python Software Foundation"),
+    ("python-fundamentals", 1, 2): ("https://docs.python.org/3/tutorial/errors.html", "Python Software Foundation"),
+    ("python-fundamentals", 1, 3): ("https://docs.python.org/3/tutorial/classes.html", "Python Software Foundation"),
+    ("python-fundamentals", 1, 4): ("https://docs.python.org/3/tutorial/classes.html#iterators", "Python Software Foundation"),
+    ("python-fundamentals", 2, 0): ("https://docs.python.org/3/library/venv.html", "Python Software Foundation"),
+    ("python-fundamentals", 2, 1): ("https://docs.python.org/3/library/asyncio.html", "Python Software Foundation"),
+    ("python-fundamentals", 2, 2): ("https://docs.python.org/3/library/unittest.html", "Python Software Foundation"),
+    ("python-fundamentals", 2, 3): ("https://realpython.com/", "Real Python"),
+    ("python-fundamentals", 2, 4): ("https://peps.python.org/pep-0008/", "Python PEP 8"),
+
+    # 5. Machine Learning Fundamentals
+    ("machine-learning-fundamentals", 0, 0): ("https://scikit-learn.org/stable/getting_started.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 0, 1): ("https://scikit-learn.org/stable/modules/linear_model.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 0, 2): ("https://scikit-learn.org/stable/modules/tree.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 0, 3): ("https://scikit-learn.org/stable/modules/ensemble.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 0, 4): ("https://scikit-learn.org/stable/modules/neighbors.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 1, 0): ("https://scikit-learn.org/stable/modules/cross_validation.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 1, 1): ("https://scikit-learn.org/stable/modules/model_evaluation.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 1, 2): ("https://scikit-learn.org/stable/modules/neural_networks_supervised.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 1, 3): ("https://scikit-learn.org/stable/modules/clustering.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 1, 4): ("https://scikit-learn.org/stable/modules/decomposition.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 2, 0): ("https://scikit-learn.org/stable/modules/pipeline.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 2, 1): ("https://scikit-learn.org/stable/modules/grid_search.html", "Scikit-Learn Documentation"),
+    ("machine-learning-fundamentals", 2, 2): ("https://developers.google.com/machine-learning/crash-course", "Google Developers"),
+    ("machine-learning-fundamentals", 2, 3): ("https://en.wikipedia.org/wiki/Bias%E2%80%93variance_tradeoff", "Wikipedia"),
+    ("machine-learning-fundamentals", 2, 4): ("https://scikit-learn.org/stable/auto_examples/index.html", "Scikit-Learn Documentation"),
+
+    # 6. Full Stack Development
+    ("full-stack-development", 0, 0): ("https://developer.mozilla.org/en-US/docs/Learn/HTML", "MDN Web Docs"),
+    ("full-stack-development", 0, 1): ("https://developer.mozilla.org/en-US/docs/Learn/CSS", "MDN Web Docs"),
+    ("full-stack-development", 0, 2): ("https://developer.mozilla.org/en-US/docs/Learn/JavaScript", "MDN Web Docs"),
+    ("full-stack-development", 0, 3): ("https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Flexbox", "MDN Web Docs"),
+    ("full-stack-development", 0, 4): ("https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Grids", "MDN Web Docs"),
+    ("full-stack-development", 1, 0): ("https://fastapi.tiangolo.com/tutorial/", "FastAPI Documentation"),
+    ("full-stack-development", 1, 1): ("https://www.postgresql.org/docs/current/tutorial.html", "PostgreSQL Documentation"),
+    ("full-stack-development", 1, 2): ("https://docs.pydantic.dev/latest/", "Pydantic Documentation"),
+    ("full-stack-development", 1, 3): ("https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS", "MDN Web Docs"),
+    ("full-stack-development", 1, 4): ("https://alembic.sqlalchemy.org/en/latest/tutorial.html", "Alembic Documentation"),
+    ("full-stack-development", 2, 0): ("https://react.dev/learn", "React Documentation"),
+    ("full-stack-development", 2, 1): ("https://developer.mozilla.org/en-US/docs/Web/Security", "MDN Web Docs"),
+    ("full-stack-development", 2, 2): ("https://docs.docker.com/get-started/", "Docker Documentation"),
+    ("full-stack-development", 2, 3): ("https://fullstackopen.com/en/", "University of Helsinki Full Stack Open"),
+    ("full-stack-development", 2, 4): ("https://12factor.net/", "The Twelve-Factor App"),
+
+    # 7. Software Engineering Fundamentals (SDE)
+    ("software-engineering-fundamentals", 0, 0): ("https://en.wikipedia.org/wiki/SOLID", "Wikipedia"),
+    ("software-engineering-fundamentals", 0, 1): ("https://refactoring.guru/design-patterns", "Refactoring Guru"),
+    ("software-engineering-fundamentals", 0, 2): ("https://refactoring.guru/refactoring", "Refactoring Guru"),
+    ("software-engineering-fundamentals", 0, 3): ("https://en.wikipedia.org/wiki/Software_design_pattern", "Wikipedia"),
+    ("software-engineering-fundamentals", 0, 4): ("https://en.wikipedia.org/wiki/Clean_Code", "Wikipedia"),
+    ("software-engineering-fundamentals", 1, 0): ("https://github.com/donnemartin/system-design-primer", "System Design Primer"),
+    ("software-engineering-fundamentals", 1, 1): ("https://docs.github.com/en/actions", "GitHub Docs"),
+    ("software-engineering-fundamentals", 1, 2): ("https://en.wikipedia.org/wiki/CAP_theorem", "Wikipedia"),
+    ("software-engineering-fundamentals", 1, 3): ("https://martinfowler.com/articles/microservices.html", "Martin Fowler"),
+    ("software-engineering-fundamentals", 1, 4): ("https://en.wikipedia.org/wiki/Continuous_integration", "Wikipedia"),
+    ("software-engineering-fundamentals", 2, 0): ("https://12factor.net/", "The Twelve-Factor App"),
+    ("software-engineering-fundamentals", 2, 1): ("https://sre.google/books/", "Google SRE"),
+    ("software-engineering-fundamentals", 2, 2): ("https://kubernetes.io/docs/home/", "Kubernetes Documentation"),
+    ("software-engineering-fundamentals", 2, 3): ("https://owasp.org/www-project-top-ten/", "OWASP"),
+    ("software-engineering-fundamentals", 2, 4): ("https://martinfowler.com/testing/", "Martin Fowler"),
+}
+
+# Fallback default resources by course topic
+COURSE_DEFAULT_RESOURCES: dict[str, tuple[str, str]] = {
+    "java-programming": ("https://docs.oracle.com/en/java/javase/", "Oracle Java Documentation"),
+    "javascript-essentials": ("https://developer.mozilla.org/en-US/docs/Web/JavaScript", "MDN Web Docs"),
+    "deep-learning-neural-networks": ("https://pytorch.org/tutorials/", "PyTorch Documentation"),
+    "android-development-kotlin": ("https://developer.android.com/get-started/overview", "Android Developers"),
+    "web-development-fundamentals": ("https://developer.mozilla.org/en-US/docs/Learn", "MDN Web Docs"),
+    "database-management": ("https://www.postgresql.org/docs/", "PostgreSQL Documentation"),
+    "operating-systems": ("https://en.wikipedia.org/wiki/Operating_system", "Wikipedia"),
+    "cloud-computing-fundamentals": ("https://aws.amazon.com/what-is-cloud-computing/", "AWS Documentation"),
+    "cybersecurity-essentials": ("https://www.cisa.gov/cybersecurity-best-practices", "CISA"),
+    "computer-networks": ("https://en.wikipedia.org/wiki/Computer_network", "Wikipedia"),
+    "git-github": ("https://git-scm.com/doc", "Git Documentation"),
+    "generative-ai-fundamentals": ("https://cloud.google.com/ai-learn", "Google Cloud AI"),
+}
+
+
+def get_lesson_resource(course_slug: str, module_order: int, lesson_order: int) -> tuple[str, str]:
+    """Retrieve verified authentic learning resource URL and provider for a lesson."""
+    specific = SPECIFIC_LESSON_RESOURCES.get((course_slug, module_order, lesson_order))
+    if specific:
+        return specific
+    default_res = COURSE_DEFAULT_RESOURCES.get(course_slug)
+    if default_res:
+        return default_res
+    return ("https://en.wikipedia.org/wiki/Computer_science", "Wikipedia")
+
+
+# Curated, verified YouTube video learning resources
+# Key: (course_slug, module_order, lesson_order) -> (video_url, video_provider)
+SPECIFIC_LESSON_VIDEOS: dict[tuple[str, int, int], tuple[str, str]] = {
+    # 1. C++ Programming
+    ("cpp-programming", 0, 0): ("https://www.youtube.com/watch?v=vLnPwxZdW4Y", "freeCodeCamp.org"),
+    ("cpp-programming", 1, 0): ("https://www.youtube.com/watch?v=wN0x9eZLix4", "freeCodeCamp.org"),
+    ("cpp-programming", 2, 0): ("https://www.youtube.com/playlist?list=PLlrATfBNZ98dudnM48yfGUldqGD0S4FFb", "The Cherno"),
+
+    # 2. Data Structures & Algorithms
+    ("data-structures-algorithms", 0, 0): ("https://www.youtube.com/watch?v=RBSGKlAvoiM", "freeCodeCamp.org"),
+    ("data-structures-algorithms", 1, 0): ("https://www.youtube.com/playlist?list=PLDN4rrl48XKpZkf03iYFl-O29szjTrs_O", "Abdul Bari"),
+    ("data-structures-algorithms", 2, 0): ("https://www.youtube.com/watch?v=pkYVOmU3MgA", "freeCodeCamp.org"),
+
+    # 3. Data Science with Python
+    ("data-science-python", 0, 0): ("https://www.youtube.com/watch?v=LHBE6Q9XlzI", "freeCodeCamp.org"),
+    ("data-science-python", 1, 0): ("https://www.youtube.com/watch?v=r-uOLxNrNk8", "freeCodeCamp.org"),
+    ("data-science-python", 2, 0): ("https://www.youtube.com/watch?v=xxpc-HPKN28", "freeCodeCamp.org"),
+
+    # 4. Python Fundamentals
+    ("python-fundamentals", 0, 0): ("https://www.youtube.com/watch?v=_uQrJ0TkZlc", "Programming with Mosh"),
+    ("python-fundamentals", 1, 0): ("https://www.youtube.com/playlist?list=PL-osiE80TeTskrapNbzXhwoFUiLCjGgY7", "Corey Schafer"),
+    ("python-fundamentals", 2, 0): ("https://www.youtube.com/watch?v=ZDa-Z5JzLYM", "Corey Schafer"),
+
+    # 5. Machine Learning Fundamentals
+    ("machine-learning-fundamentals", 0, 0): ("https://www.youtube.com/playlist?list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi", "3Blue1Brown"),
+    ("machine-learning-fundamentals", 1, 0): ("https://www.youtube.com/watch?v=NWONeJKn6kc", "freeCodeCamp.org"),
+    ("machine-learning-fundamentals", 2, 0): ("https://www.youtube.com/playlist?list=PLblh5JKOoLUICTaGLRoHQDuF_7q2GfuJF", "StatQuest"),
+
+    # 6. Full Stack Development
+    ("full-stack-development", 0, 0): ("https://www.youtube.com/watch?v=nu_pCVPKzTk", "freeCodeCamp.org"),
+    ("full-stack-development", 1, 0): ("https://www.youtube.com/watch?v=bMknfKXIFA8", "freeCodeCamp.org"),
+    ("full-stack-development", 2, 0): ("https://www.youtube.com/watch?v=7CqJlxBYj-M", "freeCodeCamp.org"),
+
+    # 7. Software Engineering Fundamentals
+    ("software-engineering-fundamentals", 0, 0): ("https://www.youtube.com/watch?v=m8Icp_Cid5o", "freeCodeCamp.org"),
+    ("software-engineering-fundamentals", 1, 0): ("https://www.youtube.com/playlist?list=PLWKjhJtqVAbkK24EaPurzMq0-kw5U9pJh", "freeCodeCamp.org"),
+    ("software-engineering-fundamentals", 2, 0): ("https://www.youtube.com/watch?v=sO8eGL6QVUw", "Edureka"),
+}
+
+
+def get_lesson_video(course_slug: str, module_order: int, lesson_order: int) -> tuple[Optional[str], Optional[str]]:
+    """Retrieve verified authentic YouTube video resource URL and provider for a lesson, or (None, None)."""
+    return SPECIFIC_LESSON_VIDEOS.get((course_slug, module_order, lesson_order), (None, None))
+
 
 # Roadmap Data - 6 curated system roadmaps
 ROADMAPS = [
@@ -470,6 +698,7 @@ async def seed_database(session):
             if not existing:
                 category = CourseCategory(
                     id=cat_id,
+                    slug=cat_data["slug"],
                     name=cat_data["name"],
                     description=cat_data["description"],
                     display_order=cat_data["order"]
@@ -477,7 +706,11 @@ async def seed_database(session):
                 session.add(category)
                 print(f"   + Created: {cat_data['name']}")
             else:
-                print(f"   - Exists:  {cat_data['name']}")
+                existing.slug = cat_data["slug"]
+                existing.name = cat_data["name"]
+                existing.description = cat_data["description"]
+                existing.display_order = cat_data["order"]
+                print(f"   ~ Updated: {cat_data['name']}")
             
             category_map[cat_data["slug"]] = cat_id
         
@@ -506,6 +739,7 @@ async def seed_database(session):
                     duration_hours=course_data["duration_hours"],
                     accent_color=course_data["accent_color"],
                     is_featured=course_data["is_featured"],
+                    prerequisites=course_data.get("prerequisites", []),
                     status="active"
                 )
                 session.add(course)
@@ -519,6 +753,7 @@ async def seed_database(session):
                 existing.duration_hours = course_data["duration_hours"]
                 existing.accent_color = course_data["accent_color"]
                 existing.is_featured = course_data["is_featured"]
+                existing.prerequisites = course_data.get("prerequisites", [])
                 print(f"   ~ Updated: {course_data['name']}")
             
             course_map[course_data["slug"]] = course_id
@@ -560,15 +795,25 @@ async def seed_database(session):
                     for lt in LESSON_TEMPLATES
                 ]
                 result = await session.execute(
-                    select(Lesson.id).where(Lesson.id.in_(expected_lesson_ids))
+                    select(Lesson).where(Lesson.id.in_(expected_lesson_ids))
                 )
-                existing_lesson_ids = {row[0] for row in result.fetchall()}
+                existing_lessons_map = {lesson.id: lesson for lesson in result.scalars().all()}
 
                 for lesson_template in LESSON_TEMPLATES:
                     lesson_slug = f"{module_slug}-lesson-{lesson_template['order']}"
                     lesson_id = seed_id("lesson", lesson_slug)
+                    res_url, res_provider = get_lesson_resource(
+                        course_data["slug"],
+                        mod_template["order"],
+                        lesson_template["order"]
+                    )
+                    vid_url, vid_provider = get_lesson_video(
+                        course_data["slug"],
+                        mod_template["order"],
+                        lesson_template["order"]
+                    )
 
-                    if lesson_id not in existing_lesson_ids:
+                    if lesson_id not in existing_lessons_map:
                         lesson = Lesson(
                             id=lesson_id,
                             module_id=module_id,
@@ -576,9 +821,24 @@ async def seed_database(session):
                             description=f"Learn about {lesson_template['title_suffix'].lower()}",
                             content_type=lesson_template["type"],
                             duration_minutes=lesson_template["duration"],
-                            display_order=lesson_template["order"]
+                            display_order=lesson_template["order"],
+                            resource_url=res_url,
+                            resource_provider=res_provider,
+                            video_url=vid_url,
+                            video_provider=vid_provider
                         )
                         session.add(lesson)
+                    else:
+                        existing_lesson = existing_lessons_map[lesson_id]
+                        existing_lesson.title = f"{mod_template['title']} - {lesson_template['title_suffix']}"
+                        existing_lesson.description = f"Learn about {lesson_template['title_suffix'].lower()}"
+                        existing_lesson.content_type = lesson_template["type"]
+                        existing_lesson.duration_minutes = lesson_template["duration"]
+                        existing_lesson.display_order = lesson_template["order"]
+                        existing_lesson.resource_url = res_url
+                        existing_lesson.resource_provider = res_provider
+                        existing_lesson.video_url = vid_url
+                        existing_lesson.video_provider = vid_provider
 
             # Commit after each course to avoid Supabase statement timeout on large batches
             await session.commit()

@@ -33,7 +33,7 @@ object DemoImageAnalysisProvider {
         title = "Incline Plane with Pulley & Suspended Mass",
         subject = "Physics • Classical Mechanics",
         problemStatement = "A block of mass m₁ = 4 kg rests on a frictionless plane inclined at θ = 30°. It is connected by a massless cord passing over a frictionless pulley to a hanging mass m₂ = 3 kg. Find the acceleration of the system.",
-        extractedDiagramOrFormula = "System: Inclined plane at 30° ➔ Tension T ➔ Suspended m₂ = 3 kg",
+        extractedDiagramOrFormula = "System: Inclined plane at 30° -> Tension T -> Suspended m₂ = 3 kg",
         keyConcepts = listOf("Newton's 2nd Law (F = ma)", "Tension along cord", "Component of gravity m₁g sin(θ)"),
         stepByStepSolution = listOf(
             "Step 1: Identify forces along the incline for block m₁: The component of gravity pulling it down the slope is m₁g sin(30°) = 4 × 9.8 × 0.5 = 19.6 N.",
@@ -67,7 +67,7 @@ object DemoImageAnalysisProvider {
         title = "Nucleophilic Substitution Mechanism (SN2)",
         subject = "Chemistry • Organic Chemistry",
         problemStatement = "Predict the reaction mechanism and stereochemical outcome when (S)-2-bromobutane is treated with sodium hydroxide (NaOH) in acetone.",
-        extractedDiagramOrFormula = "CH₃-CH(Br)-CH₂-CH₃ + OH⁻ ➔ Inversion of Configuration",
+        extractedDiagramOrFormula = "CH₃-CH(Br)-CH₂-CH₃ + OH⁻ -> Inversion of Configuration",
         keyConcepts = listOf("SN2 Bimolecular Substitution", "Backside nucleophilic attack", "Walden Inversion"),
         stepByStepSolution = listOf(
             "Step 1: Analyze substrate and nucleophile: 2-bromobutane is a secondary alkyl halide. Hydroxide (OH⁻) is a strong nucleophile, and acetone is a polar aprotic solvent. These conditions strongly favor the SN2 pathway.",
@@ -83,7 +83,7 @@ object DemoImageAnalysisProvider {
         title = "Bridge Resistor Network & Kirchhoff Laws",
         subject = "Physics • Current Electricity",
         problemStatement = "In the bridge circuit shown, four resistors R₁ = 2 Ω, R₂ = 4 Ω, R₃ = 3 Ω, R₄ = 6 Ω are connected to a 12 V battery with a central galvanometer bridge of 5 Ω. Find the bridge current.",
-        extractedDiagramOrFormula = "R₁/R₂ = 2/4 = 0.5, R₃/R₄ = 3/6 = 0.5 ➔ Balanced Wheatstone Bridge",
+        extractedDiagramOrFormula = "R₁/R₂ = 2/4 = 0.5, R₃/R₄ = 3/6 = 0.5 -> Balanced Wheatstone Bridge",
         keyConcepts = listOf("Wheatstone Bridge Condition (R₁/R₂ = R₃/R₄)", "Equipotential nodes", "Kirchhoff's Current Law"),
         stepByStepSolution = listOf(
             "Step 1: Test Wheatstone bridge balance condition: R₁/R₂ = 2/4 = 0.5; R₃/R₄ = 3/6 = 0.5.",

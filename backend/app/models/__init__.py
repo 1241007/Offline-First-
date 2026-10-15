@@ -2,7 +2,7 @@ from .conversation import Conversation
 from .message import Message
 from .course import CourseCategory, Course, CourseModule, Lesson
 from .roadmap import Roadmap, RoadmapItem
-from .progress import UserCourseProgress, UserLessonProgress
+from .progress import UserCourseProgress, UserLessonProgress, UserRevisionItem
 from .profile import UserProfile
 
 __all__ = [
@@ -16,5 +16,6 @@ __all__ = [
     "RoadmapItem",
     "UserCourseProgress",
     "UserLessonProgress",
+    "UserRevisionItem",
     "UserProfile",
 ]

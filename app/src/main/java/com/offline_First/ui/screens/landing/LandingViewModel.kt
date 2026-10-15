@@ -22,6 +22,8 @@ import kotlinx.coroutines.launch
 
 data class LandingUiState(
     val isLoading: Boolean = true,
+    val isCoursesLoading: Boolean = false,
+    val coursesError: String? = null,
     val profile: UserProfile? = null,
     val educationMode: EducationMode = EducationMode.GENERAL,
     val greetingName: String = "Learner",
@@ -60,24 +62,58 @@ class LandingViewModel(
             val continueLearning = learningRepository.getContinueLearning()
             val exams = learningRepository.getUpcomingExams()
             val studyFocus = learningRepository.getStudyFocus()
-            val errors = listOf(
-                courses.exceptionOrNull(),
-                featured.exceptionOrNull(),
+
+            val learningErrors = listOf(
                 subjects.exceptionOrNull(),
                 continueLearning.exceptionOrNull(),
                 exams.exceptionOrNull(),
                 studyFocus.exceptionOrNull()
             )
+            val explore = courses.getOrNull().orEmpty()
+            val feats = featured.getOrNull().orEmpty()
+            val courseErr = if (explore.isEmpty() && feats.isEmpty()) {
+                courses.exceptionOrNull() ?: featured.exceptionOrNull()
+            } else {
+                null
+            }
+
             loadedData = LandingUiState(
                 isLoading = false,
+                isCoursesLoading = false,
+                coursesError = courseErr?.let { "Courses require an internet connection." },
                 continueLearning = continueLearning.getOrNull(),
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
                 studyFocus = studyFocus.getOrNull(),
-                featuredCourses = featured.getOrNull().orEmpty(),
-                exploreCourses = courses.getOrNull().orEmpty(),
-                errorMessage = errors.firstNotNullOfOrNull { it?.localizedMessage }
-                    ?: if (errors.any { it != null }) "Unable to load learning data." else null
+                featuredCourses = feats,
+                exploreCourses = explore,
+                errorMessage = learningErrors.firstNotNullOfOrNull { it?.localizedMessage }
+                    ?: if (learningErrors.any { it != null }) "Unable to load learning data." else null
+            )
+            publishState()
+        }
+    }
+
+    fun retryCourses() {
+        viewModelScope.launch(coroutineContext) {
+            loadedData = loadedData.copy(isCoursesLoading = true, coursesError = null)
+            publishState()
+
+            val courses = courseRepository.getCourses()
+            val featured = courseRepository.getFeaturedCourses()
+            val explore = courses.getOrNull().orEmpty()
+            val feats = featured.getOrNull().orEmpty()
+            val courseErr = if (explore.isEmpty() && feats.isEmpty()) {
+                courses.exceptionOrNull() ?: featured.exceptionOrNull()
+            } else {
+                null
+            }
+
+            loadedData = loadedData.copy(
+                isCoursesLoading = false,
+                coursesError = courseErr?.let { "Courses require an internet connection." },
+                featuredCourses = feats,
+                exploreCourses = explore
             )
             publishState()
         }

@@ -14,7 +14,7 @@ object ChatApiConfig {
     // For Android Emulator - points to host machine's localhost:8000
     const val BASE_URL = "http://10.0.2.2:8000"
     
-    const val CONNECT_TIMEOUT_MS = 10_000
+    const val CONNECT_TIMEOUT_MS = 2500
     const val READ_TIMEOUT_MS = 60_000
     const val API_PREFIX = "/api/v1"
 }

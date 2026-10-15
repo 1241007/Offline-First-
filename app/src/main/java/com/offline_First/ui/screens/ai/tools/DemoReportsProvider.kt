@@ -38,7 +38,7 @@ object DemoReportsProvider {
             flashcardsMastered = 142,
             metrics = listOf(
                 LearningMetric("Accuracy Rate", "88.4%", "+5.2% this week", true),
-                LearningMetric("Study Streak", "12 Days", "Personal best 🔥", true),
+                LearningMetric("Study Streak", "12 Days", "Personal best", true),
                 LearningMetric("Concept Retention", "92%", "+3.8%", true),
                 LearningMetric("Avg. Time / Quiz", "4m 12s", "-45s faster", true)
             ),

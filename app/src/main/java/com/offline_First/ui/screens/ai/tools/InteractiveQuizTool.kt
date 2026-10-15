@@ -428,7 +428,7 @@ fun InteractiveQuizTool(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        if (currentQuestionIndex < totalQ - 1) "Next Question →" else "View Results 🎉",
+                                        if (currentQuestionIndex < totalQ - 1) "Next Question" else "View Results",
                                         fontWeight = FontWeight.SemiBold
                                     )
                                 }
@@ -485,9 +485,9 @@ fun InteractiveQuizTool(
                                 ) {
                                     Text(
                                         text = when {
-                                            percentage >= 80 -> "🌟 Outstanding mastery! You're ready for exam questions."
-                                            percentage >= 50 -> "👍 Good effort! Review the explanations to solidify concepts."
-                                            else -> "📚 Keep practicing! Re-read the chapter summary and try again."
+                                            percentage >= 80 -> "Outstanding mastery! You are ready for exam questions."
+                                            percentage >= 50 -> "Good effort! Review the explanations to solidify concepts."
+                                            else -> "Keep practicing! Review the chapter summary and try again."
                                         },
                                         fontSize = 13.sp,
                                         color = EduNovaTextPrimary,

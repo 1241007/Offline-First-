@@ -1,12 +1,6 @@
 package com.offline_First.ui.screens.ai.tools
 
-data class QuizQuestion(
-    val id: Int,
-    val question: String,
-    val options: List<String>,
-    val correctIndex: Int,
-    val explanation: String
-)
+import com.offline_First.domain.model.QuizQuestion
 
 data class QuizTopic(
     val topicTitle: String,
@@ -14,6 +8,7 @@ data class QuizTopic(
     val difficulty: String,
     val questions: List<QuizQuestion>
 )
+
 
 object DemoQuizProvider {
     val sampleTopics = listOf(

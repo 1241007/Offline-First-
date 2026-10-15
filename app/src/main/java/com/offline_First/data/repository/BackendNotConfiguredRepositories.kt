@@ -5,11 +5,13 @@ import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ContinueLearningItem
 import com.offline_First.domain.model.Course
+import com.offline_First.domain.model.CourseDetail
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.LearningCourse
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
+import com.offline_First.domain.model.RevisionItem
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.StudyFocusItem
 import com.offline_First.domain.model.Subject
@@ -86,6 +88,44 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> =
         unavailable("Featured courses")
+
+    override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> =
+        unavailable("Course detail")
+
+    override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> =
+        unavailable("Lesson completion")
+
+    override suspend fun isLessonCompleted(courseId: String, lessonId: String): Boolean = false
+
+    override suspend fun getCompletedLessonCount(courseId: String, lessonIds: Collection<String>): Int = 0
+
+    override suspend fun getCourseProgressPercentage(courseId: String, lessonIds: Collection<String>): Float = 0f
+
+    override suspend fun isCourseCompleted(courseId: String, lessonIds: Collection<String>): Boolean = false
+
+    override suspend fun getCertificate(courseId: String): com.offline_First.domain.model.CourseCertificate? = null
+
+    override suspend fun getAllCertificates(): List<com.offline_First.domain.model.CourseCertificate> = emptyList()
+
+    override suspend fun issueCertificate(
+        courseId: String,
+        courseName: String,
+        learnerName: String,
+        totalLessons: Int
+    ): com.offline_First.domain.model.CourseCertificate? = null
+
+    override suspend fun addRevisionItem(item: RevisionItem): Result<Unit> =
+        unavailable("Revision items")
+
+    override suspend fun removeRevisionItem(courseId: String, lessonId: String): Result<Unit> =
+        unavailable("Revision items")
+
+    override suspend fun isMarkedForRevision(courseId: String, lessonId: String): Boolean = false
+
+    override suspend fun getRevisionItems(): Result<List<RevisionItem>> =
+        unavailable("Revision items")
+
+
 
     override suspend fun getInProgressCourses(): Result<List<LearningCourse>> =
         unavailable("Learning progress")

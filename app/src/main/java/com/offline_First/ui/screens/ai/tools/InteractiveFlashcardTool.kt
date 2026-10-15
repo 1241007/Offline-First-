@@ -449,7 +449,7 @@ fun InteractiveFlashcardTool(
                             colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
                         ) {
                             Text(
-                                if (currentCardIndex < totalCards - 1) "Next Card →" else "Restart Deck 🔄",
+                                if (currentCardIndex < totalCards - 1) "Next Card" else "Restart Deck",
                                 fontWeight = FontWeight.SemiBold
                             )
                         }

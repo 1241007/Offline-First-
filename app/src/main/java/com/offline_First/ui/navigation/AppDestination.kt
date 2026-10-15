@@ -14,5 +14,8 @@ enum class AppDestination {
     ROADMAP_BUILDER,
     MY_LEARNING,
     PROFILE,
-    SETTINGS
+    SETTINGS,
+    COURSE_DETAIL,
+    LESSON_VIEWER,
+    REVISION_LIST
 }
