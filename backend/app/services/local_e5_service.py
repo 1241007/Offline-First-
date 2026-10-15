@@ -169,15 +169,19 @@ class LocalE5EmbeddingService:
             # If session is active, run inference
             if self._session and self._tokenizer:
                 enc = self._tokenizer.encode(text)
-                input_ids = [enc.ids]
-                attention_mask = [enc.attention_mask]
-                outputs = self._session.run(
-                    None,
-                    {
-                        "input_ids": input_ids,
-                        "attention_mask": attention_mask,
-                    }
-                )
+                # Truncate to maximum sequence length (512 tokens) supported by position embeddings
+                input_ids = [enc.ids[:512]]
+                attention_mask = [enc.attention_mask[:512]]
+                token_type_ids = [enc.type_ids[:512]] if hasattr(enc, "type_ids") else [[0] * len(input_ids[0])]
+                feed = {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                }
+                model_inputs = [inp.name for inp in self._session.get_inputs()]
+                if "token_type_ids" in model_inputs:
+                    feed["token_type_ids"] = token_type_ids
+
+                outputs = self._session.run(None, feed)
                 last_hidden = outputs[0][0]  # shape: (seq_len, hidden_dim)
                 mask = attention_mask[0]
                 sum_emb = [0.0] * EMBEDDING_DIM
