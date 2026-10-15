@@ -138,7 +138,6 @@ object AppContainer {
 
     val roadmapRepository: RoadmapRepository
         get() = _roadmapRepository ?: OnlineRoadmapRepository()
-
     val onlineRoadmapRepository: OnlineRoadmapRepository
         get() = (_roadmapRepository as? OnlineRoadmapRepository) ?: OnlineRoadmapRepository()
 }

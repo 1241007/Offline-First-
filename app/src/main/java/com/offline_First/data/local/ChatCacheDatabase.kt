@@ -29,6 +29,8 @@ import kotlinx.serialization.decodeFromString
 
 private const val DB_NAME = "edunova_chat_cache.db"
 private const val DB_VERSION = 3
+
+
 data class PendingMilestoneSync(
     val roadmapId: String,
     val userId: String,

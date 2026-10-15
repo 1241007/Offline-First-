@@ -13,7 +13,7 @@ from alembic import context
 # Ensure backend root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings
+from app.core.database import Base
 import app.models  # Registers all models on Base.metadata
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.dialects.postgresql import JSONB

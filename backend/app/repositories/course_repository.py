@@ -60,7 +60,6 @@ class CourseRepository:
         query = query.order_by(Course.created_at).offset(offset)
         if limit is not None:
             query = query.limit(limit)
-
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

@@ -1,15 +1,19 @@
 package com.offline_First.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,10 +28,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.data.staging.*
 import com.offline_First.domain.model.*
 import com.offline_First.ui.components.EduNovaBadge
 import com.offline_First.ui.components.EduNovaFilterChip
-import com.offline_First.ui.screens.roadmap.RoadmapViewModel
+import com.offline_First.ui.screens.roadmap.*
 import com.offline_First.ui.theme.EduNovaAccent
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaSecondary
@@ -51,6 +56,11 @@ fun RoadmapScreen(
     val uiState by viewModel.uiState.collectAsState()
     val roadmapPrimary = MaterialTheme.colorScheme.primary
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Intercept back presses to stay within Roadmap sub-views when not on the root Catalog
+    BackHandler(enabled = uiState.currentSubView != RoadmapSubView.CATALOG) {
+        viewModel.navigateBackInRoadmap()
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -98,207 +108,408 @@ fun RoadmapScreen(
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
-                shadowElevation = 1.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(start = 12.dp, top = 8.dp, end = 16.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "My Learning",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    FilledTonalButton(
-                        onClick = {
-                            viewModel.startNewAssessment()
-                            onBuildRoadmap()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Create Roadmap", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    }
-                }
+    // Filter Role-based and Skill-based courses by search query
+    val filteredRoleBased = remember(uiState.catalogSearchQuery) {
+        if (uiState.catalogSearchQuery.isBlank()) {
+            PythonRoadmapStagingData.ROLE_BASED_COURSES
+        } else {
+            PythonRoadmapStagingData.ROLE_BASED_COURSES.filter {
+                it.contains(uiState.catalogSearchQuery, ignoreCase = true)
             }
         }
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Dashboard Overview Card
-            item(key = "learning-overview-stats") {
-                Card(
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+    }
+
+    val filteredSkillBased = remember(uiState.catalogSearchQuery) {
+        if (uiState.catalogSearchQuery.isBlank()) {
+            PythonRoadmapStagingData.SKILL_BASED_COURSES
+        } else {
+            PythonRoadmapStagingData.SKILL_BASED_COURSES.filter {
+                it.contains(uiState.catalogSearchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    // Render SubViews: TOPIC_DETAIL -> PYTHON_DEVELOPER -> CATALOG
+    when (uiState.currentSubView) {
+        RoadmapSubView.TOPIC_DETAIL -> {
+            uiState.selectedTopic?.let { topic ->
+                TopicDetailContentScreen(
+                    topic = topic,
+                    isCompleted = uiState.completedTopicIds.contains(topic.id),
+                    onToggleComplete = { viewModel.toggleTopicCompletion(topic.id) },
+                    onBack = { viewModel.navigateBackInRoadmap() },
+                    onNextTopic = { viewModel.navigateToNextTopic() },
+                    onPrevTopic = { viewModel.navigateToPrevTopic() },
+                    onAskAiAboutTopic = { prompt ->
+                        viewModel.setAiTutorPrompt(prompt)
+                        viewModel.setPythonCourseTab("AI Tutor")
+                        viewModel.navigateBackInRoadmap()
+                    }
+                )
+            }
+        }
+
+        RoadmapSubView.PYTHON_DEVELOPER -> {
+            PythonDeveloperCourseScreen(
+                uiState = uiState,
+                viewModel = viewModel,
+                onBack = { viewModel.navigateBackInRoadmap() }
+            )
+        }
+
+        RoadmapSubView.JAVA_DEVELOPER -> {
+            JavaDeveloperCourseScreen(
+                uiState = uiState,
+                viewModel = viewModel,
+                onBack = { viewModel.navigateBackInRoadmap() }
+            )
+        }
+
+        RoadmapSubView.MACHINE_LEARNING -> {
+            MLDeveloperCourseScreen(
+                uiState = uiState,
+                viewModel = viewModel,
+                onBack = { viewModel.navigateBackInRoadmap() }
+            )
+        }
+
+        RoadmapSubView.SQL_ROADMAP -> {
+            SqlDeveloperCourseScreen(
+                uiState = uiState,
+                viewModel = viewModel,
+                onBack = { viewModel.navigateBackInRoadmap() }
+            )
+        }
+
+        RoadmapSubView.CATALOG -> {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                topBar = {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 2.dp,
+                        shadowElevation = 1.dp
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
+                        Column {
+                            Row(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .background(roadmapPrimary.copy(alpha = 0.12f), CircleShape),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .statusBarsPadding()
+                                    .padding(start = 12.dp, top = 8.dp, end = 16.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.School, contentDescription = null, tint = roadmapPrimary, modifier = Modifier.size(22.dp))
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                                IconButton(onClick = onBack) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Learning Dashboard",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    text = "Roadmaps",
+                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Text(
-                                    text = if (totalRoadmaps > 0) "$activeRoadmapsCount active roadmap${if (activeRoadmapsCount == 1) "" else "s"} in progress" else "Start your first personalized learning roadmap",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Spacer(modifier = Modifier.weight(1f))
+                                FilledTonalButton(
+                                    onClick = {
+                                        viewModel.startNewAssessment()
+                                        onBuildRoadmap()
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Create", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                }
+                            }
+
+                            // Top tab bar with Roadmaps, Lesson Packs, and Project Ideas
+                            RoadmapTopTabs(
+                                selectedTab = uiState.roadmapMainTab,
+                                onTabSelected = { viewModel.setRoadmapMainTab(it) }
+                            )
+                        }
+                    }
+                }
+            ) { paddingValues ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Search Bar
+                    item(key = "roadmap-catalog-search") {
+                        RoadmapSearchBar(
+                            query = uiState.catalogSearchQuery,
+                            onQueryChange = { viewModel.setCatalogSearchQuery(it) }
+                        )
+                    }
+
+                    when (uiState.roadmapMainTab) {
+                        "Roadmaps" -> {
+                            // "Learn with AI" card (matching Screenshot 2)
+                            item(key = "learn-with-ai-card") {
+                                LearnWithAiCard(
+                                    onClick = {
+                                        viewModel.startNewAssessment()
+                                        onBuildRoadmap()
+                                    }
+                                )
+                            }
+
+                            // 1. Skill-based Section Header
+                            item(key = "skill-based-header") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Skill-based",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${filteredSkillBased.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Skill-based course cards in a clean, responsive 2-column grid
+                            items(
+                                items = filteredSkillBased.chunked(2),
+                                key = { pair -> "skill_row_${pair.first()}" }
+                            ) { pair ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    pair.forEach { courseName ->
+                                        CompactCourseCard(
+                                            courseName = courseName,
+                                            isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
+                                            onClick = { viewModel.selectCourseByName(courseName, "Skill-based") },
+                                            onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (pair.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+
+                            // 2. Role-based Section Header
+                            item(key = "role-based-header") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 16.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Role-based",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${filteredRoleBased.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Role-based course cards in a clean, responsive 2-column grid
+                            items(
+                                items = filteredRoleBased.chunked(2),
+                                key = { pair -> "role_row_${pair.first()}" }
+                            ) { pair ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    pair.forEach { courseName ->
+                                        CompactCourseCard(
+                                            courseName = courseName,
+                                            isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
+                                            onClick = { viewModel.selectCourseByName(courseName, "Role-based") },
+                                            onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (pair.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+
+                            // Preserve user's personalized roadmaps if any exist
+                            if (personalizedRoadmaps.isNotEmpty()) {
+                                item(key = "my-custom-roadmaps-header") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "My Custom Roadmaps",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        EduNovaBadge("${personalizedRoadmaps.size} Active")
+                                    }
+                                }
+
+                                items(
+                                    items = personalizedRoadmaps,
+                                    key = { it.id }
+                                ) { roadmap ->
+                                    val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
+                                    val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
+
+                                    PersonalizedRoadmapCard(
+                                        roadmap = roadmap,
+                                        progress = progress,
+                                        nextMilestone = nextMilestone,
+                                        roadmapPrimary = roadmapPrimary,
+                                        onContinueLearning = {
+                                            viewModel.selectPersonalizedRoadmap(roadmap)
+                                            selectedPersonalizedRoadmap = roadmap
+                                        },
+                                        onRename = {
+                                            roadmapToRename = roadmap
+                                            renameDraftTitle = roadmap.title
+                                        },
+                                        onDelete = {
+                                            roadmapToDelete = roadmap
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        "Lesson Packs" -> {
+                            item(key = "lesson-packs-header") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Curated Lesson Packs",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    EduNovaBadge("${PythonRoadmapStagingData.LESSON_PACKS.size} Packs")
+                                }
+                            }
+
+                            items(
+                                items = PythonRoadmapStagingData.LESSON_PACKS,
+                                key = { it.id }
+                            ) { pack ->
+                                LessonPackCard(
+                                    pack = pack,
+                                    onClick = {
+                                        viewModel.selectCourseByName(pack.title, "Lesson Pack")
+                                    }
                                 )
                             }
                         }
 
-                        if (totalRoadmaps > 0) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                        "Project Ideas" -> {
+                            item(key = "project-ideas-header") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Practical Project Ideas",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    EduNovaBadge("${PythonRoadmapStagingData.PYTHON_PROJECTS.size} Projects")
+                                }
+                            }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                StatItem(label = "Active Plans", value = "$activeRoadmapsCount", color = roadmapPrimary)
-                                StatItem(label = "Completed", value = "$completedRoadmapsCount", color = EduNovaSuccess)
-                                StatItem(label = "Avg Progress", value = "$overallProgressAvg%", color = EduNovaAccent)
+                            items(
+                                items = PythonRoadmapStagingData.PYTHON_PROJECTS,
+                                key = { it.id }
+                            ) { project ->
+                                RoadmapProjectCard(
+                                    project = project,
+                                    isCompleted = uiState.completedProjectIds.contains(project.id),
+                                    onClick = { viewModel.selectProject(project) }
+                                )
                             }
                         }
-                    }
-                }
-            }
-
-            // Tabs / Filters
-            item(key = "dashboard-filter-tabs") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val tabs = listOf("All", "In Progress", "Completed", "Catalog")
-                    tabs.forEach { tab ->
-                        EduNovaFilterChip(
-                            text = if (tab == "All") "All (${personalizedRoadmaps.size})" else tab,
-                            selected = uiState.dashboardTab == tab,
-                            onClick = { viewModel.setDashboardTab(tab) },
-                            selectedContainerColor = roadmapPrimary
-                        )
-                    }
-                }
-            }
-
-            // Personalized Roadmaps Section
-            if (uiState.dashboardTab != "Catalog") {
-                if (filteredPersonalized.isEmpty()) {
-                    item(key = "empty-personalized-roadmaps") {
-                        EmptyRoadmapsCard(
-                            tab = uiState.dashboardTab,
-                            roadmapPrimary = roadmapPrimary,
-                            onCreateNew = {
-                                viewModel.startNewAssessment()
-                                onBuildRoadmap()
-                            }
-                        )
-                    }
-                } else {
-                    items(
-                        items = filteredPersonalized,
-                        key = { it.id }
-                    ) { roadmap ->
-                        val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
-                        val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
-
-                        PersonalizedRoadmapCard(
-                            roadmap = roadmap,
-                            progress = progress,
-                            nextMilestone = nextMilestone,
-                            roadmapPrimary = roadmapPrimary,
-                            onContinueLearning = {
-                                viewModel.selectPersonalizedRoadmap(roadmap)
-                                selectedPersonalizedRoadmap = roadmap
-                            },
-                            onRename = {
-                                roadmapToRename = roadmap
-                                renameDraftTitle = roadmap.title
-                            },
-                            onDelete = {
-                                roadmapToDelete = roadmap
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Catalog Roadmaps Section
-            if (uiState.dashboardTab == "Catalog" || uiState.dashboardTab == "All") {
-                if (allStandardRoadmaps.isNotEmpty()) {
-                    item(key = "standard-roadmaps-header") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Standard Developer Tracks",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            EduNovaBadge("Catalog")
-                        }
-                    }
-
-                    items(
-                        items = allStandardRoadmaps,
-                        key = { "std_${it.id}" }
-                    ) { stdRoadmap ->
-                        StandardRoadmapCard(
-                            roadmap = stdRoadmap,
-                            roadmapPrimary = roadmapPrimary,
-                            onClick = { selectedRoadmap = stdRoadmap }
-                        )
                     }
                 }
             }
         }
+    }
+
+    // Upcoming Learning Path Dialog (for Paths 2..7)
+    uiState.selectedUpcomingPath?.let { path ->
+        UpcomingPathDialog(
+            path = path,
+            onDismiss = { viewModel.dismissUpcomingPathDialog() }
+        )
+    }
+
+    // Practice Project Detail Dialog
+    uiState.selectedProject?.let { project ->
+        ProjectDetailDialog(
+            project = project,
+            isCompleted = uiState.completedProjectIds.contains(project.id),
+            onToggleComplete = { viewModel.toggleProjectCompletion(project.id) },
+            onDismiss = { viewModel.selectProject(null) }
+        )
+    }
+
+    // Course Overview Dialog (for Roadmap.sh compact course cards)
+    uiState.selectedCourseOverview?.let { (courseName, category) ->
+        CourseOverviewDialog(
+            courseName = courseName,
+            category = category,
+            isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
+            onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+            onOpenRoadmap = {
+                viewModel.dismissCourseOverviewDialog()
+                if (courseName.contains("Python", ignoreCase = true)) {
+                    val pythonPath = PythonRoadmapStagingData.LEARNING_PATHS.firstOrNull { it.id == "python-developer" }
+                    if (pythonPath != null) {
+                        viewModel.selectLearningPath(pythonPath)
+                    }
+                } else if (courseName.contains("Java", ignoreCase = true)) {
+                    viewModel.openJavaDeveloperScreen()
+                }
+            },
+            onDismiss = { viewModel.dismissCourseOverviewDialog() }
+        )
     }
 
     // Rename Dialog
@@ -400,6 +611,474 @@ fun RoadmapScreen(
             roadmapPrimary = roadmapPrimary,
             onDismiss = { selectedPersonalizedRoadmap = null }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PythonDeveloperCourseScreen(
+    uiState: RoadmapUiState,
+    viewModel: RoadmapViewModel,
+    onBack: () -> Unit
+) {
+    val progress = viewModel.calculatePythonProgress()
+    val totalTopics = PythonRoadmapStagingData.ALL_VISUAL_NODES.size
+    val completedCount = uiState.completedTopicIds.count { id ->
+        PythonRoadmapStagingData.ALL_VISUAL_NODES.any { it.id == id }
+    }
+    val roadmapPrimary = MaterialTheme.colorScheme.primary
+    var selectedVisualNode by remember { mutableStateOf<VisualRoadmapNode?>(null) }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                shadowElevation = 1.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = 8.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "All Roadmaps",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "All Roadmaps",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { /* Bookmark action */ }) {
+                        Icon(
+                            imageVector = Icons.Default.BookmarkBorder,
+                            contentDescription = "Bookmark",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = { /* Share action */ }) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp)
+            ) {
+                // Header & Title section (Screenshot 2)
+                item(key = "python-header") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Python Developer",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+
+                        Text(
+                            text = "Step by step guide to becoming a Python developer in 2026",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Stats & Progress Bar
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$completedCount of $totalTopics Topics Completed",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "$progress%",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = roadmapPrimary
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { progress / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = roadmapPrimary,
+                                    trackColor = roadmapPrimary.copy(alpha = 0.12f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Course Tabs: Roadmap, Projects, AI Tutor
+                item(key = "python-tabs") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val tabs = listOf("Roadmap", "Projects", "AI Tutor")
+                        tabs.forEach { tab ->
+                            val isSelected = uiState.pythonCourseTab == tab
+                            EduNovaFilterChip(
+                                text = tab,
+                                selected = isSelected,
+                                onClick = { viewModel.setPythonCourseTab(tab) },
+                                selectedContainerColor = roadmapPrimary
+                            )
+                        }
+                    }
+                }
+
+                // Tab Content Switch
+                when (uiState.pythonCourseTab) {
+                    "Roadmap" -> {
+                        // Mark tip banner
+                        item(key = "tracking-tip-banner") {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = EduNovaAccent.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, EduNovaAccent.copy(alpha = 0.25f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.TipsAndUpdates,
+                                        contentDescription = null,
+                                        tint = EduNovaAccent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Tap any topic node below to study lesson content and track progress",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+
+                        // What is Python Developer accordion
+                        item(key = "what-is-python-banner") {
+                            WhatIsPythonBanner()
+                        }
+
+                        // Visual Roadmap Headline
+                        item(key = "visual-roadmap-title") {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Interactive Learning Diagram",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    EduNovaBadge("${PythonRoadmapStagingData.ALL_VISUAL_NODES.size} Connected Topics")
+                                }
+                                Text(
+                                    text = "Pinch to zoom in/out or drag to explore. Tap any node to inspect details.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Connected Branching Visual Roadmap Diagram (Roadmap.sh Interactive Sequence inside Zoomable Canvas)
+                        item(key = "python-visual-diagram") {
+                            EduNovaZoomableCanvasBox(
+                                modifier = Modifier.fillMaxWidth()
+                            ) { _ ->
+                                EduNovaPythonVisualRoadmapDiagram(
+                                    selectedNodeId = selectedVisualNode?.id,
+                                    completedTopicIds = uiState.completedTopicIds,
+                                    onSelectNode = { node ->
+                                        selectedVisualNode = node
+                                    }
+                                )
+                            }
+                        }
+
+                        // FAQ Header & Accordions (Screen 4)
+                        item(key = "faqs-header") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Frequently Asked Questions",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    EduNovaBadge("FAQ")
+                                }
+                                Text(
+                                    text = "Everything you need to know about the Python developer learning journey",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        PythonRoadmapStagingData.PYTHON_FAQS.forEach { faq ->
+                            item(key = "faq_${faq.id}") {
+                                FaqAccordionItem(faq = faq)
+                            }
+                        }
+                    }
+
+                    "Projects" -> {
+                        item(key = "projects-header") {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Hands-on Practice Projects",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    EduNovaBadge("${PythonRoadmapStagingData.PYTHON_PROJECTS.size} Projects")
+                                }
+                                Text(
+                                    text = "Build real-world Python applications to cement your knowledge and build your portfolio",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        PythonRoadmapStagingData.PYTHON_PROJECTS.forEach { project ->
+                            val isCompleted = uiState.completedProjectIds.contains(project.id)
+                            item(key = "proj_${project.id}") {
+                                RoadmapProjectCard(
+                                    project = project,
+                                    isCompleted = isCompleted,
+                                    onClick = { viewModel.selectProject(project) }
+                                )
+                            }
+                        }
+                    }
+
+                    "AI Tutor" -> {
+                        item(key = "ai-tutor-course-tab") {
+                            Card(
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .background(roadmapPrimary.copy(alpha = 0.12f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.AutoAwesome,
+                                                contentDescription = null,
+                                                tint = roadmapPrimary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "EduNova Python AI Tutor",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Personalized 1-on-1 code mentorship",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "Ask any question about Python syntax, debugging errors, object-oriented principles, or FastAPI endpoints. Your AI Tutor has full context of this roadmap.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 20.sp
+                                    )
+
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                                    Text(
+                                        text = "Suggested Questions:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+
+                                    val prompts = listOf(
+                                        "Explain list comprehensions vs generator expressions in Python",
+                                        "How do Python decorators work under the hood?",
+                                        "What is the difference between asyncio and multiprocessing?",
+                                        "How to write clean unit tests with pytest for FastAPI?"
+                                    )
+
+                                    prompts.forEach { prompt ->
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    viewModel.setAiTutorPrompt(prompt)
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.QuestionAnswer,
+                                                    contentDescription = null,
+                                                    tint = roadmapPrimary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = prompt,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                Icon(
+                                                    Icons.AutoMirrored.Filled.Send,
+                                                    contentDescription = null,
+                                                    tint = roadmapPrimary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (!uiState.aiTutorTopicPrompt.isNullOrBlank()) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = EduNovaSuccess.copy(alpha = 0.12f),
+                                            border = BorderStroke(1.dp, EduNovaSuccess.copy(alpha = 0.3f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Text(
+                                                    text = "Active Query Queued:",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = EduNovaSuccess
+                                                )
+                                                Text(
+                                                    text = uiState.aiTutorTopicPrompt ?: "",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Floating AI Tutor pill bar at the bottom (matching Screenshot 2 & 3)
+            AiTutorFloatingPill(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp),
+                onClick = { viewModel.setPythonCourseTab("AI Tutor") }
+            )
+
+            // Topic Detail Bottom Sheet
+            selectedVisualNode?.let { node ->
+                EduNovaTopicDetailBottomSheet(
+                    node = node,
+                    isCompleted = uiState.completedTopicIds.contains(node.id),
+                    onToggleComplete = { viewModel.toggleTopicCompletion(node.id) },
+                    onAskAiTutor = { prompt ->
+                        viewModel.setAiTutorPrompt(prompt)
+                        viewModel.setPythonCourseTab("AI Tutor")
+                        selectedVisualNode = null
+                    },
+                    onDismiss = { selectedVisualNode = null },
+                    languageLabel = "Python Example:"
+                )
+            }
+        }
     }
 }
 
