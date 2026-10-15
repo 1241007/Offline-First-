@@ -98,7 +98,14 @@ class SyllabusSyncRepository(
                 return@withContext Result.failure(IllegalStateException(err))
             }
 
-            // 2. Paginated chunk download
+            // 2. Check if local pack is already current via content_hash comparison
+            if (database.isPackCurrent(packId, manifest.contentHash)) {
+                Log.i(TAG, "Syllabus pack '$packId' is already up to date (hash: ${manifest.contentHash}). Skipping re-download.")
+                _syncState.value = SyllabusSyncState.Success(packId = packId, totalChunks = manifest.chunkCount)
+                return@withContext Result.success(manifest.chunkCount)
+            }
+
+            // 3. Paginated chunk download with progress reporting
             var cursor: String? = null
             var downloadedCount = 0
             val totalCount = manifest.chunkCount
@@ -147,7 +154,27 @@ class SyllabusSyncRepository(
 
             } while (page.hasMore && !cursor.isNullOrBlank())
 
-            Log.i(TAG, "Successfully synced syllabus pack '$packId' ($downloadedCount chunks)")
+            // Verify integrity of downloaded pack count
+            if (totalCount > 0 && downloadedCount < totalCount) {
+                val err = "Pack download incomplete: expected $totalCount chunks, received $downloadedCount"
+                Log.w(TAG, err)
+                _syncState.value = SyllabusSyncState.Error(err)
+                return@withContext Result.failure(IllegalStateException(err))
+            }
+
+            // 4. Record verified pack synchronization in SQLite
+            database.recordPackSync(
+                packId = packId,
+                board = manifest.board,
+                classGrade = manifest.classGrade,
+                subject = manifest.subject,
+                academicYear = manifest.academicYear,
+                corpusVersion = manifest.corpusVersion,
+                contentHash = manifest.contentHash,
+                chunkCount = downloadedCount
+            )
+
+            Log.i(TAG, "Successfully synced syllabus pack '$packId' ($downloadedCount chunks, hash: ${manifest.contentHash})")
             _syncState.value = SyllabusSyncState.Success(packId = packId, totalChunks = downloadedCount)
             Result.success(downloadedCount)
 

@@ -54,6 +54,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val TABLE_CHUNKS = "syllabus_chunks"
+        const val TABLE_PACKS = "syllabus_packs"
         const val EMBEDDING_DIMENSION = 384
 
         // Common short stop words that do not add keyword filtering value
@@ -134,7 +135,22 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
             )
         """.trimIndent())
 
-        // 2. High-performance B-tree indexes for fast curriculum filtering and keyword lookups
+        // 2. Syllabus packs metadata table for version tracking, integrity, and idempotency
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_PACKS (
+                pack_id TEXT PRIMARY KEY,
+                board TEXT NOT NULL,
+                class_grade TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                academic_year TEXT,
+                corpus_version TEXT,
+                content_hash TEXT,
+                chunk_count INTEGER,
+                last_synced_at INTEGER
+            )
+        """.trimIndent())
+
+        // 3. High-performance B-tree indexes for fast curriculum filtering and keyword lookups
         createIndexes(db)
     }
 
@@ -145,6 +161,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_chapter ON $TABLE_CHUNKS(chapter_title)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_chunk_id ON $TABLE_CHUNKS(chunk_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_hash ON $TABLE_CHUNKS(content_hash)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sp_pack_id ON $TABLE_PACKS(pack_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -384,6 +401,58 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
             if (it.moveToFirst()) it.getInt(0) else 0
         }
         return count > 0
+    }
+
+    /**
+     * Records successful syllabus pack synchronization with its deterministic content hash.
+     */
+    open fun recordPackSync(
+        packId: String,
+        board: String,
+        classGrade: String,
+        subject: String,
+        academicYear: String? = "2026-27",
+        corpusVersion: String? = "1.0",
+        contentHash: String? = null,
+        chunkCount: Int = 0
+    ) {
+        val cv = ContentValues().apply {
+            put("pack_id", packId)
+            put("board", board)
+            put("class_grade", classGrade)
+            put("subject", subject)
+            put("academic_year", academicYear)
+            put("corpus_version", corpusVersion)
+            put("content_hash", contentHash)
+            put("chunk_count", chunkCount)
+            put("last_synced_at", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict(
+            TABLE_PACKS,
+            null,
+            cv,
+            SQLiteDatabase.CONFLICT_REPLACE
+        )
+    }
+
+    /**
+     * Retrieves the stored content hash for a locally synchronized pack.
+     */
+    open fun getPackContentHash(packId: String): String? {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT content_hash FROM $TABLE_PACKS WHERE pack_id = ?", arrayOf(packId))
+        return cursor.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+    }
+
+    /**
+     * Checks if the local pack is current by comparing against remote manifest content hash.
+     */
+    open fun isPackCurrent(packId: String, remoteContentHash: String?): Boolean {
+        if (remoteContentHash.isNullOrBlank()) return false
+        val localHash = getPackContentHash(packId)
+        return localHash != null && localHash.equals(remoteContentHash.trim(), ignoreCase = true)
     }
 
     /**

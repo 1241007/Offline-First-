@@ -41,9 +41,32 @@ class FakeSyllabusDatabase : SyllabusDatabase(
     android.content.ContextWrapper(null)
 ) {
     val importedRecords = mutableListOf<SyllabusChunkRecord>()
+    var recordedPackId: String? = null
+    var recordedHash: String? = null
+    var recordedCount: Int = 0
+    var isCurrentResult: Boolean = false
 
     override fun importSyllabusRecords(records: List<SyllabusChunkRecord>) {
         importedRecords.addAll(records)
+    }
+
+    override fun recordPackSync(
+        packId: String,
+        board: String,
+        classGrade: String,
+        subject: String,
+        academicYear: String?,
+        corpusVersion: String?,
+        contentHash: String?,
+        chunkCount: Int
+    ) {
+        recordedPackId = packId
+        recordedHash = contentHash
+        recordedCount = chunkCount
+    }
+
+    override fun isPackCurrent(packId: String, remoteContentHash: String?): Boolean {
+        return isCurrentResult
     }
 }
 
@@ -186,5 +209,96 @@ class SyllabusSyncRepositoryTest {
         assertTrue(state is SyllabusSyncState.Success)
         assertEquals(2, (state as SyllabusSyncState.Success).totalChunks)
         assertEquals(2, fakeDb.importedRecords.size)
+        assertEquals("cbse-10-science", fakeDb.recordedPackId)
+    }
+
+    @Test
+    fun testSkipsDownloadWhenPackAlreadyCurrent() = runBlocking {
+        val fakeClient = FakeSyllabusSyncClient(
+            packsToReturn = listOf(
+                SyllabusPackSummaryDto(
+                    packId = "cbse-10-mathematics",
+                    board = "CBSE",
+                    classGrade = "10",
+                    subject = "Mathematics",
+                    chunkCount = 10,
+                    embeddingModel = "intfloat/multilingual-e5-small"
+                )
+            ),
+            manifestToReturn = SyllabusManifestDto(
+                packId = "cbse-10-mathematics",
+                board = "CBSE",
+                classGrade = "10",
+                subject = "Mathematics",
+                chunkCount = 10,
+                corpusVersion = "1.0",
+                embeddingModel = "intfloat/multilingual-e5-small",
+                contentHash = "mock-sha256-hash-12345"
+            ),
+            // Chunks should NOT be fetched
+            chunksToReturn = null
+        )
+        val fakeDb = FakeSyllabusDatabase().apply {
+            isCurrentResult = true // Simulates that local database already has current hash
+        }
+
+        val repo = SyllabusSyncRepository(fakeClient, fakeDb)
+        val result = repo.syncCurriculumPack("CBSE", "10", "Mathematics")
+
+        assertTrue(result.isSuccess)
+        assertEquals(10, result.getOrNull())
+        // Verified: No chunks were imported because local pack was already current
+        assertEquals(0, fakeDb.importedRecords.size)
+        assertTrue(repo.syncState.value is SyllabusSyncState.Success)
+    }
+
+    @Test
+    fun testFailsWhenPackDownloadIncomplete() = runBlocking {
+        val fakeClient = FakeSyllabusSyncClient(
+            packsToReturn = listOf(
+                SyllabusPackSummaryDto(
+                    packId = "cbse-10-mathematics",
+                    board = "CBSE",
+                    classGrade = "10",
+                    subject = "Mathematics",
+                    chunkCount = 10,
+                    embeddingModel = "intfloat/multilingual-e5-small"
+                )
+            ),
+            manifestToReturn = SyllabusManifestDto(
+                packId = "cbse-10-mathematics",
+                board = "CBSE",
+                classGrade = "10",
+                subject = "Mathematics",
+                chunkCount = 10,
+                corpusVersion = "1.0",
+                embeddingModel = "intfloat/multilingual-e5-small",
+                contentHash = "hash-expecting-10"
+            ),
+            chunksToReturn = SyllabusChunksResponseDto(
+                packId = "cbse-10-mathematics",
+                chunks = listOf(
+                    SyllabusChunkDto(
+                        chunkId = "c1",
+                        content = "Partial content",
+                        board = "CBSE",
+                        classGrade = "10",
+                        subject = "Mathematics"
+                    )
+                ),
+                nextCursor = null,
+                hasMore = false, // Interrupted early!
+                totalChunks = 10
+            )
+        )
+        val fakeDb = FakeSyllabusDatabase()
+
+        val repo = SyllabusSyncRepository(fakeClient, fakeDb)
+        val result = repo.syncCurriculumPack("CBSE", "10", "Mathematics")
+
+        assertTrue(result.isFailure)
+        assertTrue(repo.syncState.value is SyllabusSyncState.Error)
+        // Verified: Incomplete download does NOT record pack as completed
+        assertEquals(null, fakeDb.recordedPackId)
     }
 }
