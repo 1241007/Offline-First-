@@ -7,7 +7,8 @@ import com.offline_First.domain.model.RAGRequestContext
 import com.offline_First.domain.model.RetrievedChunk
 
 /**
- * Repository for offline curriculum retrieval using SQLite FTS5.
+ * Repository for offline curriculum retrieval using SQLite LIKE keyword search
+ * and local 384-dimensional vector similarity search.
  */
 class OfflineSyllabusRepository(
     private val context: Context,
@@ -20,7 +21,8 @@ class OfflineSyllabusRepository(
     fun retrieve(
         query: String,
         context: RAGRequestContext,
-        topK: Int = 5
+        topK: Int = 5,
+        queryEmbedding: FloatArray? = null
     ): Pair<List<RetrievedChunk>, EvidenceOutcome> {
         // General mode RAG is disabled without configured general corpus
         if (context.appMode == AppMode.GENERAL) {
@@ -32,13 +34,24 @@ class OfflineSyllabusRepository(
             return emptyList<RetrievedChunk>() to EvidenceOutcome.MISSING
         }
 
-        val chunks = database.searchChunks(
-            query = query,
-            board = context.board,
-            classGrade = context.classGrade,
-            subject = context.subject,
-            limit = topK
-        )
+        val chunks = if (queryEmbedding != null && queryEmbedding.isNotEmpty()) {
+            database.hybridSearch(
+                query = query,
+                queryEmbedding = queryEmbedding,
+                board = context.board,
+                classGrade = context.classGrade,
+                subject = context.subject,
+                limit = topK
+            )
+        } else {
+            database.searchChunks(
+                query = query,
+                board = context.board,
+                classGrade = context.classGrade,
+                subject = context.subject,
+                limit = topK
+            )
+        }
 
         if (chunks.isEmpty()) {
             return emptyList<RetrievedChunk>() to EvidenceOutcome.MISSING

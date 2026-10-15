@@ -5,25 +5,114 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 import com.offline_First.domain.model.RetrievedChunk
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.sqrt
 
+private const val TAG = "SyllabusDatabase"
 private const val SYLLABUS_DB_NAME = "edunova_syllabus.db"
-private const val SYLLABUS_DB_VERSION = 1
+// Bumped from version 1 to 2 to safely migrate away from unsupported SQLite FTS5 module
+// on Android and enable safe LIKE-based search plus 384-dimensional vector embeddings.
+private const val SYLLABUS_DB_VERSION = 2
+
+/** Data class for inserting or syncing syllabus chunks with precomputed embeddings. */
+data class SyllabusChunkRecord(
+    val chunkId: String,
+    val board: String,
+    val classGrade: String,
+    val subject: String,
+    val chapterTitle: String,
+    val sectionTitle: String? = null,
+    val pageReference: String? = null,
+    val content: String,
+    val sourceId: String? = null,
+    val corpusVersion: String? = null,
+    val language: String = "en",
+    val contentHash: String? = null,
+    val embedding: FloatArray? = null,
+    val embeddingModel: String? = null,
+    val embeddingVersion: String? = null
+)
 
 /**
- * SQLite Database managing syllabus chunks and FTS5 external content full-text search.
+ * Android SQLite database for curriculum syllabus content and offline retrieval.
  *
- * Implements complete FTS5 external-content lifecycle:
- * - Insert, update, and delete synchronization triggers
- * - Rebuild index API
- * - Immediate searchability on pack downloads
+ * Replaces the unverified FTS5 virtual table with a robust, Android API 24+ compatible
+ * LIKE-based keyword search combined with local cosine-similarity vector search over
+ * precomputed 384-dimensional multilingual embeddings.
+ *
+ * Upgrades safely from existing DB v1 instances without deleting existing records.
  */
-open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLABUS_DB_NAME, null, SYLLABUS_DB_VERSION) {
+open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
+    context,
+    SYLLABUS_DB_NAME,
+    null,
+    SYLLABUS_DB_VERSION
+) {
+
+    companion object {
+        const val TABLE_CHUNKS = "syllabus_chunks"
+        const val EMBEDDING_DIMENSION = 384
+
+        // Common short stop words that do not add keyword filtering value
+        private val STOPWORDS = setOf(
+            "a", "about", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+            "has", "he", "in", "is", "it", "its", "of", "on", "that", "the", "to",
+            "was", "were", "will", "with"
+        )
+
+        /**
+         * Serializes a 384-element float array into raw 1536-byte little-endian BLOB.
+         */
+        fun floatArrayToBlob(vector: FloatArray?): ByteArray? {
+            if (vector == null || vector.isEmpty()) return null
+            val buffer = ByteBuffer.allocate(vector.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (f in vector) {
+                buffer.putFloat(f)
+            }
+            return buffer.array()
+        }
+
+        /**
+         * Deserializes a raw little-endian BLOB into a float array.
+         */
+        fun blobToFloatArray(blob: ByteArray?): FloatArray? {
+            if (blob == null || blob.isEmpty() || blob.size % 4 != 0) return null
+            val count = blob.size / 4
+            val buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN)
+            val result = FloatArray(count)
+            for (i in 0 until count) {
+                result[i] = buffer.float
+            }
+            return result
+        }
+
+        /**
+         * Calculates cosine similarity between two float vectors.
+         */
+        fun cosineSimilarity(v1: FloatArray, v2: FloatArray): Float {
+            if (v1.size != v2.size || v1.isEmpty()) return 0.0f
+            var dot = 0.0f
+            var norm1 = 0.0f
+            var norm2 = 0.0f
+            for (i in v1.indices) {
+                val a = v1[i]
+                val b = v2[i]
+                dot += a * b
+                norm1 += a * a
+                norm2 += b * b
+            }
+            val denom = sqrt(norm1) * sqrt(norm2)
+            return if (denom > 1e-9f) (dot / denom).coerceIn(-1.0f, 1.0f) else 0.0f
+        }
+    }
 
     override fun onCreate(db: SQLiteDatabase) {
-        // 1. Content table
+        // 1. Core syllabus chunks table with full curriculum metadata and embedding storage
         db.execSQL("""
-            CREATE TABLE IF NOT EXISTS syllabus_chunks (
+            CREATE TABLE IF NOT EXISTS $TABLE_CHUNKS (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chunk_id TEXT UNIQUE NOT NULL,
                 board TEXT NOT NULL,
@@ -34,61 +123,99 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
                 page_reference TEXT,
                 content TEXT NOT NULL,
                 source_id TEXT,
-                corpus_version TEXT
+                corpus_version TEXT,
+                language TEXT DEFAULT 'en',
+                content_hash TEXT,
+                embedding BLOB,
+                embedding_model TEXT,
+                embedding_version TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
         """.trimIndent())
 
-        // 2. FTS5 External Content Virtual Table
-        db.execSQL("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                content,
-                subject,
-                chapter_title,
-                content='syllabus_chunks',
-                content_rowid='id'
-            )
-        """.trimIndent())
+        // 2. High-performance B-tree indexes for fast curriculum filtering and keyword lookups
+        createIndexes(db)
+    }
 
-        // 3. FTS5 Synchronization Triggers
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON syllabus_chunks BEGIN
-                INSERT INTO chunks_fts(rowid, content, subject, chapter_title)
-                VALUES (new.id, new.content, new.subject, new.chapter_title);
-            END;
-        """.trimIndent())
-
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON syllabus_chunks BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content, subject, chapter_title)
-                VALUES('delete', old.id, old.content, old.subject, old.chapter_title);
-            END;
-        """.trimIndent())
-
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON syllabus_chunks BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content, subject, chapter_title)
-                VALUES('delete', old.id, old.content, old.subject, old.chapter_title);
-                INSERT INTO chunks_fts(rowid, content, subject, chapter_title)
-                VALUES (new.id, new.content, new.subject, new.chapter_title);
-            END;
-        """.trimIndent())
+    private fun createIndexes(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_board ON $TABLE_CHUNKS(board)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_class ON $TABLE_CHUNKS(class_grade)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_subject ON $TABLE_CHUNKS(subject)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_chapter ON $TABLE_CHUNKS(chapter_title)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_chunk_id ON $TABLE_CHUNKS(chunk_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sc_hash ON $TABLE_CHUNKS(content_hash)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS chunks_fts")
-        db.execSQL("DROP TABLE IF EXISTS syllabus_chunks")
-        onCreate(db)
+        Log.i(TAG, "Upgrading database from version $oldVersion to $newVersion")
+        if (oldVersion < 2) {
+            // Safe upgrade path from v1 (which had FTS5 dependencies) to v2
+            // 1. Remove legacy FTS5 triggers safely
+            val triggers = listOf("chunks_ai", "chunks_ad", "chunks_au")
+            for (trigger in triggers) {
+                try {
+                    db.execSQL("DROP TRIGGER IF EXISTS $trigger")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not drop legacy trigger $trigger: ${e.message}")
+                }
+            }
+
+            // 2. Remove legacy FTS5 virtual table if it exists
+            try {
+                db.execSQL("DROP TABLE IF EXISTS chunks_fts")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not drop legacy virtual table chunks_fts: ${e.message}")
+            }
+
+            // 3. Inspect existing syllabus_chunks columns and add any missing ones without dropping rows
+            try {
+                val existingCols = mutableSetOf<String>()
+                val cursor = db.rawQuery("PRAGMA table_info($TABLE_CHUNKS)", null)
+                cursor.use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (nameIdx >= 0) {
+                            existingCols.add(c.getString(nameIdx).lowercase())
+                        }
+                    }
+                }
+
+                val columnsToAdd = listOf(
+                    "language" to "TEXT DEFAULT 'en'",
+                    "content_hash" to "TEXT",
+                    "embedding" to "BLOB",
+                    "embedding_model" to "TEXT",
+                    "embedding_version" to "TEXT",
+                    "created_at" to "TEXT",
+                    "updated_at" to "TEXT"
+                )
+
+                for ((colName, colType) in columnsToAdd) {
+                    if (!existingCols.contains(colName.lowercase())) {
+                        db.execSQL("ALTER TABLE $TABLE_CHUNKS ADD COLUMN $colName $colType")
+                        Log.i(TAG, "Added column $colName to $TABLE_CHUNKS")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to safely migrate columns on $TABLE_CHUNKS: ${e.message}", e)
+            }
+
+            // 4. Ensure indexes exist
+            createIndexes(db)
+        }
     }
 
     /**
-     * Rebuilds the entire FTS5 index from the content table.
+     * Backward-compatible rebuild index stub.
+     * With standard B-tree tables, SQLite handles indexing automatically.
      */
     fun rebuildIndex() {
-        writableDatabase.execSQL("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild');")
+        // No-op for B-tree tables. Safe to call from existing code without exceptions.
     }
 
     /**
-     * Inserts a single syllabus chunk. Triggers automatically update chunks_fts.
+     * Inserts or updates a single syllabus chunk.
      */
     fun insertChunk(
         chunkId: String,
@@ -100,7 +227,12 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
         pageReference: String?,
         content: String,
         sourceId: String? = null,
-        corpusVersion: String? = null
+        corpusVersion: String? = null,
+        language: String = "en",
+        contentHash: String? = null,
+        embedding: FloatArray? = null,
+        embeddingModel: String? = null,
+        embeddingVersion: String? = null
     ): Long {
         val cv = ContentValues().apply {
             put("chunk_id", chunkId)
@@ -113,9 +245,17 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
             put("content", content)
             put("source_id", sourceId)
             put("corpus_version", corpusVersion)
+            put("language", language)
+            put("content_hash", contentHash)
+            if (embedding != null) {
+                put("embedding", floatArrayToBlob(embedding))
+            }
+            put("embedding_model", embeddingModel)
+            put("embedding_version", embeddingVersion)
+            put("updated_at", System.currentTimeMillis().toString())
         }
         return writableDatabase.insertWithOnConflict(
-            "syllabus_chunks",
+            TABLE_CHUNKS,
             null,
             cv,
             SQLiteDatabase.CONFLICT_REPLACE
@@ -123,14 +263,15 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
     }
 
     /**
-     * Updates an existing chunk by chunk_id. Triggers automatically update chunks_fts.
+     * Updates an existing chunk's content.
      */
     fun updateChunkContent(chunkId: String, newContent: String): Int {
         val cv = ContentValues().apply {
             put("content", newContent)
+            put("updated_at", System.currentTimeMillis().toString())
         }
         return writableDatabase.update(
-            "syllabus_chunks",
+            TABLE_CHUNKS,
             cv,
             "chunk_id = ?",
             arrayOf(chunkId)
@@ -138,19 +279,18 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
     }
 
     /**
-     * Deletes a chunk by chunk_id. Triggers automatically delete from chunks_fts.
+     * Deletes a chunk by chunk_id.
      */
     fun deleteChunk(chunkId: String): Int {
         return writableDatabase.delete(
-            "syllabus_chunks",
+            TABLE_CHUNKS,
             "chunk_id = ?",
             arrayOf(chunkId)
         )
     }
 
     /**
-     * Bulk inserts a list of syllabus chunk maps (e.g. from an offline syllabus pack)
-     * and rebuilds the index to ensure immediate searchability.
+     * Bulk imports a syllabus pack from legacy map format.
      */
     fun importSyllabusPack(chunks: List<Map<String, String>>) {
         val db = writableDatabase
@@ -168,14 +308,53 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
                     put("content", item["content"] ?: "")
                     put("source_id", item["source_id"])
                     put("corpus_version", item["corpus_version"])
+                    put("language", item["language"] ?: "en")
+                    put("content_hash", item["content_hash"])
+                    put("embedding_model", item["embedding_model"])
+                    put("embedding_version", item["embedding_version"])
                 }
-                db.insertWithOnConflict("syllabus_chunks", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+                db.insertWithOnConflict(TABLE_CHUNKS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
             }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
-        rebuildIndex()
+    }
+
+    /**
+     * Bulk imports syllabus chunk records including precomputed vector embeddings.
+     */
+    open fun importSyllabusRecords(records: List<SyllabusChunkRecord>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (rec in records) {
+                val cv = ContentValues().apply {
+                    put("chunk_id", rec.chunkId)
+                    put("board", rec.board)
+                    put("class_grade", rec.classGrade)
+                    put("subject", rec.subject)
+                    put("chapter_title", rec.chapterTitle)
+                    put("section_title", rec.sectionTitle)
+                    put("page_reference", rec.pageReference)
+                    put("content", rec.content)
+                    put("source_id", rec.sourceId)
+                    put("corpus_version", rec.corpusVersion)
+                    put("language", rec.language)
+                    put("content_hash", rec.contentHash)
+                    if (rec.embedding != null) {
+                        put("embedding", floatArrayToBlob(rec.embedding))
+                    }
+                    put("embedding_model", rec.embeddingModel)
+                    put("embedding_version", rec.embeddingVersion)
+                    put("updated_at", System.currentTimeMillis().toString())
+                }
+                db.insertWithOnConflict(TABLE_CHUNKS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     /**
@@ -200,7 +379,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
         }
 
         val whereStr = if (whereClauses.isNotEmpty()) "WHERE " + whereClauses.joinToString(" AND ") else ""
-        val cursor: Cursor = db.rawQuery("SELECT COUNT(*) FROM syllabus_chunks $whereStr", args.toTypedArray())
+        val cursor: Cursor = db.rawQuery("SELECT COUNT(*) FROM $TABLE_CHUNKS $whereStr", args.toTypedArray())
         val count = cursor.use {
             if (it.moveToFirst()) it.getInt(0) else 0
         }
@@ -208,7 +387,10 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
     }
 
     /**
-     * Executes FTS5 search using MATCH against chunks_fts and joins syllabus_chunks.
+     * Executes reliable LIKE-based keyword search on Android SQLite.
+     *
+     * Extracts keywords, constructs weighted score expressions, filters by curriculum metadata,
+     * and normalizes the resulting relevance scores.
      */
     fun searchChunks(
         query: String,
@@ -220,61 +402,202 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
         val cleanQuery = query.replace("\"", "").trim()
         if (cleanQuery.isEmpty()) return emptyList()
 
-        val ftsMatchQuery = cleanQuery.split("\\s+".toRegex())
-            .filter { it.isNotBlank() }
-            .joinToString(" OR ") { "$it*" }
+        val rawTokens = cleanQuery.split("\\s+".toRegex()).map { it.trim().lowercase() }
+        val filteredTokens = rawTokens.filter { it.length >= 2 && !STOPWORDS.contains(it) }
+        val keywords = if (filteredTokens.isNotEmpty()) filteredTokens else rawTokens.filter { it.isNotBlank() }
+        if (keywords.isEmpty()) return emptyList()
 
-        val whereClauses = mutableListOf("chunks_fts MATCH ?")
-        val args = mutableListOf(ftsMatchQuery)
+        val db = readableDatabase
+
+        // Build SELECT score expression:
+        // Match in chapter_title: 4 pts
+        // Match in subject: 3 pts
+        // Match in section_title: 2 pts
+        // Match in content: 1 pt
+        // Match full query: 5 bonus pts
+        val scoreParts = mutableListOf<String>()
+        val scoreArgs = mutableListOf<String>()
+
+        for (kw in keywords) {
+            val pattern = "%$kw%"
+            scoreParts.add("""
+                (CASE WHEN lower(c.chapter_title) LIKE ? THEN 4 ELSE 0 END +
+                 CASE WHEN lower(c.subject) LIKE ? THEN 3 ELSE 0 END +
+                 CASE WHEN lower(coalesce(c.section_title, '')) LIKE ? THEN 2 ELSE 0 END +
+                 CASE WHEN lower(c.content) LIKE ? THEN 1 ELSE 0 END)
+            """.trimIndent())
+            scoreArgs.add(pattern)
+            scoreArgs.add(pattern)
+            scoreArgs.add(pattern)
+            scoreArgs.add(pattern)
+        }
+
+        // Exact full phrase bonus
+        val fullPhrasePattern = "%${cleanQuery.lowercase()}%"
+        scoreParts.add("""
+            (CASE WHEN lower(c.content) LIKE ? THEN 5 ELSE 0 END +
+             CASE WHEN lower(c.chapter_title) LIKE ? THEN 5 ELSE 0 END)
+        """.trimIndent())
+        scoreArgs.add(fullPhrasePattern)
+        scoreArgs.add(fullPhrasePattern)
+
+        val scoreExpr = scoreParts.joinToString(" + ")
+
+        // WHERE clauses
+        val whereClauses = mutableListOf<String>()
+        val filterArgs = mutableListOf<String>()
+
+        // At least one keyword must appear in content, chapter, or subject
+        val keywordMatchClauses = keywords.map { kw ->
+            val p = "%$kw%"
+            filterArgs.add(p)
+            filterArgs.add(p)
+            filterArgs.add(p)
+            "(lower(c.content) LIKE ? OR lower(c.chapter_title) LIKE ? OR lower(c.subject) LIKE ?)"
+        }
+        whereClauses.add("(${keywordMatchClauses.joinToString(" OR ")})")
 
         if (!board.isNullOrBlank()) {
             whereClauses.add("c.board = ?")
-            args.add(board.trim())
+            filterArgs.add(board.trim())
         }
         if (!classGrade.isNullOrBlank()) {
             whereClauses.add("c.class_grade = ?")
-            args.add(classGrade.trim())
+            filterArgs.add(classGrade.trim())
         }
         if (!subject.isNullOrBlank()) {
             whereClauses.add("c.subject LIKE ?")
-            args.add("%${subject.trim()}%")
+            filterArgs.add("%${subject.trim()}%")
         }
 
-        val db = readableDatabase
+        val allArgs = ArrayList<String>(scoreArgs.size + filterArgs.size + 1)
+        allArgs.addAll(scoreArgs)
+        allArgs.addAll(filterArgs)
+        allArgs.add(limit.toString())
+
         val sql = """
             SELECT c.chunk_id, c.content, c.board, c.class_grade, c.subject,
                    c.chapter_title, c.section_title, c.page_reference, c.source_id,
-                   bm25(chunks_fts) as rank_score
-            FROM chunks_fts f
-            JOIN syllabus_chunks c ON f.rowid = c.id
+                   ($scoreExpr) AS match_score
+            FROM $TABLE_CHUNKS c
             WHERE ${whereClauses.joinToString(" AND ")}
-            ORDER BY rank_score ASC
+            ORDER BY match_score DESC
             LIMIT ?
         """.trimIndent()
 
-        args.add(limit.toString())
-        val cursor = db.rawQuery(sql, args.toTypedArray())
         val results = mutableListOf<RetrievedChunk>()
+        val maxTheoreticalScore = (keywords.size * 4.0f + 5.0f).coerceAtLeast(1.0f)
 
-        cursor.use { c ->
-            var rank = 1
-            while (c.moveToNext()) {
-                val chunkId = c.getString(0)
-                val content = c.getString(1)
-                val b = c.getString(2)
-                val cg = c.getString(3)
-                val s = c.getString(4)
-                val chapter = c.getString(5)
-                val section = c.getString(6)
-                val pageRef = c.getString(7)
-                val sourceId = c.getString(8)
-                val bm25Score = c.getFloat(9)
+        try {
+            val cursor = db.rawQuery(sql, allArgs.toTypedArray())
+            cursor.use { c ->
+                var rank = 1
+                while (c.moveToNext()) {
+                    val chunkId = c.getString(0)
+                    val content = c.getString(1)
+                    val b = c.getString(2)
+                    val cg = c.getString(3)
+                    val s = c.getString(4)
+                    val chapter = c.getString(5)
+                    val section = c.getString(6)
+                    val pageRef = c.getString(7)
+                    val sourceId = c.getString(8)
+                    val rawScore = c.getFloat(9)
 
-                // Approximate normalized score based on rank (rank 1 = 0.85, rank 2 = 0.70, etc.)
-                val normalizedScore = (1.0f / (rank + 0.5f)).coerceIn(0.0f, 1.0f)
+                    // Normalized score calibrated to [0.0, 1.0]
+                    // Rank 1 with strong matches reaches >= 0.70 (SUFFICIENT)
+                    val scoreFactor = (rawScore / maxTheoreticalScore).coerceIn(0.1f, 1.0f)
+                    val rankDecay = 1.0f / (rank * 0.35f + 0.65f)
+                    val normalizedScore = (scoreFactor * 0.7f + rankDecay * 0.3f).coerceIn(0.0f, 1.0f)
 
-                results.add(
-                    RetrievedChunk(
+                    results.add(
+                        RetrievedChunk(
+                            chunkId = chunkId,
+                            content = content,
+                            board = b,
+                            classGrade = cg,
+                            subject = s,
+                            chapter = chapter,
+                            section = section,
+                            textbookTitle = "$b Class $cg $s",
+                            pageReference = pageRef,
+                            sourceId = sourceId,
+                            relevanceScore = rawScore,
+                            rawRrfScore = rawScore,
+                            normalizedScore = normalizedScore
+                        )
+                    )
+                    rank++
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "LIKE search query failed: ${e.message}", e)
+        }
+
+        return results
+    }
+
+    /**
+     * Executes local vector cosine similarity search over stored 384-dimensional embeddings.
+     */
+    fun searchByVector(
+        queryEmbedding: FloatArray,
+        board: String? = null,
+        classGrade: String? = null,
+        subject: String? = null,
+        limit: Int = 5
+    ): List<RetrievedChunk> {
+        if (queryEmbedding.size != EMBEDDING_DIMENSION) {
+            Log.w(TAG, "Query embedding dimension ${queryEmbedding.size} does not match expected $EMBEDDING_DIMENSION")
+            return emptyList()
+        }
+
+        val db = readableDatabase
+        val whereClauses = mutableListOf("embedding IS NOT NULL")
+        val args = mutableListOf<String>()
+
+        if (!board.isNullOrBlank()) {
+            whereClauses.add("board = ?")
+            args.add(board.trim())
+        }
+        if (!classGrade.isNullOrBlank()) {
+            whereClauses.add("class_grade = ?")
+            args.add(classGrade.trim())
+        }
+        if (!subject.isNullOrBlank()) {
+            whereClauses.add("subject LIKE ?")
+            args.add("%${subject.trim()}%")
+        }
+
+        val sql = """
+            SELECT chunk_id, content, board, class_grade, subject,
+                   chapter_title, section_title, page_reference, source_id, embedding
+            FROM $TABLE_CHUNKS
+            WHERE ${whereClauses.joinToString(" AND ")}
+        """.trimIndent()
+
+        data class ScoredItem(val chunk: RetrievedChunk, val similarity: Float)
+        val scoredList = mutableListOf<ScoredItem>()
+
+        try {
+            val cursor = db.rawQuery(sql, args.toTypedArray())
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val chunkId = c.getString(0)
+                    val content = c.getString(1)
+                    val b = c.getString(2)
+                    val cg = c.getString(3)
+                    val s = c.getString(4)
+                    val chapter = c.getString(5)
+                    val section = c.getString(6)
+                    val pageRef = c.getString(7)
+                    val sourceId = c.getString(8)
+                    val blob = c.getBlob(9)
+
+                    val chunkEmbedding = blobToFloatArray(blob) ?: continue
+                    val sim = cosineSimilarity(queryEmbedding, chunkEmbedding)
+
+                    val chunk = RetrievedChunk(
                         chunkId = chunkId,
                         content = content,
                         board = b,
@@ -285,14 +608,71 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(context, SYLLAB
                         textbookTitle = "$b Class $cg $s",
                         pageReference = pageRef,
                         sourceId = sourceId,
-                        relevanceScore = -bm25Score,
-                        normalizedScore = normalizedScore
+                        relevanceScore = sim,
+                        rawRrfScore = sim,
+                        normalizedScore = ((sim + 1.0f) / 2.0f).coerceIn(0.0f, 1.0f)
                     )
-                )
-                rank++
+                    scoredList.add(ScoredItem(chunk, sim))
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Vector search failed: ${e.message}", e)
         }
 
-        return results
+        scoredList.sortByDescending { it.similarity }
+        return scoredList.take(limit).map { it.chunk }
+    }
+
+    /**
+     * Executes hybrid retrieval combining keyword search and vector search with RRF scoring.
+     */
+    fun hybridSearch(
+        query: String,
+        queryEmbedding: FloatArray? = null,
+        board: String? = null,
+        classGrade: String? = null,
+        subject: String? = null,
+        limit: Int = 5
+    ): List<RetrievedChunk> {
+        val keywordResults = searchChunks(query, board, classGrade, subject, limit = limit * 2)
+
+        if (queryEmbedding == null || queryEmbedding.isEmpty()) {
+            return keywordResults.take(limit)
+        }
+
+        val vectorResults = searchByVector(queryEmbedding, board, classGrade, subject, limit = limit * 2)
+        if (vectorResults.isEmpty()) {
+            return keywordResults.take(limit)
+        }
+
+        // Reciprocal Rank Fusion (k=60)
+        val rrfK = 60
+        val rrfMaxScore = (1.0f / (rrfK + 1)) * 2.0f
+        val scores = mutableMapOf<String, Float>()
+        val chunkMap = mutableMapOf<String, RetrievedChunk>()
+
+        keywordResults.forEachIndexed { idx, chunk ->
+            val rank = idx + 1
+            scores[chunk.chunkId] = (scores[chunk.chunkId] ?: 0.0f) + (1.0f / (rrfK + rank))
+            chunkMap[chunk.chunkId] = chunk
+        }
+
+        vectorResults.forEachIndexed { idx, chunk ->
+            val rank = idx + 1
+            scores[chunk.chunkId] = (scores[chunk.chunkId] ?: 0.0f) + (1.0f / (rrfK + rank))
+            chunkMap.putIfAbsent(chunk.chunkId, chunk)
+        }
+
+        val sorted = scores.entries.sortedByDescending { it.value }
+        return sorted.take(limit).mapNotNull { entry ->
+            val baseChunk = chunkMap[entry.key] ?: return@mapNotNull null
+            val rawRrf = entry.value
+            val normalized = (rawRrf / rrfMaxScore).coerceIn(0.0f, 1.0f)
+            baseChunk.copy(
+                relevanceScore = normalized,
+                rawRrfScore = rawRrf,
+                normalizedScore = normalized
+            )
+        }
     }
 }

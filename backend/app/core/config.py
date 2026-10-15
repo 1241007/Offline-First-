@@ -49,12 +49,14 @@ class Settings(BaseSettings):
     backend_public_url: str = "http://localhost:8000"
 
     # Embedding and RAG configuration
-    embedding_provider: str = "openai"  # "openai", "openrouter", "custom"
+    embedding_provider: str = "openai"  # "local_e5", "openai", "openrouter", "custom"
     embedding_api_key: Optional[str] = None
     embedding_base_url: str = "https://api.openai.com/v1"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_dimensions: int = 384
     embedding_timeout_seconds: float = 3.0
+    embedding_query_prefix: str = "query: "
+    embedding_passage_prefix: str = "passage: "
     router_timeout_seconds: float = 2.0
     retrieval_timeout_seconds: float = 3.0
 

@@ -14,6 +14,7 @@ from app.api.routes.learning import router as learning_router
 from app.api.routes.profile import router as profile_router
 from app.api.routes.memory import router as memory_router
 from app.api.routes.retrieve import router as retrieve_router
+from app.api.routes.syllabus_sync import router as syllabus_sync_router
 from app.core.config import settings
 from app.core.errors import AuthException
 from app.core.rate_limit import limiter
@@ -152,3 +153,4 @@ app.include_router(learning_router)
 app.include_router(profile_router)
 app.include_router(memory_router)
 app.include_router(retrieve_router)
+app.include_router(syllabus_sync_router)

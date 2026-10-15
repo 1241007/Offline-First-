@@ -107,3 +107,61 @@ async def test_embed_query_success_with_dimensions():
         res = await service.embed_query("Explain photosynthesis")
         assert len(res) == 1536
         assert res == expected_vector
+
+
+@pytest.mark.asyncio
+async def test_local_e5_provider_dimension_and_normalization():
+    """Verify local_e5 provider returns 384 dimensions and normalized vector."""
+    service = EmbeddingService(
+        provider="local_e5",
+        dimensions=384,
+    )
+    assert service.is_configured
+    vec = await service.embed_query("Photosynthesis in plants")
+    assert len(vec) == 384
+    # Vector should be finite and normalized (norm ≈ 1.0)
+    norm = sum(x * x for x in vec) ** 0.5
+    assert abs(norm - 1.0) < 1e-4
+
+
+@pytest.mark.asyncio
+async def test_embed_passage_local_e5():
+    """Verify embed_passage returns 384 dimensions for document chunk."""
+    service = EmbeddingService(
+        provider="local_e5",
+        dimensions=384,
+    )
+    vec = await service.embed_passage("Chloroplasts contain chlorophyll that absorbs light.")
+    assert len(vec) == 384
+
+
+def test_quantized_onnx_artifact_parity():
+    """
+    Verify FastAPI uses the exact same dynamic quantized ONNX weights and tokenizer as Android,
+    not a separate full-precision (fp32) version.
+    """
+    from app.services.local_e5_service import (
+        ONNX_QUANTIZED_URL,
+        ONNX_QUANTIZED_SHA256,
+        ONNX_QUANTIZED_SIZE_BYTES,
+        TOKENIZER_URL,
+        TOKENIZER_SHA256,
+        EMBEDDING_DIM,
+    )
+
+    # 1. Must specifically point to model_quantized.onnx, NOT model.onnx (fp32)
+    assert ONNX_QUANTIZED_URL.endswith("model_quantized.onnx")
+    assert "model_quantized" in ONNX_QUANTIZED_URL
+
+    # 2. Must match verified Xenova ARM64-compatible dynamic quantized checksum
+    assert ONNX_QUANTIZED_SHA256 == "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193"
+    assert ONNX_QUANTIZED_SIZE_BYTES == 118308185
+
+    # 3. Must match verified tokenizer checksum
+    assert TOKENIZER_URL.endswith("tokenizer.json")
+    assert TOKENIZER_SHA256 == "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+
+    # 4. Dimension must be exactly 384
+    assert EMBEDDING_DIM == 384
+
+

@@ -5,6 +5,7 @@ from typing import List, Optional
 import httpx
 
 from app.core.config import settings
+from app.services.local_e5_service import local_e5_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,12 @@ class EmbeddingService:
     Provider-consistent embedding service.
     
     Guarantees:
-    - Dedicated embedding provider configuration (OpenAI, OpenRouter, or Custom).
+    - Dedicated embedding provider configuration (local_e5, OpenAI, OpenRouter, or Custom).
+    - Supports local E5 ONNX model (intfloat/multilingual-e5-small, 384 dimensions).
     - Prevents using OpenRouter API keys at OpenAI endpoints.
     - Validates returned vector dimensions against expected dimension before pgvector insertion/search.
     - Strict HTTP timeout enforcement matching retrieval deadlines.
+    - Consistent 'query: ' and 'passage: ' prefix handling for E5 models.
     """
 
     def __init__(
@@ -51,6 +54,8 @@ class EmbeddingService:
             self.api_key = explicit_key or settings.openrouter_api_key
             if "api.openai.com" in self.base_url:
                 self.base_url = "https://openrouter.ai/api/v1"
+        elif self.provider in ["local_e5", "onnx", "local"]:
+            self.api_key = explicit_key or "local_e5_engine"
         else:
             self.api_key = explicit_key or ""
 
@@ -58,6 +63,9 @@ class EmbeddingService:
 
     def _validate_configuration(self) -> None:
         """Validate provider and credential consistency."""
+        if self.provider in ["local_e5", "onnx", "local"]:
+            return
+
         if not self.api_key:
             # Service can be instantiated without key, but embed_query will report not configured
             return
@@ -71,7 +79,7 @@ class EmbeddingService:
 
     @property
     def is_configured(self) -> bool:
-        """Check if embedding service has valid credentials."""
+        """Check if embedding service has valid credentials or local engine."""
         if not self.api_key:
             return False
         if "api.openai.com" in self.base_url and self.api_key.startswith("sk-or-v1-"):
@@ -81,8 +89,7 @@ class EmbeddingService:
     async def embed_query(self, text: str) -> List[float]:
         """
         Generate embedding vector for a single query string.
-        
-        Enforces strict timeouts and dimension validation.
+        Applies 'query: ' prefix for E5 models.
         """
         if not self.is_configured:
             raise EmbeddingConfigurationError(
@@ -90,6 +97,49 @@ class EmbeddingService:
                 f"'{self.provider}'. Set EMBEDDING_API_KEY."
             )
 
+        if self.provider in ["local_e5", "onnx", "local"]:
+            return await local_e5_service.embed_query(text)
+
+        input_text = text.strip()
+        if "e5" in self.model.lower() and not input_text.startswith("query: "):
+            input_text = f"query: {input_text}"
+
+        return await self._remote_embed(input_text)
+
+    async def embed_passage(self, text: str) -> List[float]:
+        """
+        Generate embedding vector for a document passage.
+        Applies 'passage: ' prefix for E5 models.
+        """
+        if not self.is_configured:
+            raise EmbeddingConfigurationError(
+                "Embedding service is not configured with a valid API key for provider "
+                f"'{self.provider}'. Set EMBEDDING_API_KEY."
+            )
+
+        if self.provider in ["local_e5", "onnx", "local"]:
+            return await local_e5_service.embed_passage(text)
+
+        input_text = text.strip()
+        if "e5" in self.model.lower() and not input_text.startswith("passage: "):
+            input_text = f"passage: {input_text}"
+
+        return await self._remote_embed(input_text)
+
+    async def embed_passages_batch(self, texts: List[str]) -> List[List[float]]:
+        """Batch embed document passages."""
+        if not self.is_configured:
+            raise EmbeddingConfigurationError(
+                "Embedding service is not configured with a valid API key for provider "
+                f"'{self.provider}'. Set EMBEDDING_API_KEY."
+            )
+
+        if self.provider in ["local_e5", "onnx", "local"]:
+            return await local_e5_service.embed_passages_batch(texts)
+        return [await self.embed_passage(t) for t in texts]
+
+    async def _remote_embed(self, input_text: str) -> List[float]:
+        """Internal worker executing remote HTTP embedding request."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -100,7 +150,7 @@ class EmbeddingService:
 
         payload = {
             "model": self.model,
-            "input": text.strip(),
+            "input": input_text,
         }
 
         # Enforce underlying HTTP client timeout <= embedding deadline
