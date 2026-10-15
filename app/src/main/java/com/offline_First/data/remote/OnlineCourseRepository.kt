@@ -1,35 +1,20 @@
 package com.offline_First.data.remote
 
-import com.offline_First.data.local.CourseProgressStore
+import android.content.Context
+import android.content.SharedPreferences
 import com.offline_First.data.repository.CourseRepository
 import com.offline_First.domain.model.Course
 import com.offline_First.domain.model.CourseAccent
-import com.offline_First.domain.model.CourseCertificate
-import com.offline_First.domain.model.CourseDetail
-import com.offline_First.domain.model.CourseModule
-import com.offline_First.domain.model.LessonItem
-import com.offline_First.domain.model.RevisionItem
-import java.io.File
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
-/**
- * Course repository backed by EduNova FastAPI backend and Supabase PostgreSQL.
- *
- * Requirements:
- * - Online-only: courses, modules, lessons, and resources are fetched exclusively from the remote API.
- * - Never shows hardcoded/local course catalogues as a network-failure fallback during normal operation.
- * - Manages user-specific lesson completions, progress tracking, and certificates via persistent CourseProgressStore.
- */
 class OnlineCourseRepository(
-    val localFallback: CourseRepository? = null,
-    val progressStore: CourseProgressStore = CourseProgressStore()
+    context: Context? = null
 ) : CourseRepository {
 
-    fun bindStorageFile(file: File) {
-        progressStore.bindStorageFile(file)
-        if (localFallback is com.offline_First.data.local.LocalCourseRepository) {
-            localFallback.bindStorageFile(file)
-        }
-    }
+    private val prefs: SharedPreferences? = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private fun mapAccent(color: String): CourseAccent {
         return when (color.lowercase()) {
@@ -100,118 +85,83 @@ class OnlineCourseRepository(
         )
     }
 
-    override suspend fun getCourses(): Result<List<Course>> {
-        val remote = runCatching {
-            ChatApiClient.getCourses(featured = null).getOrThrow()
+    @Volatile
+    private var cachedCourses: List<Course> = loadPersistedCourses()
+
+    @Volatile
+    private var cachedFeatured: List<Course> = loadPersistedFeatured()
+
+    private fun loadPersistedCourses(): List<Course> {
+        val sp = prefs ?: return emptyList()
+        val raw = sp.getString(KEY_COURSES, null) ?: return emptyList()
+        return runCatching {
+            json.decodeFromString<List<CourseDto>>(raw).map { it.toDomain() }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun loadPersistedFeatured(): List<Course> {
+        val sp = prefs ?: return emptyList()
+        val raw = sp.getString(KEY_FEATURED, null) ?: return emptyList()
+        return runCatching {
+            json.decodeFromString<List<CourseDto>>(raw).map { it.toDomain() }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun savePersistedCourses(dtos: List<CourseDto>) {
+        val sp = prefs ?: return
+        runCatching {
+            sp.edit().putString(KEY_COURSES, json.encodeToString(dtos)).apply()
         }
-        val list = remote.getOrNull()
-        if (remote.isSuccess && list != null) {
-            return Result.success(list.map { it.toDomain() })
+    }
+
+    private fun savePersistedFeatured(dtos: List<CourseDto>) {
+        val sp = prefs ?: return
+        runCatching {
+            sp.edit().putString(KEY_FEATURED, json.encodeToString(dtos)).apply()
         }
-        if (localFallback != null) {
-            return localFallback.getCourses()
-        }
-        return remote.map { dtos -> dtos.map { it.toDomain() } }
+    }
+
+    override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
+        return ChatApiClient.getCourses(featured = null, limit = limit, offset = offset)
+            .map { dtos ->
+                val list = dtos.map { it.toDomain() }
+                if (offset == 0) {
+                    cachedCourses = list
+                    savePersistedCourses(dtos)
+                } else {
+                    cachedCourses = (cachedCourses + list).distinctBy { it.id }
+                }
+                list
+            }
+            .recoverCatching { error ->
+                if (cachedCourses.isNotEmpty()) {
+                    cachedCourses
+                } else {
+                    throw error
+                }
+            }
     }
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> {
-        val remote = runCatching {
-            ChatApiClient.getCourses(featured = true).getOrThrow()
-        }
-        val list = remote.getOrNull()
-        if (remote.isSuccess && list != null) {
-            return Result.success(list.map { it.toDomain() })
-        }
-        if (localFallback != null) {
-            return localFallback.getFeaturedCourses()
-        }
-        return remote.map { dtos -> dtos.map { it.toDomain() } }
+        return ChatApiClient.getCourses(featured = true)
+            .map { dtos ->
+                val list = dtos.map { it.toDomain() }
+                cachedFeatured = list
+                savePersistedFeatured(dtos)
+                list
+            }
+            .recoverCatching { error ->
+                if (cachedFeatured.isNotEmpty()) {
+                    cachedFeatured
+                } else {
+                    throw error
+                }
+            }
     }
 
-    override suspend fun getCoursesByCategory(categorySlug: String): Result<List<Course>> {
-        val remote = runCatching {
-            ChatApiClient.getCourses(category = categorySlug).getOrThrow()
-        }
-        val list = remote.getOrNull()
-        if (remote.isSuccess && list != null) {
-            return Result.success(list.map { it.toDomain() })
-        }
-        if (localFallback != null) {
-            return localFallback.getCoursesByCategory(categorySlug)
-        }
-        return remote.map { dtos -> dtos.map { it.toDomain() } }
-    }
-
-    override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
-        val remote = runCatching {
-            ChatApiClient.getCourseDetail(courseId).getOrThrow()
-        }
-        val detail = remote.getOrNull()
-        if (remote.isSuccess && detail != null) {
-            return Result.success(detail.toDomain(courseId))
-        }
-        if (localFallback != null) {
-            return localFallback.getCourseDetail(courseId)
-        }
-        return remote.map { it?.toDomain(courseId) }
-    }
-
-    override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> {
-        progressStore.markLessonCompleted(courseId, lessonId, completed)
-        localFallback?.markLessonCompleted(courseId, lessonId, completed)
-        return Result.success(Unit)
-    }
-
-    override suspend fun isLessonCompleted(courseId: String, lessonId: String): Boolean {
-        return progressStore.isLessonCompleted(courseId, lessonId)
-    }
-
-    override suspend fun getCompletedLessonCount(courseId: String, lessonIds: Collection<String>): Int {
-        return progressStore.getCompletedLessonCount(courseId, lessonIds)
-    }
-
-    override suspend fun getCourseProgressPercentage(courseId: String, lessonIds: Collection<String>): Float {
-        return progressStore.getCourseProgressPercentage(courseId, lessonIds)
-    }
-
-    override suspend fun isCourseCompleted(courseId: String, lessonIds: Collection<String>): Boolean {
-        return progressStore.isCourseCompleted(courseId, lessonIds)
-    }
-
-    override suspend fun getCertificate(courseId: String): CourseCertificate? {
-        return progressStore.getCertificate(courseId)
-    }
-
-    override suspend fun getAllCertificates(): List<CourseCertificate> {
-        return progressStore.getAllCertificates()
-    }
-
-    override suspend fun issueCertificate(
-        courseId: String,
-        courseName: String,
-        learnerName: String,
-        totalLessons: Int
-    ): CourseCertificate? {
-        return progressStore.issueCertificate(courseId, courseName, learnerName, totalLessons)
-    }
-
-    override suspend fun addRevisionItem(item: RevisionItem): Result<Unit> {
-        progressStore.addRevisionItem(item)
-        localFallback?.addRevisionItem(item)
-        return Result.success(Unit)
-    }
-
-    override suspend fun removeRevisionItem(courseId: String, lessonId: String): Result<Unit> {
-        progressStore.removeRevisionItem(courseId, lessonId)
-        localFallback?.removeRevisionItem(courseId, lessonId)
-        return Result.success(Unit)
-    }
-
-    override suspend fun isMarkedForRevision(courseId: String, lessonId: String): Boolean {
-        return progressStore.isMarkedForRevision(courseId, lessonId)
-    }
-
-    override suspend fun getRevisionItems(): Result<List<RevisionItem>> {
-        return Result.success(progressStore.getRevisionItems())
+    companion object {
+        private const val PREFS_NAME = "edunova_courses_cache"
+        private const val KEY_COURSES = "persisted_courses"
+        private const val KEY_FEATURED = "persisted_featured"
     }
 }

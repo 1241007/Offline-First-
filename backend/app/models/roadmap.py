@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, CheckConstraint, Index
+from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, CheckConstraint, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
@@ -33,6 +33,9 @@ class Roadmap(Base):
     accent_theme: Mapped[str] = mapped_column(String(50), nullable=False, default="primary")
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    structure: Mapped[Optional[dict]] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -75,7 +78,7 @@ class RoadmapItem(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    skills: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    skills: Mapped[Optional[dict]] = mapped_column(JSONB().with_variant(JSON, "sqlite"), nullable=True)
     duration: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

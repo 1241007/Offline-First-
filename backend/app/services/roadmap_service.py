@@ -12,9 +12,18 @@ class RoadmapService:
     def __init__(self, db: AsyncSession):
         self.repo = RoadmapRepository(db)
     
-    async def get_all_roadmaps(self) -> List[RoadmapListResponse]:
-        """Get all system roadmaps"""
-        roadmaps = await self.repo.get_all_system_roadmaps()
+    async def get_all_roadmaps(
+        self,
+        category: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[RoadmapListResponse]:
+        """Get system roadmaps with optional category filter and pagination"""
+        roadmaps = await self.repo.get_all_system_roadmaps(
+            category=category,
+            limit=limit,
+            offset=offset
+        )
         
         result = []
         for roadmap in roadmaps:

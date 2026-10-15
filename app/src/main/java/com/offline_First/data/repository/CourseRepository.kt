@@ -9,7 +9,7 @@ import com.offline_First.domain.model.RevisionItem
  * Repository interface for course catalog, lesson progress, revisions, and completion certificates.
  */
 interface CourseRepository {
-    suspend fun getCourses(): Result<List<Course>>
+    suspend fun getCourses(limit: Int? = null, offset: Int = 0): Result<List<Course>>
     suspend fun getFeaturedCourses(): Result<List<Course>>
     suspend fun getCoursesByCategory(categorySlug: String): Result<List<Course>> = getCourses()
     suspend fun getCourseDetail(courseId: String): Result<CourseDetail?>
