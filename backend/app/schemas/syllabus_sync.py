@@ -10,6 +10,7 @@ class SyllabusPackSummary(BaseModel):
     board: str
     class_grade: str
     subject: str
+    academic_year: Optional[str] = "2026-27"
     language: str = "en"
     chunk_count: int = 0
     corpus_version: str = "1.0"
@@ -28,6 +29,7 @@ class SyllabusManifestResponse(BaseModel):
     board: str
     class_grade: str
     subject: str
+    academic_year: Optional[str] = "2026-27"
     language: str = "en"
     chunk_count: int
     corpus_version: str

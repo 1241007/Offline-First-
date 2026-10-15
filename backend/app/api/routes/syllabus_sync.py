@@ -1,5 +1,6 @@
 """Authenticated syllabus pack synchronization endpoints for EduNova."""
 
+import hashlib
 import json
 import logging
 from typing import Any, List, Optional
@@ -48,18 +49,22 @@ async def list_available_packs(
 ) -> SyllabusPackListResponse:
     """
     Lists available syllabus curriculum packs stored in the Supabase knowledge base.
-    Highlights or filters packs compatible with the authenticated user's profile.
+    Restricted strictly to authorized educational curriculum documents (cbseacademic.nic.in).
+    Copyrighted NCERT textbooks remain gated and are excluded from downloadable packs.
     """
     profile_repo = ProfileRepository(db)
     profile = await profile_repo.get_by_user_id(user_id)
 
+    # Join syllabus_documents to ensure only authorized curriculum documents are packaged
     sql = """
-        SELECT board, class_grade, subject, language, corpus_version,
-               embedding_model, embedding_version,
-               COUNT(*) as chunk_count, MAX(updated_at) as last_updated
-        FROM syllabus_chunks
-        GROUP BY board, class_grade, subject, language, corpus_version, embedding_model, embedding_version
-        ORDER BY board, class_grade, subject;
+        SELECT sc.board, sc.class_grade, sc.subject, sc.language, sc.corpus_version,
+               sc.embedding_model, sc.embedding_version,
+               COUNT(*) as chunk_count, MAX(sc.updated_at) as last_updated
+        FROM syllabus_chunks sc
+        JOIN syllabus_documents sd ON sc.document_id = sd.id
+        WHERE sd.source_url LIKE '%cbseacademic.nic.in%'
+        GROUP BY sc.board, sc.class_grade, sc.subject, sc.language, sc.corpus_version, sc.embedding_model, sc.embedding_version
+        ORDER BY sc.board, sc.class_grade, sc.subject;
     """
 
     try:
@@ -78,6 +83,7 @@ async def list_available_packs(
                 board=r.board,
                 class_grade=r.class_grade,
                 subject=r.subject,
+                academic_year="2026-27",
                 language=r.language or "en",
                 chunk_count=r.chunk_count,
                 corpus_version=r.corpus_version or "1.0",
@@ -111,14 +117,17 @@ async def get_pack_manifest(
     db: AsyncSession = Depends(get_db),
 ) -> SyllabusManifestResponse:
     """
-    Returns the pack manifest including chunk count, model version, and embedding configuration.
+    Returns the pack manifest including chunk count, model version, embedding configuration,
+    and cryptographic pack content hash for client integrity validation.
     """
     sql = """
-        SELECT board, class_grade, subject, language, corpus_version,
-               embedding_model, embedding_version,
-               COUNT(*) as chunk_count, MAX(updated_at) as last_updated
-        FROM syllabus_chunks
-        GROUP BY board, class_grade, subject, language, corpus_version, embedding_model, embedding_version;
+        SELECT sc.board, sc.class_grade, sc.subject, sc.language, sc.corpus_version,
+               sc.embedding_model, sc.embedding_version,
+               COUNT(*) as chunk_count, MAX(sc.updated_at) as last_updated
+        FROM syllabus_chunks sc
+        JOIN syllabus_documents sd ON sc.document_id = sd.id
+        WHERE sd.source_url LIKE '%cbseacademic.nic.in%'
+        GROUP BY sc.board, sc.class_grade, sc.subject, sc.language, sc.corpus_version, sc.embedding_model, sc.embedding_version;
     """
     res = await db.execute(text(sql))
     rows = res.fetchall()
@@ -132,20 +141,39 @@ async def get_pack_manifest(
     if not matched_row:
         raise HTTPException(
             status_code=404,
-            detail=f"Syllabus pack '{pack_id}' not found or has no ingested chunks.",
+            detail=f"Syllabus pack '{pack_id}' not found or has no authorized ingested chunks.",
         )
+
+    # Compute deterministic SHA-256 content hash across all authorized chunks in pack
+    hash_sql = """
+        SELECT sc.content_hash
+        FROM syllabus_chunks sc
+        JOIN syllabus_documents sd ON sc.document_id = sd.id
+        WHERE sc.board = :board AND sc.class_grade = :class_grade AND sc.subject = :subject
+          AND sd.source_url LIKE '%cbseacademic.nic.in%'
+        ORDER BY sc.id ASC;
+    """
+    hash_res = await db.execute(
+        text(hash_sql),
+        {"board": matched_row.board, "class_grade": matched_row.class_grade, "subject": matched_row.subject}
+    )
+    hash_rows = hash_res.fetchall()
+    joined_hashes = "".join([h.content_hash or "" for h in hash_rows])
+    pack_content_hash = hashlib.sha256(joined_hashes.encode("utf-8")).hexdigest() if joined_hashes else None
 
     return SyllabusManifestResponse(
         pack_id=pack_id,
         board=matched_row.board,
         class_grade=matched_row.class_grade,
         subject=matched_row.subject,
+        academic_year="2026-27",
         language=matched_row.language or "en",
         chunk_count=matched_row.chunk_count,
         corpus_version=matched_row.corpus_version or "1.0",
         embedding_model=matched_row.embedding_model or "intfloat/multilingual-e5-small",
         embedding_version=matched_row.embedding_version or "1.0",
         embedding_dimension=384,
+        content_hash=pack_content_hash,
         last_updated=matched_row.last_updated,
     )
 
@@ -159,14 +187,16 @@ async def get_pack_chunks(
     db: AsyncSession = Depends(get_db),
 ) -> SyllabusChunksResponse:
     """
-    Paginated retrieval of syllabus chunks including precomputed 384-dimensional
+    Paginated retrieval of authorized syllabus chunks including precomputed 384-dimensional
     embeddings for on-device vector search.
     """
     # Find matching curriculum parameters
     manifest_sql = """
-        SELECT board, class_grade, subject, corpus_version, embedding_model, embedding_version, COUNT(*) as total
-        FROM syllabus_chunks
-        GROUP BY board, class_grade, subject, corpus_version, embedding_model, embedding_version;
+        SELECT sc.board, sc.class_grade, sc.subject, sc.corpus_version, sc.embedding_model, sc.embedding_version, COUNT(*) as total
+        FROM syllabus_chunks sc
+        JOIN syllabus_documents sd ON sc.document_id = sd.id
+        WHERE sd.source_url LIKE '%cbseacademic.nic.in%'
+        GROUP BY sc.board, sc.class_grade, sc.subject, sc.corpus_version, sc.embedding_model, sc.embedding_version;
     """
     res = await db.execute(text(manifest_sql))
     rows = res.fetchall()
@@ -186,26 +216,28 @@ async def get_pack_chunks(
     # Query chunks with cursor pagination
     query_parts = [
         """
-        SELECT id, content, board, class_grade, subject, chapter, section,
-               language, textbook_title, page_reference, source_id, corpus_version,
-               content_hash, embedding_model, embedding_version,
-               CAST(embedding AS text) as embedding_text
-        FROM syllabus_chunks
-        WHERE board = :board AND class_grade = :class_grade AND subject = :subject
+        SELECT sc.id, sc.content, sc.board, sc.class_grade, sc.subject, sc.chapter, sc.section,
+               sc.language, sc.textbook_title, sc.page_reference, sc.source_id, sc.corpus_version,
+               sc.content_hash, sc.embedding_model, sc.embedding_version,
+               CAST(sc.embedding AS text) as embedding_text
+        FROM syllabus_chunks sc
+        JOIN syllabus_documents sd ON sc.document_id = sd.id
+        WHERE sc.board = :board AND sc.class_grade = :class_grade AND sc.subject = :subject
+          AND sd.source_url LIKE '%cbseacademic.nic.in%'
         """
     ]
-    params = {
+    params: dict = {
         "board": matched.board,
         "class_grade": matched.class_grade,
         "subject": matched.subject,
         "limit": limit + 1,
     }
 
-    if cursor:
-        query_parts.append("AND id > :cursor")
-        params["cursor"] = cursor
+    if cursor is not None and isinstance(cursor, str) and cursor.strip():
+        query_parts.append("AND sc.id > :cursor")
+        params["cursor"] = cursor.strip()
 
-    query_parts.append("ORDER BY id ASC LIMIT :limit")
+    query_parts.append("ORDER BY sc.id ASC LIMIT :limit")
     sql = "\n".join(query_parts)
 
     chunk_res = await db.execute(text(sql), params)
@@ -213,7 +245,7 @@ async def get_pack_chunks(
 
     has_more = len(chunk_rows) > limit
     returned_rows = chunk_rows[:limit]
-    next_cursor = returned_rows[-1].id if has_more and returned_rows else None
+    next_cursor = str(returned_rows[-1].id) if has_more and returned_rows else None
 
     dtos: List[SyllabusChunkDTO] = []
     for r in returned_rows:
