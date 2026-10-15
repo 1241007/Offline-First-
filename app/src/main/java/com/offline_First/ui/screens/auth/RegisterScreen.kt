@@ -71,7 +71,7 @@ fun RegisterScreen(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
-                AuthEvent.LoginSucceeded -> Unit
+                AuthEvent.LoginSucceeded -> onLogin()
                 is AuthEvent.Message -> snackbarHostState.showSnackbar(event.text)
             }
         }
@@ -186,7 +186,10 @@ fun RegisterScreen(
                         termsError?.let { Text(it, color = EduNovaError) }
                     }
                 }
-                PrimaryAuthButton(text = "Create Account") {
+                PrimaryAuthButton(
+                    text = if (uiState.isSubmitting) "Creating Account..." else "Create Account",
+                    enabled = !uiState.isSubmitting
+                ) {
                     val nextNameError = if (fullName.isBlank()) "Please enter your name." else null
                     val nextEmailError = validateEmail(email)
                     val nextMobileError = validateMobile(mobile)

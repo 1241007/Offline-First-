@@ -63,7 +63,10 @@ data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val fromUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val parentId: String? = null,
+    val isEdited: Boolean = false,
+    val syncStatus: String = "synced"
 )
 
 /**
@@ -73,5 +76,20 @@ data class ChatSession(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
     val lastUpdated: Long = System.currentTimeMillis(),
+    val isArchived: Boolean = false,
+    val isPinned: Boolean = false,
+    val draftText: String = "",
     val messages: List<ChatMessage> = emptyList()
+)
+
+/**
+ * Long-term user memory record.
+ */
+data class UserMemoryItem(
+    val id: String = UUID.randomUUID().toString(),
+    val category: String,
+    val content: String,
+    val importance: Float = 1.0f,
+    val confidence: Float = 1.0f,
+    val active: Boolean = true
 )

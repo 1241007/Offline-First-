@@ -44,7 +44,9 @@ class AuthViewModel(
     fun register(input: RegistrationInput) {
         submit(
             operation = { repository.register(input) },
-            onSuccess = { eventChannel.send(AuthEvent.Message("Account created successfully.")) }
+            onSuccess = {
+                eventChannel.send(AuthEvent.LoginSucceeded)
+            }
         )
     }
 

@@ -13,9 +13,19 @@ class RoadmapRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def get_all_system_roadmaps(self) -> List[Roadmap]:
-        """Get all system roadmaps"""
-        query = select(Roadmap).where(Roadmap.is_system == True).order_by(Roadmap.created_at)
+    async def get_all_system_roadmaps(
+        self,
+        category: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[Roadmap]:
+        """Get system roadmaps with optional category filter and pagination"""
+        query = select(Roadmap).where(Roadmap.is_system == True)
+        if category and category.lower() != "all":
+            query = query.where(Roadmap.category == category)
+        query = query.order_by(Roadmap.created_at).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -44,3 +54,159 @@ class RoadmapRepository:
         
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def get_user_roadmaps(
+        self,
+        user_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[Roadmap]:
+        """Get user's personalized roadmaps with items"""
+        query = (
+            select(Roadmap)
+            .where(Roadmap.user_id == user_id, Roadmap.is_system == False)
+            .options(selectinload(Roadmap.items))
+            .order_by(Roadmap.created_at.desc())
+            .offset(offset)
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_roadmap_by_id_and_user(
+        self, roadmap_id: str, user_id: str
+    ) -> Optional[Roadmap]:
+        """Get roadmap by id with authorization check (either system roadmap or owned by user)"""
+        query = (
+            select(Roadmap)
+            .where(
+                Roadmap.id == roadmap_id,
+                (Roadmap.is_system == True) | (Roadmap.user_id == user_id),
+            )
+            .options(selectinload(Roadmap.items))
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def create_personalized_roadmap(
+        self,
+        user_id: str,
+        title: str,
+        slug: str,
+        category: str,
+        description: str,
+        level: str,
+        duration: str,
+        icon: str,
+        accent_theme: str,
+        structure: dict,
+        items: list[dict],
+        id: Optional[str] = None,
+    ) -> Roadmap:
+        """Create a personalized roadmap with items and structure JSON"""
+        kwargs = {
+            "user_id": user_id,
+            "is_system": False,
+            "title": title,
+            "slug": slug,
+            "category": category,
+            "description": description,
+            "level": level,
+            "duration": duration,
+            "icon": icon,
+            "accent_theme": accent_theme,
+            "structure": structure,
+        }
+        if id:
+            kwargs["id"] = id
+        roadmap = Roadmap(**kwargs)
+        self.db.add(roadmap)
+        await self.db.flush()
+
+        for idx, item_data in enumerate(items):
+            item = RoadmapItem(
+                roadmap_id=roadmap.id,
+                course_id=item_data.get("course_id"),
+                title=item_data["title"],
+                description=item_data.get("description"),
+                skills=item_data.get("skills", []),
+                duration=item_data.get("duration"),
+                display_order=idx + 1,
+            )
+            self.db.add(item)
+
+        await self.db.flush()
+        return await self.get_roadmap_by_id_and_user(roadmap.id, user_id)
+
+    async def update_personalized_roadmap(
+        self,
+        roadmap: Roadmap,
+        title: str,
+        category: str,
+        description: str,
+        level: str,
+        duration: str,
+        icon: str,
+        accent_theme: str,
+        structure: dict,
+        items: list[dict],
+    ) -> Roadmap:
+        """Update an existing personalized roadmap and refresh items"""
+        roadmap.title = title
+        roadmap.category = category
+        roadmap.description = description
+        roadmap.level = level
+        roadmap.duration = duration
+        roadmap.icon = icon
+        roadmap.accent_theme = accent_theme
+        roadmap.structure = structure
+
+        # Remove existing items and add updated items
+        if roadmap.items:
+            for it in list(roadmap.items):
+                await self.db.delete(it)
+            await self.db.flush()
+
+        for idx, item_data in enumerate(items):
+            item = RoadmapItem(
+                roadmap_id=roadmap.id,
+                course_id=item_data.get("course_id"),
+                title=item_data["title"],
+                description=item_data.get("description"),
+                skills=item_data.get("skills", []),
+                duration=item_data.get("duration"),
+                display_order=idx + 1,
+            )
+            self.db.add(item)
+
+        await self.db.flush()
+        return await self.get_roadmap_by_id_and_user(roadmap.id, roadmap.user_id)
+
+    async def delete_personalized_roadmap(self, roadmap_id: str, user_id: str) -> bool:
+        """Delete a user-owned personalized roadmap and associated items"""
+        roadmap = await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or roadmap.is_system or roadmap.user_id != user_id:
+            return False
+
+        await self.db.delete(roadmap)
+        await self.db.flush()
+        return True
+
+    async def rename_personalized_roadmap(
+        self, roadmap_id: str, user_id: str, new_title: str
+    ) -> Optional[Roadmap]:
+        """Update title of a user-owned personalized roadmap"""
+        roadmap = await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or roadmap.is_system or roadmap.user_id != user_id:
+            return None
+
+        roadmap.title = new_title
+        if roadmap.structure:
+            struct = dict(roadmap.structure)
+            struct["title"] = new_title
+            roadmap.structure = struct
+
+        await self.db.flush()
+        return await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+

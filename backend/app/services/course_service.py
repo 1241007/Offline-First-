@@ -15,12 +15,21 @@ class CourseService:
     async def get_courses(
         self,
         featured: Optional[bool] = None,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
     ) -> List[CourseListResponse]:
-        """Get all courses with optional filtering"""
+        """Get courses with optional filtering and pagination"""
         courses = await self.repo.get_all_courses(
+<<<<<<< HEAD
             featured=featured,
             category_slug=category
+=======
+            featured_only=featured or False,
+            category_slug=category,
+            limit=limit,
+            offset=offset
+>>>>>>> origin
         )
         
         response_items = []

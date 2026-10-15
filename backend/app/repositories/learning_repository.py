@@ -20,9 +20,11 @@ class LearningRepository:
     async def get_user_course_progress(
         self,
         user_id: str,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
     ) -> List[UserCourseProgress]:
-        """Get user's course progress records"""
+        """Get user's course progress records with optional pagination"""
         query = select(UserCourseProgress).where(
             UserCourseProgress.user_id == user_id
         ).options(
@@ -30,9 +32,14 @@ class LearningRepository:
         )
         
         if status:
-            query = query.where(UserCourseProgress.status == status)
+            if status == "in_progress":
+                query = query.where(UserCourseProgress.status.in_(["in_progress", "not_started"]))
+            else:
+                query = query.where(UserCourseProgress.status == status)
         
-        query = query.order_by(UserCourseProgress.last_accessed.desc())
+        query = query.order_by(UserCourseProgress.last_accessed.desc()).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -63,7 +70,7 @@ class LearningRepository:
             enrollment_date=date.today(),
             last_accessed=datetime.now(timezone.utc),
             completion_percentage=0.0,
-            status="not_started"
+            status="in_progress"
         )
         
         self.db.add(progress)

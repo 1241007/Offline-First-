@@ -109,7 +109,10 @@ fun LoginScreen(
                         Text("Forgot password?", fontWeight = FontWeight.SemiBold)
                     }
                 }
-                PrimaryAuthButton(text = "Login") {
+                PrimaryAuthButton(
+                    text = if (uiState.isSubmitting) "Logging in..." else "Login",
+                    enabled = !uiState.isSubmitting
+                ) {
                     val nextContactError = validateLoginContact(contact)
                     val nextPasswordError = when {
                         password.isBlank() -> "Password cannot be empty."

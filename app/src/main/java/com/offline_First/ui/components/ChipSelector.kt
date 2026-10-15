@@ -47,6 +47,7 @@ fun EduNovaFilterChip(
         )
     }
 }
+<<<<<<< HEAD
 
 @Composable
 fun EduNovaBadge(
@@ -82,3 +83,5 @@ fun EduNovaBadge(
         }
     }
 }
+=======
+>>>>>>> origin

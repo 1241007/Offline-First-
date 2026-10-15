@@ -1,6 +1,12 @@
 package com.offline_First.data.local
 
+import android.util.Log
+import com.offline_First.domain.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -9,14 +15,50 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+private const val TAG = "OfflineInferenceEngine"
+
+fun interface NativeTokenCallback {
+    fun onToken(piece: String): Boolean
+}
+
 interface OfflineInferenceEngine {
+    val isLoaded: Boolean
+        get() = false
+    val modelInstanceId: String?
+        get() = null
+    val loadCount: Int
+        get() = 0
+    val unloadCount: Int
+        get() = 0
+
     suspend fun loadModel(modelFile: File)
     suspend fun generate(systemPrompt: String, userPrompt: String): String
+    fun stream(systemPrompt: String, history: List<ChatMessage>, prompt: String): Flow<String> = flow {
+        val fullPrompt = buildChatMlPrompt(systemPrompt, history, prompt)
+        emit(generate(systemPrompt, fullPrompt))
+    }
     suspend fun unload()
+    fun cancelCurrentGeneration() {}
+    fun clearCache() {}
 }
 
 class LlamaCppInferenceEngine : OfflineInferenceEngine {
     private val handle = AtomicLong(0L)
+    override val isLoaded: Boolean
+        get() = handle.get() != 0L
+
+    private var _loadCount: Int = 0
+    override val loadCount: Int
+        get() = _loadCount
+
+    private var _unloadCount: Int = 0
+    override val unloadCount: Int
+        get() = _unloadCount
+
+    private var _instanceId: String? = null
+    override val modelInstanceId: String?
+        get() = _instanceId
+
     private var loadedModelPath: String? = null
     private val generationLock = ReentrantLock()
     private val noActiveGeneration = generationLock.newCondition()
@@ -43,6 +85,10 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
         check(loadedHandle != 0L) { "llama.cpp could not load the downloaded model." }
         handle.set(loadedHandle)
         loadedModelPath = modelFile.absolutePath
+        _loadCount++
+        _instanceId = runCatching { LlamaNativeBridge.nativeGetInstanceId(loadedHandle) }
+            .getOrNull() ?: loadedHandle.toString()
+        Log.i(TAG, "OFFLINE_MODEL: loaded, instance_id=$_instanceId, loadCount=$_loadCount, unloadCount=$_unloadCount")
     }
 
     override suspend fun generate(systemPrompt: String, userPrompt: String): String = suspendCancellableCoroutine { continuation ->
@@ -51,12 +97,16 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
             continuation.resumeWith(Result.failure(IllegalStateException("Offline AI has not loaded a local model.")))
             return@suspendCancellableCoroutine
         }
-        val prompt = buildString {
-            append("<|im_start|>system\n")
-            append(systemPrompt.trim())
-            append("<|im_end|>\n<|im_start|>user\n")
-            append(userPrompt.trim())
-            append("<|im_end|>\n<|im_start|>assistant\n")
+        val prompt = if (userPrompt.startsWith("<|im_start|>")) {
+            userPrompt
+        } else {
+            buildString {
+                append("<|im_start|>system\n")
+                append(systemPrompt.trim())
+                append("<|im_end|>\n<|im_start|>user\n")
+                append(userPrompt.trim())
+                append("<|im_end|>\n<|im_start|>assistant\n")
+            }
         }
         continuation.invokeOnCancellation { cancelGeneration(loadedHandle) }
         executor.execute {
@@ -85,6 +135,65 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
         }
     }
 
+    override fun stream(
+        systemPrompt: String,
+        history: List<ChatMessage>,
+        prompt: String
+    ): Flow<String> = callbackFlow {
+        val loadedHandle = handle.get()
+        if (loadedHandle == 0L) {
+            close(IllegalStateException("Offline AI has not loaded a local model."))
+            return@callbackFlow
+        }
+        val chatPrompt = buildChatMlPrompt(systemPrompt, history, prompt)
+        val metrics = LongArray(6)
+
+        executor.execute {
+            val mayRun = generationLock.withLock {
+                if (unloading || handle.get() != loadedHandle) {
+                    false
+                } else {
+                    LlamaNativeBridge.nativeResetCancellation(loadedHandle)
+                    activeGenerationCount += 1
+                    true
+                }
+            }
+            if (!mayRun) {
+                close()
+                return@execute
+            }
+
+            try {
+                LlamaNativeBridge.nativeGenerateStream(
+                    handle = loadedHandle,
+                    prompt = chatPrompt,
+                    maxTokens = 512,
+                    callback = { tokenPiece ->
+                        if (!unloading && handle.get() == loadedHandle) {
+                            trySend(tokenPiece)
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                    outMetrics = metrics
+                )
+                close()
+            } catch (e: Throwable) {
+                close(e)
+            } finally {
+                generationLock.withLock {
+                    activeGenerationCount -= 1
+                    if (activeGenerationCount == 0) noActiveGeneration.signalAll()
+                }
+            }
+        }
+
+        awaitClose {
+            cancelGeneration(loadedHandle)
+        }
+    }
+
     override suspend fun unload() = withContext(Dispatchers.IO) {
         unloadNative()
     }
@@ -101,10 +210,20 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
             loaded
         }
         if (previousHandle != 0L) {
+            _unloadCount++
             LlamaNativeBridge.nativeUnload(previousHandle)
+            Log.i(TAG, "OFFLINE_MODEL: released, instance_id=$_instanceId, loadCount=$_loadCount, unloadCount=$_unloadCount")
         }
+        _instanceId = null
         loadedModelPath = null
         generationLock.withLock { unloading = false }
+    }
+
+    override fun cancelCurrentGeneration() {
+        val loaded = handle.get()
+        if (loaded != 0L) {
+            cancelGeneration(loaded)
+        }
     }
 
     private fun cancelGeneration(loadedHandle: Long) {
@@ -115,6 +234,12 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
         }
     }
 
+    override fun clearCache() {
+        val loaded = handle.get()
+        if (loaded != 0L) {
+            runCatching { LlamaNativeBridge.nativeClearCache(loaded) }
+        }
+    }
 }
 
 internal object LlamaNativeBridge {
@@ -124,9 +249,46 @@ internal object LlamaNativeBridge {
 
     external fun nativeLoadModel(modelPath: String): Long
     external fun nativeGenerate(handle: Long, prompt: String, maxTokens: Int): String?
+    external fun nativeGenerateStream(
+        handle: Long,
+        prompt: String,
+        maxTokens: Int,
+        callback: NativeTokenCallback?,
+        outMetrics: LongArray?
+    ): String?
+    external fun nativeGetInstanceId(handle: Long): String?
+    external fun nativeClearCache(handle: Long)
     external fun nativeResetCancellation(handle: Long)
     external fun nativeCancel(handle: Long)
     external fun nativeUnload(handle: Long)
+}
+
+/**
+ * Builds standard ChatML prompt matching Qwen training format.
+ * Enables 100% byte-for-byte prefix matching for KV cache reuse across multi-turn chat.
+ */
+fun buildChatMlPrompt(
+    systemPrompt: String,
+    history: List<ChatMessage>,
+    newPrompt: String
+): String = buildString {
+    append("<|im_start|>system\n")
+    append(systemPrompt.trim())
+    append("<|im_end|>\n")
+    history.takeLast(12).forEach { msg ->
+        if (msg.fromUser) {
+            append("<|im_start|>user\n")
+            append(msg.text.trim())
+            append("<|im_end|>\n")
+        } else {
+            append("<|im_start|>assistant\n")
+            append(msg.text.trim())
+            append("<|im_end|>\n")
+        }
+    }
+    append("<|im_start|>user\n")
+    append(newPrompt.trim())
+    append("<|im_end|>\n<|im_start|>assistant\n")
 }
 
 internal fun systemPromptFor(mode: com.offline_First.domain.model.ExplanationMode): String =

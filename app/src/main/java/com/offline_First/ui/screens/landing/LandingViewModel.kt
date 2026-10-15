@@ -15,6 +15,7 @@ import com.offline_First.domain.model.UpcomingExam
 import com.offline_First.domain.model.UserProfile
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +34,8 @@ data class LandingUiState(
     val studyFocus: StudyFocusItem? = null,
     val featuredCourses: List<Course> = emptyList(),
     val exploreCourses: List<Course> = emptyList(),
+    val isLoadingMoreCourses: Boolean = false,
+    val hasMoreCourses: Boolean = true,
     val errorMessage: String? = null
 )
 
@@ -56,6 +59,7 @@ class LandingViewModel(
 
     private fun loadInitialData() {
         viewModelScope.launch(coroutineContext) {
+<<<<<<< HEAD
             val courses = courseRepository.getCourses()
             val featured = courseRepository.getFeaturedCourses()
             val subjects = learningRepository.getSubjects()
@@ -64,11 +68,32 @@ class LandingViewModel(
             val studyFocus = learningRepository.getStudyFocus()
 
             val learningErrors = listOf(
+=======
+            // Parallel execution: fetch all landing sections concurrently
+            val coursesDeferred = async { courseRepository.getCourses(limit = 10, offset = 0) }
+            val featuredDeferred = async { courseRepository.getFeaturedCourses() }
+            val subjectsDeferred = async { learningRepository.getSubjects() }
+            val continueDeferred = async { learningRepository.getContinueLearning() }
+            val examsDeferred = async { learningRepository.getUpcomingExams() }
+            val studyFocusDeferred = async { learningRepository.getStudyFocus() }
+
+            val courses = coursesDeferred.await()
+            val featured = featuredDeferred.await()
+            val subjects = subjectsDeferred.await()
+            val continueLearning = continueDeferred.await()
+            val exams = examsDeferred.await()
+            val studyFocus = studyFocusDeferred.await()
+
+            val errors = listOf(
+                courses.exceptionOrNull(),
+                featured.exceptionOrNull(),
+>>>>>>> origin
                 subjects.exceptionOrNull(),
                 continueLearning.exceptionOrNull(),
                 exams.exceptionOrNull(),
                 studyFocus.exceptionOrNull()
             )
+<<<<<<< HEAD
             val explore = courses.getOrNull().orEmpty()
             val feats = featured.getOrNull().orEmpty()
             val courseErr = if (explore.isEmpty() && feats.isEmpty()) {
@@ -76,6 +101,10 @@ class LandingViewModel(
             } else {
                 null
             }
+=======
+
+            val courseList = courses.getOrNull().orEmpty()
+>>>>>>> origin
 
             loadedData = LandingUiState(
                 isLoading = false,
@@ -85,6 +114,7 @@ class LandingViewModel(
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
                 studyFocus = studyFocus.getOrNull(),
+<<<<<<< HEAD
                 featuredCourses = feats,
                 exploreCourses = explore,
                 errorMessage = learningErrors.firstNotNullOfOrNull { it?.localizedMessage }
@@ -114,8 +144,49 @@ class LandingViewModel(
                 coursesError = courseErr?.let { "Courses require an internet connection." },
                 featuredCourses = feats,
                 exploreCourses = explore
+=======
+                featuredCourses = featured.getOrNull().orEmpty(),
+                exploreCourses = courseList,
+                hasMoreCourses = courseList.size >= 10,
+                errorMessage = run {
+                    val raw = errors.firstNotNullOfOrNull { it?.localizedMessage }
+                    when {
+                        raw == null -> if (errors.any { it != null }) "Unable to load learning data." else null
+                        raw.contains("not connected") -> raw
+                        errors.any { it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketTimeoutException } ->
+                            "Unable to connect to server. Please check your internet connection."
+                        raw.isNotBlank() -> raw
+                        else -> "Unable to load learning data."
+                    }
+                }
+>>>>>>> origin
             )
             publishState()
+        }
+    }
+
+    fun loadMoreCourses() {
+        val currentState = _uiState.value
+        if (currentState.isLoadingMoreCourses || !currentState.hasMoreCourses) return
+
+        viewModelScope.launch(coroutineContext) {
+            _uiState.value = _uiState.value.copy(isLoadingMoreCourses = true)
+            val currentCount = _uiState.value.exploreCourses.size
+            val nextBatch = courseRepository.getCourses(limit = 10, offset = currentCount)
+            nextBatch.fold(
+                onSuccess = { newCourses ->
+                    val combined = (_uiState.value.exploreCourses + newCourses).distinctBy { it.id }
+                    loadedData = loadedData.copy(
+                        exploreCourses = combined,
+                        hasMoreCourses = newCourses.size >= 10,
+                        isLoadingMoreCourses = false
+                    )
+                    publishState()
+                },
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(isLoadingMoreCourses = false)
+                }
+            )
         }
     }
 
@@ -138,7 +209,13 @@ class LandingViewModel(
         )
     }
 
+    fun retry() {
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        loadInitialData()
+    }
+
     fun clearError() {
+        loadedData = loadedData.copy(errorMessage = null)
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 

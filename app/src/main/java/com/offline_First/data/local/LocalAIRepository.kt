@@ -12,10 +12,13 @@ import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -24,6 +27,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
+import okhttp3.Request
+import com.offline_First.data.remote.ChatApiClient
 import java.nio.ByteOrder
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
@@ -52,8 +57,11 @@ internal fun isValidGgufFile(file: File, minimumValidBytes: Long): Boolean {
 /** Local GGUF downloader and llama.cpp-backed chat repository. */
 class LocalAIRepository(
     private val context: Context? = null,
-    private val inferenceEngine: OfflineInferenceEngine? = context?.let { LlamaCppInferenceEngine() }
+    private val inferenceEngine: OfflineInferenceEngine? = context?.let { LlamaCppInferenceEngine() },
+    modelLifecycleManager: OfflineModelManager? = null
 ) : AIRepository {
+
+    val modelManager: OfflineModelManager = modelLifecycleManager ?: OfflineModelManager(inferenceEngine)
 
     /** Device selection stays internal; the UI never asks the user to choose a model. */
     private enum class InternalModelProfile(
@@ -93,8 +101,8 @@ class LocalAIRepository(
     }
 
     private val modelDirectory: File
-        get() = requireNotNull(context) { "Offline AI requires an Android context." }
-            .getDir("offline_models", Context.MODE_PRIVATE)
+        get() = context?.getDir("offline_models", Context.MODE_PRIVATE)
+            ?: File(System.getProperty("java.io.tmpdir"), "offline_models")
 
     init {
         connectionMode.value = readEnum(CONNECTION_MODE_KEY, ConnectionMode.ONLINE)
@@ -103,6 +111,12 @@ class LocalAIRepository(
         offlineStatus.value = if (ready) OfflineAIStatus.READY else OfflineAIStatus.NOT_DOWNLOADED
         downloadProgress.value = progressFor(selectModel(), ready)
         if (!ready) preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+        if (connectionMode.value == ConnectionMode.OFFLINE && ready) {
+            val file = modelFile(selectModel())
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                modelManager.onOfflineModeEntered(file)
+            }
+        }
     }
 
     private fun <T : Enum<T>> readEnum(key: String, default: T): T {
@@ -145,6 +159,15 @@ class LocalAIRepository(
     override suspend fun setConnectionMode(mode: ConnectionMode): Result<Unit> {
         connectionMode.value = mode
         preferences?.edit()?.putString(CONNECTION_MODE_KEY, mode.name)?.apply()
+        if (mode == ConnectionMode.ONLINE) {
+            modelManager.onOnlineModeEntered()
+        } else if (mode == ConnectionMode.OFFLINE) {
+            val profile = selectModel()
+            val file = modelFile(profile)
+            if (isValidModelFile(file, profile)) {
+                modelManager.onOfflineModeEntered(file)
+            }
+        }
         return Result.success(Unit)
     }
 
@@ -167,8 +190,7 @@ class LocalAIRepository(
         // A valid model is kept and loaded. Never fetch the large file a second time.
         if (isValidModelFile(destination, profile)) {
             try {
-                requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
-                    .loadModel(destination)
+                modelManager.ensureModelLoaded(destination).getOrThrow()
                 markReady(profile)
                 return@withContext Result.success(Unit)
             } catch (cancelled: CancellationException) {
@@ -191,7 +213,7 @@ class LocalAIRepository(
         offlineStatus.value = OfflineAIStatus.DOWNLOADING
         preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.DOWNLOADING.name)?.apply()
         downloadProgress.value = OfflineAIDownloadProgress(
-            stage = "Downloading...", progress = 0, downloadSize = profile.sizeLabel,
+            stage = "Connecting...", progress = 0, downloadSize = profile.sizeLabel,
             estimatedTimeRemaining = "Preparing download..."
         )
         modelDirectory.mkdirs()
@@ -199,21 +221,21 @@ class LocalAIRepository(
         val jobContext = coroutineContext
 
         try {
-            val connection = (URL(address).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                requestMethod = "GET"
-                instanceFollowRedirects = true
-            }
-            try {
-                if (connection.responseCode !in 200..299) {
-                    throw IllegalStateException("The Offline AI model download failed (HTTP ${connection.responseCode}).")
+            val request = Request.Builder()
+                .url(address)
+                .build()
+
+            val response = ChatApiClient.okHttpClient.newCall(request).execute()
+            response.use { res ->
+                if (!res.isSuccessful) {
+                    throw IllegalStateException("The Offline AI model download failed (HTTP ${res.code}).")
                 }
-                val expectedBytes = connection.contentLengthLong
+                val body = res.body ?: throw IllegalStateException("Empty response body from model download.")
+                val expectedBytes = body.contentLength()
                 if (expectedBytes > 0L && modelDirectory.usableSpace < expectedBytes + 128L * 1024L * 1024L) {
                     throw IllegalStateException("There is not enough free storage for Offline AI.")
                 }
-                connection.inputStream.use { input ->
+                body.byteStream().use { input ->
                     FileOutputStream(partial).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var downloaded = 0L
@@ -238,8 +260,6 @@ class LocalAIRepository(
                 if (expectedBytes > 0L && partial.length() != expectedBytes) {
                     throw IllegalStateException("The Offline AI model download was incomplete.")
                 }
-            } finally {
-                connection.disconnect()
             }
 
             downloadProgress.value = OfflineAIDownloadProgress(
@@ -255,8 +275,7 @@ class LocalAIRepository(
             if (!partial.renameTo(destination)) {
                 throw IllegalStateException("Could not store the downloaded Offline AI model.")
             }
-            requireNotNull(inferenceEngine) { "The Android llama.cpp runtime is unavailable." }
-                .loadModel(destination)
+            modelManager.ensureModelLoaded(destination).getOrThrow()
             markReady(profile)
             Result.success(Unit)
         } catch (cancelled: CancellationException) {
@@ -268,8 +287,17 @@ class LocalAIRepository(
             partial.delete()
             offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
             preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            val userMessage = when (error) {
+                is java.net.UnknownHostException ->
+                    "No internet connection. Connect to the internet and retry."
+                is java.net.SocketTimeoutException ->
+                    "Connection timed out. Check your internet connection and retry."
+                is java.net.ConnectException ->
+                    "Could not reach the download server. Check your internet connection and retry."
+                else -> "Download failed: ${error.message ?: "Unknown error"}"
+            }
             downloadProgress.value = OfflineAIDownloadProgress(
-                stage = "Download failed", progress = 0, downloadSize = profile.sizeLabel,
+                stage = userMessage, progress = 0, downloadSize = profile.sizeLabel,
                 estimatedTimeRemaining = "Retry later"
             )
             Result.failure(error)
@@ -300,7 +328,7 @@ class LocalAIRepository(
 
     override suspend fun deleteOfflineAI(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            inferenceEngine?.unload()
+            modelManager.unload()
             val files = InternalModelProfile.entries.flatMap { profile ->
                 listOf(modelFile(profile), File(modelDirectory, profile.fileName + ".download"))
             }
@@ -363,14 +391,15 @@ class LocalAIRepository(
                 IllegalStateException("Offline AI model is missing or invalid. Download Offline AI before chatting.")
             )
         }
-        val engine = inferenceEngine ?: return@withContext Result.failure(
-            IllegalStateException("The Android llama.cpp runtime is unavailable.")
-        )
         val current = currentSession.value ?: createNewChat().getOrThrow()
         val userMessage = ChatMessage(text = prompt, fromUser = true)
         val response = try {
-            engine.loadModel(file)
-            engine.generate(systemPromptFor(explanationMode.value), buildConversationPrompt(current.messages, prompt))
+            modelManager.generate(
+                systemPrompt = systemPromptFor(explanationMode.value),
+                userPrompt = prompt,
+                modelFile = file,
+                history = current.messages
+            ).getOrThrow()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -390,14 +419,109 @@ class LocalAIRepository(
         Result.success(assistantMessage)
     }
 
-    private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildString {
-        history.takeLast(12).forEach { message ->
-            append(if (message.fromUser) "User" else "Assistant")
-            append(": ")
-            append(message.text)
-            append('\n')
+    fun streamOfflineInference(
+        systemPrompt: String,
+        history: List<ChatMessage>,
+        prompt: String,
+        sendTimestamp: Long = MonotonicClock.elapsedMillis()
+    ): Flow<String> {
+        val profile = selectModel()
+        val file = modelFile(profile)
+        if (!isValidModelFile(file, profile)) {
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            return kotlinx.coroutines.flow.flow {
+                throw IllegalStateException("Offline AI model is missing or invalid. Please download it in AI Settings.")
+            }
         }
-        append("User: ")
-        append(prompt)
+        return modelManager.stream(systemPrompt, history, prompt, file, sendTimestamp)
     }
+
+    suspend fun generateOfflineInference(
+        systemPrompt: String,
+        history: List<ChatMessage>,
+        prompt: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val profile = selectModel()
+        val file = modelFile(profile)
+        if (!isValidModelFile(file, profile)) {
+            offlineStatus.value = OfflineAIStatus.NOT_DOWNLOADED
+            preferences?.edit()?.putString(STATUS_KEY, OfflineAIStatus.NOT_DOWNLOADED.name)?.apply()
+            return@withContext Result.failure(
+                IllegalStateException("Offline AI model is missing or invalid. Please download it in AI Settings.")
+            )
+        }
+        try {
+            val response = modelManager.generate(systemPrompt, prompt, file, history).getOrThrow()
+            Result.success(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun stopOfflineInference(): Result<Unit> = withContext(Dispatchers.IO) {
+        modelManager.cancelGeneration()
+        Result.success(Unit)
+    }
+
+    private fun buildConversationPrompt(history: List<ChatMessage>, prompt: String): String = buildChatMlPrompt(
+        systemPrompt = "",
+        history = history,
+        newPrompt = prompt
+    )
+
+    override fun streamMessage(
+        prompt: String,
+        parentId: String?,
+        clientMessageId: String?
+    ): Flow<String> = streamOfflineInference(
+        systemPrompt = systemPromptFor(explanationMode.value),
+        history = currentSession.value?.messages ?: emptyList(),
+        prompt = prompt
+    )
+
+    override suspend fun stopGeneration(): Result<Unit> {
+        modelManager.cancelGeneration()
+        return Result.success(Unit)
+    }
+
+    override fun regenerateLastResponse(): Flow<String> = kotlinx.coroutines.flow.flow {
+        val current = currentSession.value ?: return@flow
+        val lastUserMsg = current.messages.lastOrNull { it.fromUser } ?: return@flow
+        streamMessage(lastUserMsg.text, lastUserMsg.parentId, null).collect { emit(it) }
+    }
+
+    override fun editMessageAndRegenerate(messageId: String, newContent: String): Flow<String> = kotlinx.coroutines.flow.flow {
+        streamMessage(newContent, null, null).collect { emit(it) }
+    }
+
+    override suspend fun saveDraft(sessionId: String, draftText: String): Result<Unit> {
+        currentSession.value = currentSession.value?.copy(draftText = draftText)
+        return Result.success(Unit)
+    }
+
+    override suspend fun togglePin(sessionId: String, isPinned: Boolean): Result<Unit> {
+        sessions.value = sessions.value.map { if (it.id == sessionId) it.copy(isPinned = isPinned) else it }
+        return Result.success(Unit)
+    }
+
+    override suspend fun toggleArchive(sessionId: String, isArchived: Boolean): Result<Unit> {
+        sessions.value = sessions.value.map { if (it.id == sessionId) it.copy(isArchived = isArchived) else it }
+        return Result.success(Unit)
+    }
+
+    override suspend fun loadMoreMessages(sessionId: String, beforeTimestamp: Long?, limit: Int): Result<List<ChatMessage>> =
+        Result.success(currentSession.value?.messages ?: emptyList())
+
+    override suspend fun loadMoreConversations(beforeCursor: Long?, limit: Int): Result<List<ChatSession>> =
+        Result.success(sessions.value)
+
+    override suspend fun getMemories(): Result<List<com.offline_First.domain.model.UserMemoryItem>> =
+        Result.success(emptyList())
+
+    override suspend fun deleteMemory(memoryId: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncOfflineData(): Result<Unit> = Result.success(Unit)
 }
