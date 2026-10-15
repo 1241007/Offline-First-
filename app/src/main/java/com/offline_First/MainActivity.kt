@@ -33,14 +33,11 @@ import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
-<<<<<<< HEAD
 import com.offline_First.ui.screens.course.CourseDetailScreen
 import com.offline_First.ui.screens.course.LessonViewerScreen
 import com.offline_First.ui.screens.course.RevisionListScreen
-=======
 import com.offline_First.ui.theme.EduNovaBackground
 import com.offline_First.ui.theme.EduNovaPrimary
->>>>>>> origin
 import com.offline_First.ui.theme.OfflineFirstTheme
 import kotlinx.coroutines.launch
 
@@ -151,20 +148,15 @@ class MainActivity : ComponentActivity() {
                         onOpenSettings = { pushDestination(AppDestination.SETTINGS) },
                         onLanguageSelected = { selectedLanguage = it },
                         onLogout = {
-<<<<<<< HEAD
-                            isLoggedIn = false
-                            pushDestination(AppDestination.LOGIN)
-                        },
-                        onCourseClick = { courseId ->
-                            selectedCourseId = courseId
-                            pushDestination(AppDestination.COURSE_DETAIL)
-=======
                             coroutineScope.launch {
                                 val currentRt = sessionManager.currentRefreshToken()
                                 authRepository.logout(currentRt)
                                 pushDestination(AppDestination.LOGIN)
                             }
->>>>>>> origin
+                        },
+                        onCourseClick = { courseId ->
+                            selectedCourseId = courseId
+                            pushDestination(AppDestination.COURSE_DETAIL)
                         }
                     )
 

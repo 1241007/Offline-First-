@@ -2308,8 +2308,6 @@ private fun ActiveToolScreen(
     }
 }
 
-<<<<<<< HEAD
-=======
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MemoriesSheet(
@@ -2500,5 +2498,3 @@ private fun EditMessageDialog(
         shape = RoundedCornerShape(18.dp)
     )
 }
-
->>>>>>> origin

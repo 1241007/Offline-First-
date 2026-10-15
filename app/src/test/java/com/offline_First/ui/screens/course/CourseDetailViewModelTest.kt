@@ -67,7 +67,7 @@ class CourseDetailViewModelTest {
     fun repositoryErrorProducesErrorStateAndSupportsRetry() = runBlocking {
         var shouldFail = true
         val failingRepo = object : CourseRepository {
-            override suspend fun getCourses(): Result<List<Course>> = Result.success(emptyList())
+            override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> = Result.success(emptyList())
             override suspend fun getFeaturedCourses(): Result<List<Course>> = Result.success(emptyList())
             override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
                 return if (shouldFail) {
@@ -113,7 +113,7 @@ class CourseDetailViewModelTest {
     @Test
     fun fallbackRepositoryReturnsLocalDetailWhenOnlineFails() = runBlocking {
         val failingOnlineRepo = object : CourseRepository {
-            override suspend fun getCourses(): Result<List<Course>> =
+            override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> =
                 Result.failure(RuntimeException("Remote offline"))
             override suspend fun getFeaturedCourses(): Result<List<Course>> =
                 Result.failure(RuntimeException("Remote offline"))
@@ -139,9 +139,9 @@ class CourseDetailViewModelTest {
 
         // Simulate FallbackCourseRepository behavior
         val fallbackRepo = object : CourseRepository {
-            override suspend fun getCourses(): Result<List<Course>> {
-                val remote = runCatching { failingOnlineRepo.getCourses().getOrThrow() }
-                return remote.recoverCatching { localRepository.getCourses().getOrThrow() }
+            override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
+                val remote = runCatching { failingOnlineRepo.getCourses(limit, offset).getOrThrow() }
+                return remote.recoverCatching { localRepository.getCourses(limit, offset).getOrThrow() }
             }
 
             override suspend fun getFeaturedCourses(): Result<List<Course>> {

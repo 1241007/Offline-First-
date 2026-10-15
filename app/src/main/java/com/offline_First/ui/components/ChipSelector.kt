@@ -47,41 +47,4 @@ fun EduNovaFilterChip(
         )
     }
 }
-<<<<<<< HEAD
 
-@Composable
-fun EduNovaBadge(
-    text: String,
-    modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(containerColor)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-            Text(
-                text = text,
-                color = contentColor,
-                style = MaterialTheme.typography.labelMedium
-            )
-        }
-    }
-}
-=======
->>>>>>> origin

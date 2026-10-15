@@ -14,17 +14,9 @@ import com.offline_First.BuildConfig
  * Do NOT hardcode URLs directly in source code.
  */
 object ChatApiConfig {
-<<<<<<< HEAD
-    // For Android Emulator - points to host machine's localhost:8000
-    const val BASE_URL = "http://10.0.2.2:8000"
-    
-    const val CONNECT_TIMEOUT_MS = 2500
-    const val READ_TIMEOUT_MS = 60_000
-=======
     val BASE_URL: String = BuildConfig.BACKEND_BASE_URL
 
     const val CONNECT_TIMEOUT_MS = 60_000   // Render free-tier cold-start can take ~50 s
     const val READ_TIMEOUT_MS = 90_000
->>>>>>> origin
     const val API_PREFIX = "/api/v1"
 }

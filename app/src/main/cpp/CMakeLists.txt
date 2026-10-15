@@ -4,22 +4,9 @@ project(edunova_llama LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-<<<<<<< HEAD
-# 16 KB page size alignment for Android 15+ compatibility
-add_link_options("-Wl,-z,max-page-size=16384")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
-
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
-=======
 # Support 16 KB page alignment for Android 15+ / 16 KB devices
 add_link_options("-Wl,-z,max-page-size=16384")
->>>>>>> origin
+
 
 # =============================================================================
 # Prebuilt llama.cpp libraries
@@ -51,12 +38,8 @@ set_target_properties(llama         PROPERTIES IMPORTED_LOCATION "${PREBUILT_LIB
 
 # ── Our JNI bridge (the only file compiled during a normal Gradle build) ──────
 add_library(edunova_llama SHARED llama_jni.cpp)
-<<<<<<< HEAD
 target_link_options(edunova_llama PRIVATE "-Wl,-z,max-page-size=16384")
-target_link_libraries(edunova_llama PRIVATE llama android log)
-=======
 
->>>>>>> origin
 target_include_directories(edunova_llama PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )

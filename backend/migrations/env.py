@@ -14,17 +14,13 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings
-from app.core.database import Base
-<<<<<<< HEAD
 import app.models  # Registers all models on Base.metadata
-=======
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.dialects.postgresql import JSONB
 
 @compiles(JSONB, "sqlite")
 def compile_jsonb_sqlite(type_, compiler, **kw):
     return "JSON"
->>>>>>> origin
 
 config = context.config
 

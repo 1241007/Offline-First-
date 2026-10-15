@@ -89,29 +89,6 @@ object ChatApiClient {
     }
 
     private suspend fun get(path: String): Pair<Int, String> = withContext(Dispatchers.IO) {
-<<<<<<< HEAD
-        val candidateBases = listOf(
-            ChatApiConfig.BASE_URL,
-            "http://127.0.0.1:8000"
-        ).distinct()
-
-        var lastException: Exception? = null
-        for (base in candidateBases) {
-            val url = URL("$base${ChatApiConfig.API_PREFIX}$path")
-            android.util.Log.d("ChatApiClient", "GET request: $url")
-            val conn = openConnection(url, "GET")
-            try {
-                conn.connect()
-                val code = conn.responseCode
-                val body = readResponse(conn)
-                android.util.Log.d("ChatApiClient", "GET $url -> code $code")
-                return@withContext Pair(code, body)
-            } catch (e: Exception) {
-                android.util.Log.e("ChatApiClient", "GET $url failed with ${e.javaClass.simpleName}: ${e.message}")
-                lastException = e
-            } finally {
-                conn.disconnect()
-=======
         val url = buildUrl(path)
         retryOnNetworkError {
             val request = Request.Builder()
@@ -120,10 +97,8 @@ object ChatApiClient {
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
                 Pair(response.code, response.body?.string().orEmpty())
->>>>>>> origin
             }
         }
-        throw lastException ?: java.io.IOException("Unable to connect to $path")
     }
 
     private suspend fun post(path: String, bodyJson: String = ""): Pair<Int, String> =
@@ -423,8 +398,9 @@ object ChatApiClient {
 
     suspend fun getCourses(
         featured: Boolean? = null,
-<<<<<<< HEAD
-        category: String? = null
+        category: String? = null,
+        limit: Int? = null,
+        offset: Int = 0
     ): Result<List<CourseDto>> = runCatching {
         val params = mutableListOf<String>()
         if (featured != null) {
@@ -434,21 +410,14 @@ object ChatApiClient {
             val encodedCategory = java.net.URLEncoder.encode(category, "UTF-8")
             params.add("category=$encodedCategory")
         }
+        if (limit != null) {
+            params.add("limit=$limit")
+        }
+        if (offset > 0) {
+            params.add("offset=$offset")
+        }
         val query = if (params.isNotEmpty()) "?" + params.joinToString("&") else ""
         val (code, body) = get("/courses$query")
-=======
-        category: String? = null,
-        limit: Int? = null,
-        offset: Int = 0
-    ): Result<List<CourseDto>> = runCatching {
-        val params = mutableListOf<String>()
-        if (featured == true) params.add("featured=true")
-        if (category != null) params.add("category=$category")
-        if (limit != null) params.add("limit=$limit")
-        if (offset > 0) params.add("offset=$offset")
-        val path = if (params.isEmpty()) "/courses" else "/courses?" + params.joinToString("&")
-        val (code, body) = get(path)
->>>>>>> origin
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<CourseDto>>(body)
     }

@@ -12,6 +12,7 @@ import com.offline_First.domain.model.RevisionItem
 import com.offline_First.domain.model.UiState
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,12 +54,20 @@ class LessonViewerViewModel(
     private val _uiState = MutableStateFlow(LessonViewerUiState())
     val uiState: StateFlow<LessonViewerUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+    private var currentLoadedLessonId: String? = null
+
     init {
         loadLesson(lessonId)
     }
 
-    fun loadLesson(targetLessonId: String) {
-        viewModelScope.launch(coroutineContext) {
+    fun loadLesson(targetLessonId: String, forceReload: Boolean = false) {
+        val resolvedId = targetLessonId.ifBlank { lessonId }
+        if (!forceReload && resolvedId.isNotBlank() && resolvedId == currentLoadedLessonId && _uiState.value.state is UiState.Success) {
+            return
+        }
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch(coroutineContext) {
             _uiState.value = _uiState.value.copy(
                 state = UiState.Loading,
                 errorMessage = null
@@ -79,11 +88,24 @@ class LessonViewerViewModel(
                         mod.lessons.sortedBy { it.displayOrder }.map { l -> mod to l }
                     }
 
-                    val index = flattenedLessons.indexOfFirst { it.second.id == targetLessonId }
+                    if (flattenedLessons.isEmpty()) {
+                        _uiState.value = LessonViewerUiState(
+                            state = UiState.Empty,
+                            errorMessage = "No lessons available in course."
+                        )
+                        return@launch
+                    }
+
+                    val index = if (resolvedId.isBlank()) {
+                        0
+                    } else {
+                        flattenedLessons.indexOfFirst { it.second.id == resolvedId }
+                    }
+
                     if (index == -1) {
                         _uiState.value = LessonViewerUiState(
                             state = UiState.Empty,
-                            errorMessage = "Lesson '$targetLessonId' not found in course."
+                            errorMessage = "Lesson '$resolvedId' not found in course."
                         )
                         return@launch
                     }
@@ -95,6 +117,7 @@ class LessonViewerViewModel(
                     val isCompleted = repository.isLessonCompleted(courseId, currentLesson.id)
                     val isMarked = repository.isMarkedForRevision(courseId, currentLesson.id)
 
+                    currentLoadedLessonId = currentLesson.id
                     _uiState.value = LessonViewerUiState(
                         state = UiState.Success(
                             LessonViewerData(

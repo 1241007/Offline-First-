@@ -5,29 +5,15 @@ from typing import Any, Optional, Union
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-<<<<<<< HEAD
-# Root .env is two directories above the backend/app/ package
-_ROOT_ENV = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-_BACKEND_ENV = Path(__file__).resolve().parent.parent.parent / ".env"
-
-
-_DB_PATH = (Path(__file__).resolve().parent.parent.parent / "edunova_dev.db").as_posix()
-=======
-# Root .env is three directories above backend/app/core/config.py (i.e. E:\Offline First\.env)
+# Root .env is three directories above backend/app/core/config.py
 _ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 _BACKEND_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 _DEV_PLACEHOLDER = "edunova-dev-secret-key-32bytes-long-change-in-production!"
->>>>>>> origin
 
 
 class Settings(BaseSettings):
     environment: str = "development"
-<<<<<<< HEAD
-    database_url: str = f"sqlite+aiosqlite:///{_DB_PATH}"
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
-=======
     database_url: str
     openrouter_api_key: str = ""
     openrouter_model: str = "google/gemini-3.8-flash"
@@ -36,7 +22,6 @@ class Settings(BaseSettings):
     openrouter_max_tokens: int = 1024
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.5-flash"
->>>>>>> origin
     chat_context_messages: int = 12
     gemini_max_output_tokens: int = 1024
     db_pool_size: int = 5
@@ -96,13 +81,9 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         raw_url = self.database_url
-<<<<<<< HEAD
-        if "sqlite" in raw_url:
-=======
         if raw_url.startswith("sqlite://") or raw_url.startswith("sqlite+aiosqlite://"):
             if not raw_url.startswith("sqlite+aiosqlite://"):
                 return raw_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
->>>>>>> origin
             return raw_url
 
         if raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:

@@ -7,10 +7,22 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import java.io.File
 
 class OnlineCourseRepositoryTest {
+
+    @Before
+    fun setUp() {
+        ChatApiClient.customBaseUrl = "http://localhost:59999"
+    }
+
+    @After
+    fun tearDown() {
+        ChatApiClient.customBaseUrl = null
+    }
 
     @Test
     fun onlineCourseRepositoryFailsWhenConfiguredWithoutFallback() = runBlocking {

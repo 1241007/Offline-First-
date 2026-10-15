@@ -59,17 +59,12 @@ class OnlineAIRepository(
         get() = userIdProvider().ifBlank { "default_user" }
 
     init {
-<<<<<<< HEAD
-        // Load cached conversations immediately
+        // Load cached conversations for the active user
         val cached = try {
-            cacheDb.getAllConversations()
+            cacheDb.getConversations(currentUserId)
         } catch (_: Exception) {
             emptyList()
         }
-=======
-        // Load cached conversations for the active user
-        val cached = cacheDb.getConversations(currentUserId)
->>>>>>> origin
         _sessionsFlow.value = cached
     }
 
