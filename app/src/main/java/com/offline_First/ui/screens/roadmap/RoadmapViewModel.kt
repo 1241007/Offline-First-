@@ -4,11 +4,27 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.offline_First.data.AppContainer
 import com.offline_First.data.repository.RoadmapRepository
+import com.offline_First.data.staging.JavaRoadmapStagingData
+import com.offline_First.data.staging.LearningPathItem
+import com.offline_First.data.staging.MLRoadmapStagingData
+import com.offline_First.data.staging.PythonRoadmapStagingData
+import com.offline_First.data.staging.RoadmapLessonTopic
+import com.offline_First.data.staging.RoadmapProjectItem
+import com.offline_First.data.staging.SqlRoadmapStagingData
 import com.offline_First.domain.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+enum class RoadmapSubView {
+    CATALOG,
+    PYTHON_DEVELOPER,
+    JAVA_DEVELOPER,
+    MACHINE_LEARNING,
+    SQL_ROADMAP,
+    TOPIC_DETAIL
+}
 
 data class RoadmapUiState(
     val roadmaps: UiState<List<RoadmapOption>> = UiState.Loading,
@@ -31,7 +47,30 @@ data class RoadmapUiState(
     val generatedRoadmap: GeneratedRoadmapPreview? = null,
     val completedMilestones: Set<String> = emptySet(),
     val errorMessage: String? = null,
-    val assessmentError: String? = null
+    val assessmentError: String? = null,
+
+    // Roadmap.sh Journey Extensions
+    val currentSubView: RoadmapSubView = RoadmapSubView.CATALOG,
+    val selectedLearningPathId: String? = null,
+    val selectedTopic: RoadmapLessonTopic? = null,
+    val selectedProject: RoadmapProjectItem? = null,
+    val selectedUpcomingPath: LearningPathItem? = null,
+    val expandedModules: Set<String> = setOf("mod_1_basics"),
+    val completedTopicIds: Set<String> = emptySet(),
+    val completedProjectIds: Set<String> = emptySet(),
+    val completedJavaTopicIds: Set<String> = emptySet(),
+    val completedMlTopicIds: Set<String> = emptySet(),
+    val completedSqlTopicIds: Set<String> = emptySet(),
+    val catalogSearchQuery: String = "",
+    val catalogFilterTab: String = "All", // "All", "Role-based", "Skill-based", "My Roadmaps"
+    val pythonCourseTab: String = "Roadmap", // "Roadmap", "Projects", "AI Tutor"
+    val javaCourseTab: String = "Roadmap", // "Roadmap", "Projects", "AI Tutor"
+    val mlCourseTab: String = "Roadmap", // "Roadmap", "Projects", "AI Tutor"
+    val sqlCourseTab: String = "Roadmap", // "Roadmap", "Projects", "AI Tutor"
+    val aiTutorTopicPrompt: String? = null,
+    val roadmapMainTab: String = "Roadmaps", // "Roadmaps", "Lesson Packs", "Project Ideas"
+    val bookmarkedCourseNames: Set<String> = emptySet(),
+    val selectedCourseOverview: Pair<String, String>? = null // (courseName, category)
 )
 
 class RoadmapViewModel(
@@ -44,6 +83,10 @@ class RoadmapViewModel(
     init {
         loadData()
         loadMyPersonalizedRoadmaps()
+        loadPythonProgress()
+        loadJavaProgress()
+        loadMlProgress()
+        loadSqlProgress()
     }
 
     fun loadData() {
@@ -489,5 +532,321 @@ class RoadmapViewModel(
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
+
+    // --- Roadmap.sh Journey Extensions ---
+
+    fun loadPythonProgress() {
+        viewModelScope.launch {
+            val completed = repository.getCompletedMilestones("python-developer")
+            _uiState.value = _uiState.value.copy(completedTopicIds = completed)
+        }
+    }
+
+    fun setCatalogSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(catalogSearchQuery = query)
+    }
+
+    fun setCatalogFilterTab(tab: String) {
+        _uiState.value = _uiState.value.copy(catalogFilterTab = tab)
+    }
+
+    fun selectLearningPath(path: LearningPathItem) {
+        if (path.id == "java-programming" || path.id == "java-developer") {
+            openJavaDeveloperScreen()
+            return
+        }
+        if (path.id == "machine-learning" || path.id == "machine-learning-engineer") {
+            openMachineLearningScreen()
+            return
+        }
+        if (path.id == "sql-databases" || path.id == "sql-roadmap") {
+            openSqlScreen()
+            return
+        }
+        if (path.id == "python-developer" || path.id == "python-programming") {
+            openPythonDeveloperScreen()
+            return
+        }
+        if (path.isImplemented) {
+            _uiState.value = _uiState.value.copy(
+                selectedLearningPathId = path.id,
+                currentSubView = RoadmapSubView.PYTHON_DEVELOPER
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(selectedUpcomingPath = path)
+        }
+    }
+
+    fun dismissUpcomingPathDialog() {
+        _uiState.value = _uiState.value.copy(selectedUpcomingPath = null)
+    }
+
+    fun setRoadmapMainTab(tab: String) {
+        _uiState.value = _uiState.value.copy(roadmapMainTab = tab)
+    }
+
+    fun toggleBookmarkCourse(courseName: String) {
+        val current = _uiState.value.bookmarkedCourseNames
+        val updated = if (current.contains(courseName)) current - courseName else current + courseName
+        _uiState.value = _uiState.value.copy(bookmarkedCourseNames = updated)
+    }
+
+    fun selectCourseByName(courseName: String, category: String) {
+        if (courseName.equals("Python", ignoreCase = true) || courseName.equals("Python Programming", ignoreCase = true) || courseName.equals("Python Developer", ignoreCase = true)) {
+            openPythonDeveloperScreen()
+            return
+        }
+        if (courseName.equals("Java", ignoreCase = true) || courseName.equals("Java Developer", ignoreCase = true) || courseName.equals("Java Programming", ignoreCase = true)) {
+            openJavaDeveloperScreen()
+            return
+        }
+        if (courseName.equals("Machine Learning", ignoreCase = true) || courseName.equals("Machine Learning Engineer", ignoreCase = true)) {
+            openMachineLearningScreen()
+            return
+        }
+        if (courseName.equals("SQL", ignoreCase = true) || courseName.equals("SQL & Database Management", ignoreCase = true) || courseName.equals("SQL Roadmap", ignoreCase = true)) {
+            openSqlScreen()
+            return
+        }
+        _uiState.value = _uiState.value.copy(selectedCourseOverview = Pair(courseName, category))
+    }
+
+    fun dismissCourseOverviewDialog() {
+        _uiState.value = _uiState.value.copy(selectedCourseOverview = null)
+    }
+
+    fun setPythonCourseTab(tab: String) {
+        _uiState.value = _uiState.value.copy(pythonCourseTab = tab)
+    }
+
+    fun toggleModuleExpansion(moduleId: String) {
+        val current = _uiState.value.expandedModules
+        val updated = if (current.contains(moduleId)) current - moduleId else current + moduleId
+        _uiState.value = _uiState.value.copy(expandedModules = updated)
+    }
+
+    fun selectTopic(topic: RoadmapLessonTopic) {
+        _uiState.value = _uiState.value.copy(
+            selectedTopic = topic,
+            currentSubView = RoadmapSubView.TOPIC_DETAIL
+        )
+    }
+
+    fun selectProject(project: RoadmapProjectItem?) {
+        _uiState.value = _uiState.value.copy(selectedProject = project)
+    }
+
+    fun toggleTopicCompletion(topicId: String) {
+        val current = _uiState.value.completedTopicIds
+        val updated = if (current.contains(topicId)) current - topicId else current + topicId
+        _uiState.value = _uiState.value.copy(completedTopicIds = updated)
+
+        viewModelScope.launch {
+            repository.toggleMilestoneProgress("python-developer", topicId)
+                .onSuccess { newSet ->
+                    _uiState.value = _uiState.value.copy(completedTopicIds = newSet)
+                }
+        }
+    }
+
+    fun toggleProjectCompletion(projectId: String) {
+        val current = _uiState.value.completedProjectIds
+        val updated = if (current.contains(projectId)) current - projectId else current + projectId
+        _uiState.value = _uiState.value.copy(completedProjectIds = updated)
+        toggleTopicCompletion("project_$projectId")
+    }
+
+    fun navigateToNextTopic() {
+        val current = _uiState.value.selectedTopic ?: return
+        val allTopics = PythonRoadmapStagingData.PYTHON_MODULES.flatMap { it.topics }
+        val idx = allTopics.indexOfFirst { it.id == current.id }
+        if (idx in 0 until allTopics.lastIndex) {
+            _uiState.value = _uiState.value.copy(selectedTopic = allTopics[idx + 1])
+        }
+    }
+
+    fun navigateToPrevTopic() {
+        val current = _uiState.value.selectedTopic ?: return
+        val allTopics = PythonRoadmapStagingData.PYTHON_MODULES.flatMap { it.topics }
+        val idx = allTopics.indexOfFirst { it.id == current.id }
+        if (idx > 0) {
+            _uiState.value = _uiState.value.copy(selectedTopic = allTopics[idx - 1])
+        }
+    }
+
+    fun setAiTutorTopicPrompt(prompt: String?) {
+        _uiState.value = _uiState.value.copy(aiTutorTopicPrompt = prompt)
+    }
+
+    fun setAiTutorPrompt(prompt: String?) {
+        setAiTutorTopicPrompt(prompt)
+    }
+
+    fun calculatePythonProgress(): Int {
+        val total = PythonRoadmapStagingData.ALL_VISUAL_NODES.size
+        if (total == 0) return 0
+        val completed = _uiState.value.completedTopicIds.count { id ->
+            PythonRoadmapStagingData.ALL_VISUAL_NODES.any { it.id == id }
+        }
+        return ((completed.toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+    }
+
+    // --- Java Roadmap Journey Support ---
+
+    fun loadJavaProgress() {
+        viewModelScope.launch {
+            val completed = repository.getCompletedMilestones("java-developer")
+            _uiState.value = _uiState.value.copy(completedJavaTopicIds = completed)
+        }
+    }
+
+    fun calculateJavaProgress(): Int {
+        val total = JavaRoadmapStagingData.ALL_VISUAL_NODES.size
+        if (total == 0) return 0
+        val completedCount = _uiState.value.completedJavaTopicIds.count { id ->
+            JavaRoadmapStagingData.ALL_VISUAL_NODES.any { it.id == id }
+        }
+        return ((completedCount.toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+    }
+
+    fun setJavaCourseTab(tab: String) {
+        _uiState.value = _uiState.value.copy(javaCourseTab = tab)
+    }
+
+    fun toggleJavaTopicCompletion(topicId: String) {
+        val current = _uiState.value.completedJavaTopicIds
+        val updated = if (current.contains(topicId)) current - topicId else current + topicId
+        _uiState.value = _uiState.value.copy(completedJavaTopicIds = updated)
+
+        viewModelScope.launch {
+            repository.toggleMilestoneProgress("java-developer", topicId)
+                .onSuccess { newSet ->
+                    _uiState.value = _uiState.value.copy(completedJavaTopicIds = newSet)
+                }
+        }
+    }
+
+    fun openPythonDeveloperScreen() {
+        _uiState.value = _uiState.value.copy(
+            currentSubView = RoadmapSubView.PYTHON_DEVELOPER,
+            selectedLearningPathId = "python-developer"
+        )
+    }
+
+    fun openJavaDeveloperScreen() {
+        _uiState.value = _uiState.value.copy(
+            currentSubView = RoadmapSubView.JAVA_DEVELOPER,
+            selectedLearningPathId = "java-developer"
+        )
+    }
+
+    fun openMachineLearningScreen() {
+        _uiState.value = _uiState.value.copy(
+            currentSubView = RoadmapSubView.MACHINE_LEARNING,
+            selectedLearningPathId = "machine-learning"
+        )
+    }
+
+    fun openSqlScreen() {
+        _uiState.value = _uiState.value.copy(
+            currentSubView = RoadmapSubView.SQL_ROADMAP,
+            selectedLearningPathId = "sql-databases"
+        )
+    }
+
+    // --- Machine Learning Support ---
+
+    fun loadMlProgress() {
+        viewModelScope.launch {
+            val completed = repository.getCompletedMilestones("machine-learning")
+            _uiState.value = _uiState.value.copy(completedMlTopicIds = completed)
+        }
+    }
+
+    fun calculateMlProgress(): Int {
+        val total = MLRoadmapStagingData.ALL_VISUAL_NODES.size
+        if (total == 0) return 0
+        val completedCount = _uiState.value.completedMlTopicIds.count { id ->
+            MLRoadmapStagingData.ALL_VISUAL_NODES.any { it.id == id }
+        }
+        return ((completedCount.toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+    }
+
+    fun setMlCourseTab(tab: String) {
+        _uiState.value = _uiState.value.copy(mlCourseTab = tab)
+    }
+
+    fun toggleMlTopicCompletion(topicId: String) {
+        val current = _uiState.value.completedMlTopicIds
+        val updated = if (current.contains(topicId)) current - topicId else current + topicId
+        _uiState.value = _uiState.value.copy(completedMlTopicIds = updated)
+
+        viewModelScope.launch {
+            repository.toggleMilestoneProgress("machine-learning", topicId)
+                .onSuccess { newSet ->
+                    _uiState.value = _uiState.value.copy(completedMlTopicIds = newSet)
+                }
+        }
+    }
+
+    // --- SQL Support ---
+
+    fun loadSqlProgress() {
+        viewModelScope.launch {
+            val completed = repository.getCompletedMilestones("sql-databases")
+            _uiState.value = _uiState.value.copy(completedSqlTopicIds = completed)
+        }
+    }
+
+    fun calculateSqlProgress(): Int {
+        val total = SqlRoadmapStagingData.ALL_VISUAL_NODES.size
+        if (total == 0) return 0
+        val completedCount = _uiState.value.completedSqlTopicIds.count { id ->
+            SqlRoadmapStagingData.ALL_VISUAL_NODES.any { it.id == id }
+        }
+        return ((completedCount.toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+    }
+
+    fun setSqlCourseTab(tab: String) {
+        _uiState.value = _uiState.value.copy(sqlCourseTab = tab)
+    }
+
+    fun toggleSqlTopicCompletion(topicId: String) {
+        val current = _uiState.value.completedSqlTopicIds
+        val updated = if (current.contains(topicId)) current - topicId else current + topicId
+        _uiState.value = _uiState.value.copy(completedSqlTopicIds = updated)
+
+        viewModelScope.launch {
+            repository.toggleMilestoneProgress("sql-databases", topicId)
+                .onSuccess { newSet ->
+                    _uiState.value = _uiState.value.copy(completedSqlTopicIds = newSet)
+                }
+        }
+    }
+
+    fun navigateBackInRoadmap(): Boolean {
+        val current = _uiState.value.currentSubView
+        return when (current) {
+            RoadmapSubView.TOPIC_DETAIL -> {
+                _uiState.value = _uiState.value.copy(
+                    currentSubView = RoadmapSubView.PYTHON_DEVELOPER,
+                    selectedTopic = null
+                )
+                true
+            }
+            RoadmapSubView.JAVA_DEVELOPER,
+            RoadmapSubView.PYTHON_DEVELOPER,
+            RoadmapSubView.MACHINE_LEARNING,
+            RoadmapSubView.SQL_ROADMAP -> {
+                _uiState.value = _uiState.value.copy(
+                    currentSubView = RoadmapSubView.CATALOG,
+                    selectedLearningPathId = null
+                )
+                true
+            }
+            RoadmapSubView.CATALOG -> false
+        }
+    }
 }
+
 
