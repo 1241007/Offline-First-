@@ -12,6 +12,8 @@ import com.offline_First.data.remote.OnlineCourseRepository
 import com.offline_First.data.remote.OnlineRoadmapRepository
 import com.offline_First.data.repository.AuthRepository
 import com.offline_First.data.repository.BackendNotConfiguredRepositories
+import com.offline_First.data.repository.CourseRepository
+import com.offline_First.data.repository.LearningRepository
 import com.offline_First.data.repository.ModeAwareAIRepository
 import com.offline_First.data.repository.RemoteAuthRepository
 

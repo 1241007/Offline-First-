@@ -99,6 +99,7 @@ object ChatApiClient {
                 Pair(response.code, response.body?.string().orEmpty())
             }
         }
+        throw lastException ?: java.io.IOException("Unable to connect to $path")
     }
 
     private suspend fun post(path: String, bodyJson: String = ""): Pair<Int, String> =
@@ -413,8 +414,10 @@ object ChatApiClient {
         json.decodeFromString<List<CourseDto>>(body)
     }
 
-    suspend fun getCourseDetail(courseId: String): Result<CourseDetailDto> = runCatching {
-        val (code, body) = get("/courses/$courseId")
+    suspend fun getCourseDetail(courseId: String): Result<CourseDetailDto?> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(courseId, "UTF-8")
+        val (code, body) = get("/courses/$encodedId")
+        if (code == 404) return@runCatching null
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<CourseDetailDto>(body)
     }

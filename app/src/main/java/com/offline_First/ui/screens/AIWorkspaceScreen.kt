@@ -721,17 +721,19 @@ private fun AISettingsScreenView(
 
                 // Online Card
                 SelectableSettingCard(
-                    title = "☁  Online",
+                    title = "Online",
                     description = "Uses online AI and requires internet.",
                     isSelected = connectionMode == ConnectionMode.ONLINE,
+                    icon = Icons.Default.Cloud,
                     onClick = { onSelectConnectionMode(ConnectionMode.ONLINE) }
                 )
 
                 // Offline Card
                 SelectableSettingCard(
-                    title = "📱  Offline",
+                    title = "Offline",
                     description = "Works without internet.",
                     isSelected = connectionMode == ConnectionMode.OFFLINE,
+                    icon = Icons.Default.PhoneAndroid,
                     onClick = { onSelectConnectionMode(ConnectionMode.OFFLINE) }
                 )
             }
@@ -748,15 +750,16 @@ private fun AISettingsScreenView(
                 )
 
                 ExplanationMode.entries.forEach { mode ->
-                    val titlePrefix = when (mode) {
-                        ExplanationMode.TEACHER -> "👨‍🏫"
-                        ExplanationMode.GENERAL -> "💬"
-                        ExplanationMode.EXPLAINABLE -> "📖"
+                    val icon = when (mode) {
+                        ExplanationMode.TEACHER -> Icons.Default.School
+                        ExplanationMode.GENERAL -> Icons.Default.ChatBubbleOutline
+                        ExplanationMode.EXPLAINABLE -> Icons.AutoMirrored.Filled.MenuBook
                     }
                     SelectableSettingCard(
-                        title = "$titlePrefix  ${mode.displayName}",
+                        title = mode.displayName,
                         description = mode.description,
                         isSelected = explanationMode == mode,
+                        icon = icon,
                         onClick = { onSelectExplanationMode(mode) }
                     )
                 }
@@ -906,6 +909,7 @@ private fun SelectableSettingCard(
     title: String,
     description: String,
     isSelected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -924,6 +928,23 @@ private fun SelectableSettingCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) EduNovaPrimary.copy(alpha = 0.15f) else EduNovaBackground),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isSelected) EduNovaPrimary else EduNovaTextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -2097,16 +2118,11 @@ private fun ToolsSheet(
                 Pair("Study Planner", Icons.Default.CalendarMonth to EduNovaAccent),
                 Pair("Mind Map", Icons.Default.AccountTree to EduNovaSecondary),
                 Pair("Image Analysis", Icons.Default.Image to EduNovaSecondary),
-                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
+                Pair("PYQ (Exam Vault)", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
                 Pair("Reports", Icons.Default.Analytics to EduNovaAccent),
+                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
                 Pair("Audio Learning", Icons.Default.Headphones to EduNovaSecondary)
-            ) + if (isClass912Student) {
-                listOf(
-                    Pair("PYQ", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
-                    Pair("Exam Mode", Icons.Default.Timer to EduNovaPrimary),
-                    Pair("Exam Review", Icons.AutoMirrored.Filled.FactCheck to EduNovaSecondary)
-                )
-            } else emptyList()
+            )
 
             tools.forEach { (name, iconAccent) ->
                 Surface(
@@ -2183,6 +2199,62 @@ private fun ActiveToolScreen(
     isClass912: Boolean,
     onBack: () -> Unit
 ) {
+    if (toolName.equals("Quiz", ignoreCase = true) || toolName.contains("Quiz", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveQuizTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Flashcards", ignoreCase = true) || toolName.contains("Flashcard", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveFlashcardTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Mind Map", ignoreCase = true) || toolName.contains("Mind Map", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveMindMapTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Reports", ignoreCase = true) || toolName.contains("Report", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveReportsTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Planner", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveStudyPlannerTool(
+            initialGoal = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Image", ignoreCase = true) || toolName.contains("Analysis", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveImageAnalysisTool(
+            initialQuery = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("PYQ", ignoreCase = true) || toolName.contains("Exam", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractivePyqExamTool(
+            initialChapter = "",
+            onBack = onBack
+        )
+        return
+    }
+
     Scaffold(
         containerColor = EduNovaBackground,
         contentWindowInsets = WindowInsets(0),

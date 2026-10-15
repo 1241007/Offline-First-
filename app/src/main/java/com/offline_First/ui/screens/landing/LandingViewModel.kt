@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
 
 data class LandingUiState(
     val isLoading: Boolean = true,
+    val isCoursesLoading: Boolean = false,
+    val coursesError: String? = null,
     val profile: UserProfile? = null,
     val educationMode: EducationMode = EducationMode.GENERAL,
     val greetingName: String = "Learner",
@@ -85,6 +87,8 @@ class LandingViewModel(
 
             loadedData = LandingUiState(
                 isLoading = false,
+                isCoursesLoading = false,
+                coursesError = courseErr?.let { "Courses require an internet connection." },
                 continueLearning = continueLearning.getOrNull(),
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
@@ -160,5 +164,22 @@ class LandingViewModel(
     fun clearError() {
         loadedData = loadedData.copy(errorMessage = null)
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun toggleEducationMode() {
+        val next = if (_uiState.value.educationMode == EducationMode.SCHOOL) {
+            EducationMode.GENERAL
+        } else {
+            EducationMode.SCHOOL
+        }
+        setEducationMode(next)
+    }
+
+    fun setEducationMode(mode: EducationMode) {
+        viewModelScope.launch(coroutineContext) {
+            val updated = (_uiState.value.profile ?: com.offline_First.data.local.LocalProfileRepository.defaultProfile())
+                .copy(educationMode = mode)
+            profileRepository.updateUserProfile(updated)
+        }
     }
 }

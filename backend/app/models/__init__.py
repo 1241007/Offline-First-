@@ -20,6 +20,7 @@ __all__ = [
     "RoadmapAssessmentSession",
     "UserCourseProgress",
     "UserLessonProgress",
+    "UserRevisionItem",
     "UserProfile",
     "User",
     "RefreshToken",

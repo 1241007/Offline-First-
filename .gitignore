@@ -178,6 +178,10 @@ log/
 temp/
 tmp/
 
+# Database snapshots and sync changelogs
+backend/scripts/*snapshot*.json
+backend/scripts/*changelog*.json
+
 # ============================================
 # Testing & Coverage
 # ============================================

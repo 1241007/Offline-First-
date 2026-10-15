@@ -20,6 +20,7 @@ class RepositoryTest {
 
         assertBackendNotConfigured(repositories.getCourses().exceptionOrNull())
         assertBackendNotConfigured(repositories.getFeaturedCourses().exceptionOrNull())
+        assertBackendNotConfigured(repositories.getCourseDetail("c-cpp").exceptionOrNull())
         assertBackendNotConfigured(repositories.getInProgressCourses().exceptionOrNull())
         assertBackendNotConfigured(repositories.getCompletedCourses().exceptionOrNull())
         assertBackendNotConfigured(repositories.getSubjects().exceptionOrNull())

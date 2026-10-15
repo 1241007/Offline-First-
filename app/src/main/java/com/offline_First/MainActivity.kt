@@ -38,6 +38,7 @@ import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.OfflineFirstTheme
 import kotlinx.coroutines.launch
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,8 +55,14 @@ class MainActivity : ComponentActivity() {
                 val navigationStack = rememberSaveable { mutableStateListOf<AppDestination>() }
                 var openWorkspaceTools by rememberSaveable { mutableStateOf(false) }
                 var selectedLanguage by rememberSaveable { mutableStateOf("English") }
+                var selectedCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+                var selectedLessonId by rememberSaveable { mutableStateOf<String?>(null) }
                 val profileRepository = remember { AppContainer.profileRepository }
-                val profile by profileRepository.observeUserProfile().collectAsState(initial = null)
+
+
+                val profile by profileRepository.observeUserProfile().collectAsState(
+                    initial = com.offline_First.data.local.LocalProfileRepository.defaultProfile()
+                )
 
                 // Restore session on startup
                 LaunchedEffect(Unit) {
@@ -145,6 +152,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+
                     AppDestination.LOGIN -> LoginScreen(
                         onRegister = { pushDestination(AppDestination.REGISTER) },
                         onForgotPassword = { pushDestination(AppDestination.FORGOT_PASSWORD) },
@@ -183,7 +191,39 @@ class MainActivity : ComponentActivity() {
                         language = selectedLanguage,
                         onLanguageSelected = { selectedLanguage = it }
                     )
+                    AppDestination.COURSE_DETAIL -> CourseDetailScreen(
+                        courseId = selectedCourseId ?: "c-py",
+                        onBack = navigateBack,
+                        onLessonClick = { lessonId ->
+                            selectedLessonId = lessonId
+                            pushDestination(AppDestination.LESSON_VIEWER)
+                        },
+                        onOpenRevisionList = {
+                            pushDestination(AppDestination.REVISION_LIST)
+                        }
+                    )
+                    AppDestination.LESSON_VIEWER -> LessonViewerScreen(
+                        courseId = selectedCourseId ?: "c-py",
+                        lessonId = selectedLessonId ?: "",
+                        onBack = navigateBack,
+                        onNavigateToLesson = { nextLessonId ->
+                            selectedLessonId = nextLessonId
+                        },
+                        onOpenRevisionList = {
+                            pushDestination(AppDestination.REVISION_LIST)
+                        }
+                    )
+                    AppDestination.REVISION_LIST -> RevisionListScreen(
+                        onBack = navigateBack,
+                        onOpenLesson = { courseId, lessonId ->
+                            selectedCourseId = courseId
+                            selectedLessonId = lessonId
+                            pushDestination(AppDestination.LESSON_VIEWER)
+                        }
+                    )
                 }
+
+
             }
         }
     }

@@ -25,12 +25,63 @@ class OnlineCourseRepository(
     }
 
     private fun CourseDto.toDomain(): Course {
+        val completed = progressStore.getCompletedLessonCount(id)
+        val prog = if (totalLessons > 0) (completed.toFloat() / totalLessons.toFloat()).coerceIn(0f, 1f) else 0f
         return Course(
             id = id,
             name = name,
             description = description,
             icon = icon,
-            accent = mapAccent(accentColor)
+            accent = mapAccent(accentColor),
+            category = category,
+            level = level,
+            durationHours = durationHours,
+            totalLessons = totalLessons,
+            modulesCount = modulesCount,
+            completedLessons = completed,
+            progress = prog
+        )
+    }
+
+    private fun CourseDetailDto.toDomain(requestedCourseId: String): CourseDetail {
+        val domainId = if (id.isNotBlank()) id else requestedCourseId
+        return CourseDetail(
+            id = domainId,
+            name = name,
+            description = description,
+            icon = icon,
+            accent = mapAccent(accentColor),
+            category = category,
+            level = level,
+            durationHours = durationHours,
+            prerequisites = prerequisites,
+            modules = modules.sortedBy { it.displayOrder }.map { m ->
+                CourseModule(
+                    id = m.id,
+                    courseId = domainId,
+                    title = m.title,
+                    description = m.description,
+                    displayOrder = m.displayOrder,
+                    lessons = m.lessons.sortedBy { it.displayOrder }.map { l ->
+                        LessonItem(
+                            id = l.id,
+                            moduleId = m.id,
+                            courseId = domainId,
+                            title = l.title,
+                            description = l.description,
+                            contentType = l.contentType,
+                            durationMinutes = l.durationMinutes,
+                            displayOrder = l.displayOrder,
+                            resourceUrl = l.resourceUrl,
+                            resourceProvider = l.resourceProvider,
+                            videoUrl = l.videoUrl,
+                            videoProvider = l.videoProvider,
+                            isCompleted = progressStore.isLessonCompleted(domainId, l.id),
+                            isMarkedForRevision = progressStore.isMarkedForRevision(domainId, l.id)
+                        )
+                    }
+                )
+            }
         )
     }
 
