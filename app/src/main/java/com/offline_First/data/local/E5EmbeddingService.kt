@@ -1,5 +1,8 @@
 package com.offline_First.data.local
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -9,22 +12,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
+import java.nio.LongBuffer
 import java.security.MessageDigest
 import kotlin.math.sqrt
 
 private const val TAG = "E5EmbeddingService"
 
 /**
- * On-device embedding inference service using intfloat/multilingual-e5-small (ONNX).
+ * On-device embedding inference service using intfloat/multilingual-e5-small (ONNX Runtime).
  *
  * Configured with the EXACT same dynamic quantized ONNX artifact (model_quantized.onnx)
  * and tokenizer.json as FastAPI backend to guarantee identical vector representations.
  */
 open class E5EmbeddingService(
     private val context: Context? = null,
-    private val modelDir: File = File(context?.filesDir ?: File("."), "e5_small_quantized"),
+    modelDirParam: File? = null,
     private val readyOverride: Boolean? = null
-) {
+) : AutoCloseable {
+
+    private val modelDir: File = modelDirParam ?: resolveDefaultModelDir(context)
 
     companion object {
         const val MODEL_ID = "intfloat/multilingual-e5-small"
@@ -40,6 +46,24 @@ open class E5EmbeddingService(
         const val TOKENIZER_URL = "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/tokenizer.json"
         const val TOKENIZER_SHA256 = "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
         const val TOKENIZER_FILE_NAME = "tokenizer.json"
+
+        fun resolveDefaultModelDir(context: Context?): File {
+            if (context != null) {
+                return File(context.filesDir, "e5_small_quantized")
+            }
+            // Check possible host test locations
+            val testCandidates = listOf(
+                File("../backend/models/e5_small_quantized"),
+                File("backend/models/e5_small_quantized"),
+                File("/data/local/tmp/e5_small_quantized")
+            )
+            for (candidate in testCandidates) {
+                if (candidate.exists() && candidate.isDirectory) {
+                    return candidate
+                }
+            }
+            return File(".", "e5_small_quantized")
+        }
 
         /**
          * Verifies the SHA-256 digest of a file against expected hash.
@@ -97,12 +121,39 @@ open class E5EmbeddingService(
     val tokenizerFile: File
         get() = File(modelDir, TOKENIZER_FILE_NAME)
 
+    private var ortEnvironment: OrtEnvironment? = null
+    private var ortSession: OrtSession? = null
+    private var tokenizer: E5Tokenizer? = null
+    private val initLock = Any()
+
     /**
      * Checks if the quantized model and tokenizer files are downloaded and match SHA-256.
      */
     open fun isModelReady(): Boolean {
         if (readyOverride != null) return readyOverride
         return verifySha256(modelFile, MODEL_SHA256) && verifySha256(tokenizerFile, TOKENIZER_SHA256)
+    }
+
+    @Synchronized
+    private fun ensureSessionLoaded() {
+        if (ortSession != null && tokenizer != null) return
+
+        if (!isModelReady()) {
+            throw IllegalStateException("E5 ONNX model or tokenizer is not ready or failed SHA-256 validation.")
+        }
+
+        synchronized(initLock) {
+            if (ortSession == null) {
+                val env = OrtEnvironment.getEnvironment()
+                val sessionOpts = OrtSession.SessionOptions()
+                val session = env.createSession(modelFile.absolutePath, sessionOpts)
+                ortEnvironment = env
+                ortSession = session
+            }
+            if (tokenizer == null) {
+                tokenizer = E5Tokenizer.fromFile(tokenizerFile)
+            }
+        }
     }
 
     /**
@@ -121,31 +172,74 @@ open class E5EmbeddingService(
         runInference(prefixed)
     }
 
-    private fun runInference(text: String): FloatArray {
-        // Fallback or native ONNX inference
-        // When ONNX Runtime session is active, runs inference over model_quantized.onnx
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        val vec = FloatArray(EMBEDDING_DIMENSION)
-        val md = MessageDigest.getInstance("SHA-256")
-        var block = 0
-        var idx = 0
-        while (idx < EMBEDDING_DIMENSION) {
-            md.reset()
-            md.update(bytes)
-            md.update("_$block".toByteArray(Charsets.UTF_8))
-            val h = md.digest()
-            for (i in 0 until h.size step 4) {
-                if (idx >= EMBEDDING_DIMENSION) break
-                val b0 = h[i].toInt() and 0xFF
-                val b1 = h[i + 1].toInt() and 0xFF
-                val b2 = h[i + 2].toInt() and 0xFF
-                val b3 = h[i + 3].toInt()
-                val intVal = (b3 shl 24) or (b2 shl 16) or (b1 shl 8) or b0
-                vec[idx] = intVal.toFloat() / Int.MAX_VALUE.toFloat()
-                idx++
-            }
-            block++
+    open fun runInference(text: String): FloatArray {
+        ensureSessionLoaded()
+        val session = ortSession ?: throw IllegalStateException("OrtSession not initialized")
+        val env = ortEnvironment ?: throw IllegalStateException("OrtEnvironment not initialized")
+        val tok = tokenizer ?: throw IllegalStateException("Tokenizer not initialized")
+
+        val tokenIds = tok.encode(text)
+        val seqLen = tokenIds.size.toLong()
+        val mask = LongArray(tokenIds.size) { 1L }
+        val typeIds = LongArray(tokenIds.size) { 0L }
+
+        val shape = longArrayOf(1, seqLen)
+        val tensorInputIds = OnnxTensor.createTensor(env, LongBuffer.wrap(tokenIds), shape)
+        val tensorMask = OnnxTensor.createTensor(env, LongBuffer.wrap(mask), shape)
+        val tensorTypeIds = OnnxTensor.createTensor(env, LongBuffer.wrap(typeIds), shape)
+
+        val inputs = mutableMapOf<String, OnnxTensor>(
+            "input_ids" to tensorInputIds,
+            "attention_mask" to tensorMask
+        )
+        if (session.inputNames.contains("token_type_ids")) {
+            inputs["token_type_ids"] = tensorTypeIds
         }
-        return l2Normalize(vec)
+
+        var results: OrtSession.Result? = null
+        try {
+            results = session.run(inputs)
+            @Suppress("UNCHECKED_CAST")
+            val output = results.get(0).value as Array<Array<FloatArray>>
+            val lastHidden = output[0] // shape: [seqLen][384]
+
+            // Mean pooling over attention mask
+            val pooled = FloatArray(EMBEDDING_DIMENSION)
+            var count = 0
+            for (i in mask.indices) {
+                if (mask[i] > 0L) {
+                    count++
+                    for (j in 0 until EMBEDDING_DIMENSION) {
+                        pooled[j] += lastHidden[i][j]
+                    }
+                }
+            }
+            if (count > 0) {
+                for (j in 0 until EMBEDDING_DIMENSION) {
+                    pooled[j] /= count.toFloat()
+                }
+            }
+
+            return l2Normalize(pooled)
+        } finally {
+            tensorInputIds.close()
+            tensorMask.close()
+            tensorTypeIds.close()
+            results?.close()
+        }
+    }
+
+    override fun close() {
+        synchronized(initLock) {
+            try {
+                ortSession?.close()
+            } catch (_: Throwable) {}
+            ortSession = null
+            try {
+                ortEnvironment?.close()
+            } catch (_: Throwable) {}
+            ortEnvironment = null
+            tokenizer = null
+        }
     }
 }

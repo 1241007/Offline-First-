@@ -14,6 +14,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -197,6 +198,17 @@ class OfflineModelAndParityInstrumentedTest {
         val modelFile = e5Service.modelFile
         val tokFile = e5Service.tokenizerFile
 
+        // Seed from /data/local/tmp if available on test device
+        val tmpDir = File("/data/local/tmp/e5_small_quantized")
+        if (!modelFile.exists() && File(tmpDir, "model_quantized.onnx").exists()) {
+            modelFile.parentFile?.mkdirs()
+            File(tmpDir, "model_quantized.onnx").copyTo(modelFile, overwrite = true)
+        }
+        if (!tokFile.exists() && File(tmpDir, "tokenizer.json").exists()) {
+            tokFile.parentFile?.mkdirs()
+            File(tmpDir, "tokenizer.json").copyTo(tokFile, overwrite = true)
+        }
+
         // If files exist in app storage, strictly verify their SHA-256
         if (modelFile.exists() && tokFile.exists()) {
             assertTrue(
@@ -257,5 +269,230 @@ class OfflineModelAndParityInstrumentedTest {
 
         // Corrupted row is gracefully skipped
         assertFalse(results.any { it.chunkId == "corrupted-chunk" })
+    }
+
+    // ==============================================================================
+    // 7. Real Android OS ONNX Runtime Inference & Cross-Runtime Parity (DEF-001)
+    // ==============================================================================
+    @Test
+    fun test_007_real_android_onnx_inference_and_parity() = runBlocking {
+        val e5Service = E5EmbeddingService(appContext)
+        val modelFile = e5Service.modelFile
+        val tokFile = e5Service.tokenizerFile
+
+        val tmpDir = File("/data/local/tmp/e5_small_quantized")
+        if (!modelFile.exists() && File(tmpDir, "model_quantized.onnx").exists()) {
+            modelFile.parentFile?.mkdirs()
+            File(tmpDir, "model_quantized.onnx").copyTo(modelFile, overwrite = true)
+        }
+        if (!tokFile.exists() && File(tmpDir, "tokenizer.json").exists()) {
+            tokFile.parentFile?.mkdirs()
+            File(tmpDir, "tokenizer.json").copyTo(tokFile, overwrite = true)
+        }
+
+        assertTrue("E5 Model must be ready on Android device", e5Service.isModelReady())
+
+        // Representative query: PARITY-001
+        val rawQuery = "What happens when magnesium ribbon is burned in air?"
+        val t0 = System.currentTimeMillis()
+        val queryVector = e5Service.embedQuery(rawQuery)
+        val latencyMs = System.currentTimeMillis() - t0
+
+        android.util.Log.i("DEF-001-EMULATOR", "Real Android ONNX inference executed in ${latencyMs}ms")
+
+        // 1. Exact dimensionality
+        assertEquals(384, queryVector.size)
+
+        // 2. Unit L2 norm
+        var sumSq = 0.0f
+        for (v in queryVector) sumSq += v * v
+        val norm = Math.sqrt(sumSq.toDouble()).toFloat()
+        assertEquals(1.0f, norm, 1e-4f)
+
+        // 3. Expected reference prefix values for PARITY-001:
+        // [0.0868139, -0.0169373, -0.0747441, -0.02811, 0.0818981]
+        val expectedPrefix = floatArrayOf(0.0868139f, -0.0169373f, -0.0747441f, -0.02811f, 0.0818981f)
+        for (k in expectedPrefix.indices) {
+            assertEquals("Component $k parity divergence", expectedPrefix[k], queryVector[k], 0.005f)
+        }
+
+        // 4. Asymmetric prefix separation
+        val passageVector = e5Service.embedPassage(rawQuery)
+        assertEquals(384, passageVector.size)
+        var dot = 0.0f
+        for (k in 0 until 384) dot += queryVector[k] * passageVector[k]
+        assertTrue("Asymmetric prefixes must produce mathematically distinct representations", dot < 0.98f)
+        assertTrue("Asymmetric representations must be semantically coherent", dot > 0.70f)
+
+        e5Service.close()
+    }
+
+    // ==============================================================================
+    // 8. Real Android OS Offline Extractive Fallback & Abstention (DEF-002)
+    // ==============================================================================
+    @Test
+    fun test_008_real_android_offline_extractive_fallback() = runBlocking {
+        val e5Service = E5EmbeddingService(appContext)
+        val chunkContent = "Burning magnesium ribbon in air reacts with oxygen to form magnesium oxide with a dazzling white flame."
+        val chunkEmb = e5Service.embedPassage(chunkContent)
+
+        // Seed authorized test chunk into Android SQLite database
+        database.insertChunk(
+            chunkId = "test-e2e-mg-001",
+            board = "TEST_CBSE",
+            classGrade = "10",
+            subject = "Science",
+            chapterTitle = "Chemical Reactions and Equations",
+            sectionTitle = "1.1 Magnesium burning",
+            pageReference = "p. 2",
+            content = chunkContent,
+            embedding = chunkEmb,
+            embeddingModel = E5EmbeddingService.MODEL_ID,
+            embeddingVersion = E5EmbeddingService.MODEL_VERSION
+        )
+
+        val delegate = com.offline_First.data.local.LocalAIRepository(appContext)
+        delegate.setConnectionMode(com.offline_First.domain.model.ConnectionMode.OFFLINE)
+
+        val testProfile = com.offline_First.domain.model.UserProfile(
+            fullName = "Test Emulator Student",
+            email = "emu@edunova.ai",
+            mobile = "9999999999",
+            interests = "Science",
+            level = "Grade 10",
+            educationMode = com.offline_First.domain.model.EducationMode.SCHOOL,
+            board = "TEST_CBSE",
+            classGrade = "10",
+            subject = "Science"
+        )
+
+        val testSession = com.offline_First.domain.model.ChatSession(
+            id = "test-emu-001",
+            title = "Emu Test",
+            lastUpdated = System.currentTimeMillis()
+        )
+        val onlineAiRepo = com.offline_First.data.remote.OnlineAIRepository(
+            context = appContext,
+            delegate = delegate,
+            initialSession = testSession,
+            userIdProvider = { "emulator_user" },
+            offlineSyllabusRepositoryProvider = { repository },
+            e5EmbeddingServiceProvider = { e5Service },
+            profileProvider = { testProfile }
+        )
+
+        // 1. Supported question with GGUF unavailable emits grounded extractive fallback
+        val tokens = mutableListOf<String>()
+        onlineAiRepo.streamMessage("What happens when magnesium burns in air?").collect { token ->
+            tokens.add(token)
+        }
+        val fullResponse = tokens.joinToString("")
+
+        android.util.Log.i("DEF-002-EMULATOR", "Extractive fallback response: $fullResponse")
+
+        assertTrue("Must include curriculum excerpt banner", fullResponse.contains("Here is the relevant excerpt from your official curriculum"))
+        assertTrue("Must include chapter title", fullResponse.contains("Chemical Reactions and Equations"))
+        assertTrue("Must include textbook passage", fullResponse.contains("dazzling white flame"))
+        assertTrue("Must include extractive mode disclaimer", fullResponse.contains("*(Note: Running in offline extractive mode using authorized syllabus passages."))
+
+        // Verify citations
+        val session = (onlineAiRepo.observeCurrentSession() as kotlinx.coroutines.flow.StateFlow<com.offline_First.domain.model.ChatSession?>).value
+        val lastAssistant = session?.messages?.lastOrNull { !it.fromUser }
+        assertNotNull("Assistant message must exist", lastAssistant)
+        assertTrue("Citations must not be empty", lastAssistant?.citations?.isNotEmpty() == true)
+        assertEquals("test-e2e-mg-001", lastAssistant?.citations?.first()?.sourceId)
+
+        // 2. Unsupported question with MISSING evidence strictly abstains
+        val abstentionTokens = mutableListOf<String>()
+        onlineAiRepo.streamMessage("Explain supersymmetric dark matter in CBSE Class 10").collect { token ->
+            abstentionTokens.add(token)
+        }
+        val abstentionText = abstentionTokens.joinToString("")
+
+        assertTrue(abstentionText.contains("This topic was not found in the official curriculum corpus"))
+        assertFalse(abstentionText.contains("Here is the relevant excerpt"))
+
+        e5Service.close()
+    }
+
+    // ==============================================================================
+    // 9. Embedding Compatibility, Invalidation & Safe Rebuild
+    // ==============================================================================
+    @Test
+    fun test_009_embedding_compatibility_invalidation_and_rebuild() = runBlocking {
+        val e5Service = E5EmbeddingService(appContext)
+
+        val genuineText = "Electrons flow from negative terminal to positive terminal producing electric current."
+        val genuineVector = e5Service.embedPassage(genuineText)
+
+        // 1. Insert compatible genuine E5 chunk
+        database.insertChunk(
+            chunkId = "chunk-genuine-e5",
+            board = "TEST_CBSE",
+            classGrade = "10",
+            subject = "Science",
+            chapterTitle = "Electricity",
+            sectionTitle = "Current",
+            pageReference = "p. 199",
+            content = genuineText,
+            embedding = genuineVector,
+            embeddingModel = E5EmbeddingService.MODEL_ID,
+            embeddingVersion = E5EmbeddingService.MODEL_VERSION
+        )
+
+        // 2. Insert incompatible legacy pseudo-vector chunk (e.g. from previous uncalibrated SHA-256 build)
+        val pseudoVector = FloatArray(384) { 0.42f }
+        database.insertChunk(
+            chunkId = "chunk-legacy-pseudo",
+            board = "TEST_CBSE",
+            classGrade = "10",
+            subject = "Science",
+            chapterTitle = "Electricity",
+            sectionTitle = "Electric Potential",
+            pageReference = "p. 201",
+            content = "Electric potential difference between two points in a circuit.",
+            embedding = pseudoVector,
+            embeddingModel = "pseudo-sha256",
+            embeddingVersion = "0.9"
+        )
+
+        // 3. Vector search with genuine E5 query vector MUST strictly exclude the incompatible pseudo chunk
+        val queryVector = e5Service.embedQuery("What is electric current?")
+        val searchResults = database.searchByVector(queryVector, "TEST_CBSE", "10", "Science")
+
+        assertTrue("Must retrieve compatible genuine E5 chunk", searchResults.any { it.chunkId == "chunk-genuine-e5" })
+        assertFalse("Must NEVER return incompatible pseudo-vector chunk in vector results", searchResults.any { it.chunkId == "chunk-legacy-pseudo" })
+
+        // 4. Invalidation: detect and safely strip incompatible embeddings
+        val invalidatedCount = database.invalidateIncompatibleEmbeddings()
+        assertEquals("Must invalidate exactly 1 incompatible chunk", 1, invalidatedCount)
+
+        // Verify the legacy chunk still exists for keyword search, but its embedding BLOB is null
+        val db = database.readableDatabase
+        val cursor: android.database.Cursor = db.rawQuery("SELECT embedding, embedding_model FROM ${SyllabusDatabase.TABLE_CHUNKS} WHERE chunk_id = ?", arrayOf("chunk-legacy-pseudo"))
+        cursor.use { c: android.database.Cursor ->
+            assertTrue(c.moveToFirst())
+            assertNull("Embedding BLOB must be cleared", c.getBlob(0))
+            assertNull("Embedding model must be cleared", c.getString(1))
+        }
+
+        // Keyword search still works gracefully
+        val kwResults = database.searchChunks("potential", "TEST_CBSE", "10", "Science")
+        assertTrue("Keyword search still finds chunk with null embedding", kwResults.any { it.chunkId == "chunk-legacy-pseudo" })
+
+        // 5. Rebuild: generate genuine E5 embedding for the invalidated chunk
+        val rebuiltCount = database.rebuildMissingEmbeddings(e5Service)
+        assertTrue("Must rebuild at least 1 missing embedding", rebuiltCount >= 1)
+
+        // Verify it now has genuine E5 embedding
+        val verifyCursor: android.database.Cursor = db.rawQuery("SELECT embedding, embedding_model, embedding_version FROM ${SyllabusDatabase.TABLE_CHUNKS} WHERE chunk_id = ?", arrayOf("chunk-legacy-pseudo"))
+        verifyCursor.use { c: android.database.Cursor ->
+            assertTrue(c.moveToFirst())
+            assertNotNull("Embedding BLOB must be rebuilt", c.getBlob(0))
+            assertEquals(E5EmbeddingService.MODEL_ID, c.getString(1))
+            assertEquals(E5EmbeddingService.MODEL_VERSION, c.getString(2))
+        }
+
+        e5Service.close()
     }
 }

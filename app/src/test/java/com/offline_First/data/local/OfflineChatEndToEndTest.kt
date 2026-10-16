@@ -323,4 +323,76 @@ class OfflineChatEndToEndTest {
         assertEquals(0.0f, sim, 1e-6f)
         assertFalse(sim.isNaN())
     }
+
+    // ==============================================================================
+    // DEF-002: Deterministic Evidence-Grounded Extractive Fallback
+    // ==============================================================================
+    @Test
+    fun test_def_002_grounded_extractive_fallback_when_gguf_unavailable() = runBlocking {
+        // GGUF model is NOT downloaded on device (real default state without 1GB weights)
+        val delegate = LocalAIRepository()
+        delegate.setConnectionMode(ConnectionMode.OFFLINE)
+
+        val sampleChunk = RetrievedChunk(
+            chunkId = "cbse-10-sci-ch1-002",
+            content = "The reaction between magnesium and oxygen in air produces magnesium oxide powder with a dazzling white flame.",
+            board = "CBSE",
+            classGrade = "10",
+            subject = "Science",
+            chapter = "Chemical Reactions and Equations",
+            textbookTitle = "CBSE Class 10 Science Textbook",
+            normalizedScore = 0.92f,
+            vectorRank = 1,
+            sparseRank = 1,
+            similarityScore = 0.95f
+        )
+
+        val fakeRepo = ConfigurableOfflineSyllabusRepository(
+            chunksToReturn = listOf(sampleChunk),
+            outcomeToReturn = EvidenceOutcome.SUFFICIENT
+        )
+
+        val readyE5Service = object : E5EmbeddingService(readyOverride = true) {
+            override suspend fun embedQuery(text: String): FloatArray = FloatArray(384) { 0.1f }
+        }
+
+        val testSession4 = ChatSession(id = "test-session-004", title = "Extractive Test", lastUpdated = System.currentTimeMillis())
+        val repository = OnlineAIRepository(
+            context = null,
+            delegate = delegate,
+            userIdProvider = { "test_user" },
+            offlineSyllabusRepositoryProvider = { fakeRepo },
+            e5EmbeddingServiceProvider = { readyE5Service },
+            // offlineProviderOverride = null -> defaults to real OfflineLlamaProvider(delegate) which lacks GGUF weights
+            profileProvider = { testStudentProfile },
+            initialSession = testSession4
+        )
+
+        // 1. Supported question with sufficient evidence triggers grounded extractive fallback
+        val tokens = repository.streamMessage("What happens when magnesium ribbon burns in air?").toList()
+        val response = tokens.joinToString("")
+
+        // Proves deterministic, grounded extractive fallback
+        assertTrue("Must indicate curriculum excerpt", response.contains("Here is the relevant excerpt from your official curriculum"))
+        assertTrue("Must cite chapter", response.contains("Chemical Reactions and Equations"))
+        assertTrue("Must contain textbook content", response.contains("The reaction between magnesium and oxygen"))
+        assertTrue("Must clearly label offline extractive mode", response.contains("*(Note: Running in offline extractive mode using authorized syllabus passages."))
+
+        // Citations must be preserved
+        val currentSession = (repository.observeCurrentSession() as kotlinx.coroutines.flow.StateFlow<ChatSession?>).value
+        val currentMsg = currentSession?.messages?.lastOrNull { !it.fromUser }
+        assertNotNull("Assistant message must be present in session", currentMsg)
+        assertTrue("Citations must be preserved in extractive mode", currentMsg?.citations?.isNotEmpty() == true)
+        assertEquals("cbse-10-sci-ch1-002", currentMsg?.citations?.first()?.sourceId)
+
+        // 2. Unsupported question with MISSING evidence strictly abstains
+        fakeRepo.chunksToReturn = emptyList()
+        fakeRepo.outcomeToReturn = EvidenceOutcome.MISSING
+
+        val abstentionTokens = repository.streamMessage("Explain black hole thermodynamics in CBSE Class 10").toList()
+        val abstentionResponse = abstentionTokens.joinToString("")
+
+        assertTrue(abstentionResponse.contains("This topic was not found in the official curriculum corpus"))
+        assertFalse(abstentionResponse.contains("Here is the relevant excerpt"))
+    }
 }

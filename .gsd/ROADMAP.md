@@ -1,7 +1,7 @@
 # ROADMAP.md — EduNova Verification & RAG Evaluation Suite
 
 > **Milestone**: 1.0 Architecture Verification & Regression Suite
-> **Status**: In Progress
+> **Status**: Complete (Milestone 1.0 Verified — Candidate Release RC-1 Approved, Physical Low-RAM Hardware Tracked as Pre-Release Gate)
 
 ## Phases Overview
 
@@ -15,9 +15,9 @@
 | **Phase 6** | Offline RAG Evaluation & Model Parity | 3 | Implement Android offline tests and cross-runtime E5 parity fixture | Complete |
 | **Phase 7** | Curriculum-Aware Syllabus Synchronization | 4 | End-to-end sync verification across backend and Android client | Complete |
 | **Phase 8** | Android Low-RAM & Performance Benchmark | 4 | Quantize footprint, latency, and memory safety evaluation | Complete |
-| **Phase 9** | Unified Reusable Evaluation Command | 5 | CLI runner `evals.rag.run_eval` with JSON/Markdown reporting | Next |
-| **Phase 10** | Manual End-to-End Application Checklist | 5 | Produce 15-scenario manual verification checklist | Not Started |
-| **Phase 11** | Defect Remediation & Verification Reports | 5 | Surgical bug fixes, regression checks, and final verification report | Not Started |
+| **Phase 9** | Unified Reusable Evaluation Command | 5 | CLI runner `evals.rag.run_eval` with JSON/Markdown reporting | Complete |
+| **Phase 10** | Manual End-to-End Application Checklist | 5 | Produce 15-scenario manual verification checklist | Complete |
+| **Phase 11** | Defect Remediation & Verification Reports | 5 | Surgical bug fixes, regression checks, and final verification report | Complete |
 
 ---
 
