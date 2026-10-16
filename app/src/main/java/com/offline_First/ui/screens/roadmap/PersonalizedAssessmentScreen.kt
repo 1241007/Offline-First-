@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offline_First.domain.model.AssessmentPhase
+import com.offline_First.domain.model.AssessmentQuestion
 import com.offline_First.domain.model.AssessmentQuestionType
 import com.offline_First.domain.model.TopicMasteryLevel
 import com.offline_First.ui.theme.EduNovaAccent
@@ -446,8 +447,14 @@ fun PersonalizedAssessmentScreen(
                     }
                 } else {
                     // QUESTION PRESENTATION (Profile or Diagnostic)
-                    session.currentQuestion?.let { question ->
-                        item(key = question.id) {
+                    val question = session.currentQuestion ?: AssessmentQuestion(
+                        id = session.currentStepId ?: "step_${session.completedSteps.size + 1}",
+                        topicTag = "general",
+                        questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+                        prompt = session.latestMessage ?: "Please select an option to continue:",
+                        options = session.options
+                    )
+                    item(key = question.id) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(20.dp),
@@ -638,7 +645,6 @@ fun PersonalizedAssessmentScreen(
                                 }
                             }
                         }
-                    }
                 }
             }
         }

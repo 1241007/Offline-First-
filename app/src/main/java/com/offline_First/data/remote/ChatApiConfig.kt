@@ -14,7 +14,7 @@ import com.offline_First.BuildConfig
  * Do NOT hardcode URLs directly in source code.
  */
 object ChatApiConfig {
-    val BASE_URL: String = BuildConfig.BACKEND_BASE_URL
+    val BASE_URL: String = BuildConfig.BACKEND_BASE_URL.trim().removeSuffix("/")
 
     const val CONNECT_TIMEOUT_MS = 60_000   // Render free-tier cold-start can take ~50 s
     const val READ_TIMEOUT_MS = 90_000

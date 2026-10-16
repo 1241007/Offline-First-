@@ -28,6 +28,7 @@ class FakeAuthRepository(
     override suspend fun restoreSession(): Result<Boolean> = Result.success(true)
     override suspend fun fetchMe(): Result<UserDto> = Result.success(UserDto("u1", "u1@example.com", null, "User One"))
     override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.Unauthenticated)
+    override fun observeSession(): Flow<Boolean> = flowOf(false)
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

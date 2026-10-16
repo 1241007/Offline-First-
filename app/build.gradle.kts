@@ -38,7 +38,7 @@ val backendBaseUrl: String =
     (System.getenv("BACKEND_BASE_URL")
         ?: dotEnv["BACKEND_BASE_URL"]
         ?: providers.gradleProperty("backendBaseUrl").orNull
-        ?: "https://edunova-backend-9waj.onrender.com")
+        ?: "https://edunova-backend-9waj.onrender.com").trim()
 
 val supabaseUrl: String =
     (System.getenv("SUPABASE_URL")
@@ -95,10 +95,14 @@ android {
 
     buildTypes {
         release {
+            buildConfigField("String", "BACKEND_BASE_URL", quotedBuildConfigString("https://edunova-backend-9waj.onrender.com"))
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
+        }
+        debug {
+            buildConfigField("String", "BACKEND_BASE_URL", quotedBuildConfigString(backendBaseUrl))
         }
     }
     compileOptions {

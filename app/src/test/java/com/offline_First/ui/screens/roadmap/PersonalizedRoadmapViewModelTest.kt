@@ -117,8 +117,17 @@ class FakeRoadmapRepository : RoadmapRepository {
             activeAssessmentSession ?: startAssessmentResult.getOrThrow()
         )
 
-    override suspend fun startPersonalizedAssessment(): Result<AssessmentSessionState> =
+    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
+        Result.success(Pair(true, subject))
+
+    override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> =
         startAssessmentResult
+
+    override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> =
+        Result.failure(UnsupportedOperationException())
+
+    override suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean): Result<PersonalizedRoadmapDetail> =
+        Result.failure(UnsupportedOperationException())
 
     override suspend fun submitAssessmentAnswer(
         sessionId: String,

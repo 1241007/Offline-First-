@@ -103,8 +103,57 @@ class OnlineRoadmapRepository(
     }
 
     private fun AssessmentSessionResponseDto.toDomain(): AssessmentSessionState {
+        val isDone = state.equals("READY_FOR_GENERATION", ignoreCase = true) ||
+            currentStepId.equals("READY_FOR_GENERATION", ignoreCase = true) ||
+            state.equals("SUMMARY", ignoreCase = true) ||
+            completenessPercentage >= 100 ||
+            !roadmapId.isNullOrBlank()
+
+        val determinedPhase = when {
+            isDone || state.equals("SUMMARY", ignoreCase = true) || currentStepId.equals("STAGE_REVIEW", ignoreCase = true) ->
+                AssessmentPhase.SUMMARY
+            quiz != null || currentStepId?.contains("SKILL", ignoreCase = true) == true ->
+                AssessmentPhase.DIAGNOSTIC
+            else ->
+                AssessmentPhase.PROFILE_COLLECTION
+        }
+
+        val domainName = goal?.takeIf { it.isNotBlank() } ?: "Python"
+
+        val effectivePrompt = quiz?.question
+            ?: latestMessage
+            ?: messages.lastOrNull { it.sender.lowercase() == "mentor" || it.sender.lowercase() == "assistant" }?.text
+            ?: "Please select an option to continue:"
+
+        val effectiveOptions = when {
+            quiz != null && quiz.options.isNotEmpty() -> quiz.options
+            options.isNotEmpty() -> options
+            else -> messages.lastOrNull { it.sender.lowercase() == "mentor" || it.sender.lowercase() == "assistant" }?.options ?: emptyList()
+        }
+
+        val question = if (determinedPhase == AssessmentPhase.SUMMARY) {
+            null
+        } else {
+            AssessmentQuestion(
+                id = "${currentStepId ?: state}_${completedSteps.size}_${quiz?.skillTested ?: effectivePrompt.hashCode()}",
+                topicTag = quiz?.skillTested ?: currentStepId ?: "general",
+                questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+                prompt = effectivePrompt,
+                options = effectiveOptions,
+                difficultyLevel = when (quiz?.difficulty?.lowercase()) {
+                    "advanced" -> 3
+                    "intermediate" -> 2
+                    else -> 1
+                },
+                explanation = quiz?.selectionRationale ?: ""
+            )
+        }
+
+        val qNum = (completedSteps.size + 1).coerceAtMost(5)
+
         return AssessmentSessionState(
             id = id,
+            sessionId = id,
             state = state,
             currentStepId = currentStepId,
             completedSteps = completedSteps,
@@ -117,7 +166,13 @@ class OnlineRoadmapRepository(
             quiz = quiz?.toDomain(),
             completenessPercentage = completenessPercentage,
             roadmapId = roadmapId,
-            messages = messages.map { it.toDomain() }
+            messages = messages.map { it.toDomain() },
+            phase = determinedPhase,
+            domain = domainName,
+            currentQuestion = question,
+            questionNumber = qNum,
+            totalQuestions = 5,
+            isComplete = isDone
         )
     }
 
