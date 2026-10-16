@@ -52,7 +52,9 @@ fun PersonalizedRoadmapScreen(
     viewModel: PersonalizedRoadmapViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val roadmap = uiState.activeRoadmap
+    val roadmap = remember(uiState.activeRoadmap) {
+        uiState.activeRoadmap?.withSynthesizedTopicsIfEmpty()
+    }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface

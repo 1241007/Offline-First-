@@ -198,6 +198,165 @@ data class PersonalizedRoadmapDetail(
         }
         return copy(topics = updatedTopics)
     }
+
+    fun withSynthesizedTopicsIfEmpty(): PersonalizedRoadmapDetail {
+        if (topics.isNotEmpty()) {
+            return this.withRecomputedStatuses()
+        }
+        if (phases.isEmpty()) {
+            return this
+        }
+
+        val synthesizedTopics = mutableListOf<PersonalizedRoadmapTopic>()
+        val synthesizedEdges = mutableListOf<PersonalizedRoadmapEdge>()
+        var previousTopicId: String? = null
+
+        val demonstratedSkills = assessmentSummary.skillGapBreakdown
+            .filter { it.status.equals("demonstrated", ignoreCase = true) }
+            .map { it.skill.lowercase() }
+
+        phases.forEachIndexed { pIdx, phase ->
+            if (phase.tasks.isNotEmpty()) {
+                phase.tasks.forEachIndexed { tIdx, task ->
+                    val topicId = task.id.ifBlank { "${id}_p${pIdx}_t${tIdx}" }
+                    val isDone = task.isCompleted ||
+                        completedMilestones.contains(topicId) ||
+                        completedMilestones.contains(task.title) ||
+                        completedMilestones.contains("${id}_task_${task.id}")
+
+                    val prereqs = if (task.dependencies.isNotEmpty()) {
+                        task.dependencies
+                    } else if (previousTopicId != null) {
+                        listOf(previousTopicId!!)
+                    } else {
+                        emptyList()
+                    }
+
+                    val isDemonstrated = demonstratedSkills.any { skill ->
+                        task.title.lowercase().contains(skill) || skill.contains(task.title.lowercase())
+                    }
+                    val mastery = if (isDemonstrated) TopicMasteryLevel.STRONG else TopicMasteryLevel.UNKNOWN
+                    val accelerated = isDemonstrated
+
+                    val status = when {
+                        isDone -> PersonalizedTopicStatus.COMPLETED
+                        prereqs.isEmpty() -> PersonalizedTopicStatus.UNLOCKED
+                        else -> PersonalizedTopicStatus.LOCKED
+                    }
+
+                    val desc = task.description.ifBlank { task.instructions.ifBlank { "Core module for ${phase.title}" } }
+                    val exp = if (accelerated) "Accelerated pathway: Demonstrated proficiency during assessment."
+                    else task.completionCriteria.ifBlank { phase.objective }
+
+                    val minutes = (task.estimatedHours * 60).toInt().coerceIn(15, 240)
+                    val priority = (100 - (pIdx * 20 + tIdx * 5)).coerceAtLeast(1)
+
+                    synthesizedTopics.add(
+                        PersonalizedRoadmapTopic(
+                            id = topicId,
+                            topicTag = task.title.lowercase().replace(Regex("[^a-z0-9]+"), "_"),
+                            title = task.title,
+                            shortDescription = desc,
+                            estimatedMinutes = minutes,
+                            prerequisiteTopicIds = prereqs,
+                            status = status,
+                            masteryLevel = mastery,
+                            priorityScore = priority,
+                            accelerated = accelerated,
+                            explanation = exp
+                        )
+                    )
+
+                    prereqs.forEach { p ->
+                        synthesizedEdges.add(PersonalizedRoadmapEdge(fromTopicId = p, toTopicId = topicId))
+                    }
+                    previousTopicId = topicId
+                }
+            } else if (phase.topics.isNotEmpty()) {
+                phase.topics.forEachIndexed { topIdx, topicStr ->
+                    val topicId = "${id}_p${pIdx}_top${topIdx}"
+                    val isDone = completedMilestones.contains(topicId) || completedMilestones.contains(topicStr)
+                    val prereqs = if (previousTopicId != null) listOf(previousTopicId!!) else emptyList()
+                    val status = if (isDone) PersonalizedTopicStatus.COMPLETED
+                    else if (prereqs.isEmpty()) PersonalizedTopicStatus.UNLOCKED
+                    else PersonalizedTopicStatus.LOCKED
+                    val priority = (100 - (pIdx * 20 + topIdx * 5)).coerceAtLeast(1)
+
+                    synthesizedTopics.add(
+                        PersonalizedRoadmapTopic(
+                            id = topicId,
+                            topicTag = topicStr.lowercase().replace(Regex("[^a-z0-9]+"), "_"),
+                            title = topicStr,
+                            shortDescription = "Core curriculum module in ${phase.title}",
+                            estimatedMinutes = 30,
+                            prerequisiteTopicIds = prereqs,
+                            status = status,
+                            masteryLevel = TopicMasteryLevel.UNKNOWN,
+                            priorityScore = priority,
+                            accelerated = false,
+                            explanation = phase.objective
+                        )
+                    )
+
+                    prereqs.forEach { p ->
+                        synthesizedEdges.add(PersonalizedRoadmapEdge(fromTopicId = p, toTopicId = topicId))
+                    }
+                    previousTopicId = topicId
+                }
+            } else if (phase.milestones.isNotEmpty()) {
+                phase.milestones.forEachIndexed { mIdx, milestone ->
+                    val topicId = "${id}_p${pIdx}_m${mIdx}"
+                    val isDone = milestone.isCompleted ||
+                        completedMilestones.contains(topicId) ||
+                        completedMilestones.contains(milestone.title)
+                    val prereqs = if (previousTopicId != null) listOf(previousTopicId!!) else emptyList()
+                    val status = if (isDone) PersonalizedTopicStatus.COMPLETED
+                    else if (prereqs.isEmpty()) PersonalizedTopicStatus.UNLOCKED
+                    else PersonalizedTopicStatus.LOCKED
+                    val priority = (100 - (pIdx * 20 + mIdx * 5)).coerceAtLeast(1)
+
+                    synthesizedTopics.add(
+                        PersonalizedRoadmapTopic(
+                            id = topicId,
+                            topicTag = milestone.title.lowercase().replace(Regex("[^a-z0-9]+"), "_"),
+                            title = milestone.title,
+                            shortDescription = milestone.assessment.ifBlank { "Milestone for ${phase.title}" },
+                            estimatedMinutes = 45,
+                            prerequisiteTopicIds = prereqs,
+                            status = status,
+                            masteryLevel = TopicMasteryLevel.UNKNOWN,
+                            priorityScore = priority,
+                            accelerated = false,
+                            explanation = milestone.passingCriteria
+                        )
+                    )
+
+                    prereqs.forEach { p ->
+                        synthesizedEdges.add(PersonalizedRoadmapEdge(fromTopicId = p, toTopicId = topicId))
+                    }
+                    previousTopicId = topicId
+                }
+            }
+        }
+
+        val parsedWeeks = duration.filter { it.isDigit() }.toIntOrNull()
+            ?: phases.sumOf { it.durationWeeks }.coerceAtLeast(1)
+        val parsedHours = weeklyHours.toInt().coerceAtLeast(1)
+
+        val completedSet = synthesizedTopics
+            .filter { it.status == PersonalizedTopicStatus.COMPLETED }
+            .map { it.id }
+            .toSet()
+
+        return copy(
+            studyHoursPerWeek = if (studyHoursPerWeek > 0) studyHoursPerWeek else parsedHours,
+            estimatedWeeks = if (estimatedWeeks > 0) estimatedWeeks else parsedWeeks,
+            domain = if (domain.isNotBlank() && domain != "Python") domain else (goal.ifBlank { title }),
+            topics = synthesizedTopics,
+            edges = synthesizedEdges,
+            completedTopicIds = completedTopicIds + completedSet
+        ).withRecomputedStatuses()
+    }
 }
 
 // Legacy preview for backward compatibility

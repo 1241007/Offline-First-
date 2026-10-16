@@ -1107,7 +1107,7 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                 nextAction = nextAction,
                 completedMilestones = completedMilestones,
                 createdAt = createdAt
-            )
+            ).withSynthesizedTopicsIfEmpty()
         }.getOrNull()
     }
 
