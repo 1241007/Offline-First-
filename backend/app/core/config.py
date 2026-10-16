@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 from typing import Any, Optional, Union

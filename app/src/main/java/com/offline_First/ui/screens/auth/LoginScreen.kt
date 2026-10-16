@@ -84,13 +84,13 @@ fun LoginScreen(
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AuthTextField(
-                    label = "Email or mobile number",
-                    placeholder = "Email or mobile number",
+                    label = "Email",
+                    placeholder = "Enter your email",
                     value = contact,
                     onValueChange = { contact = it; contactError = null },
                     error = contactError,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text
+                        keyboardType = KeyboardType.Email
                     )
                 )
                 AuthPasswordField(

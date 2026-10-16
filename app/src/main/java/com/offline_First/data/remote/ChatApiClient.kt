@@ -18,6 +18,7 @@ import okhttp3.Response
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 
 private val json = Json {
     ignoreUnknownKeys = true

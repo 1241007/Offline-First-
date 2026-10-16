@@ -39,6 +39,26 @@ import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSuccess
 import com.offline_First.ui.utils.IconResolver
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.ImeAction
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
+import com.offline_First.ui.screens.roadmap.PersonalizedRoadmapViewModel
+
 private fun RoadmapAccentTheme.toColor(): Color = when (this) {
     RoadmapAccentTheme.PRIMARY -> EduNovaPrimary
     RoadmapAccentTheme.SECONDARY -> EduNovaSecondary
@@ -51,9 +71,15 @@ private fun RoadmapAccentTheme.toColor(): Color = when (this) {
 fun RoadmapScreen(
     onBack: () -> Unit = {},
     onBuildRoadmap: () -> Unit = {},
-    viewModel: RoadmapViewModel = viewModel()
+    onOpenPersonalizedRoadmap: () -> Unit = {},
+    onOpenSavedRoadmap: (PersonalizedRoadmapDetail) -> Unit = {},
+    onStartAssessmentForCourse: (String) -> Unit = {},
+    viewModel: RoadmapViewModel = viewModel(),
+    personalizedViewModel: PersonalizedRoadmapViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val personalizedState by personalizedViewModel.uiState.collectAsState()
+    val savedRoadmaps = personalizedState.savedRoadmaps
     val roadmapPrimary = MaterialTheme.colorScheme.primary
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -405,6 +431,9 @@ fun RoadmapScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
 
                         "Lesson Packs" -> {
                             item(key = "lesson-packs-header") {
@@ -1400,7 +1429,8 @@ private fun StandardRoadmapCard(
 private fun RoadmapDetailDialog(
     roadmap: RoadmapOption,
     roadmapPrimary: Color,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onStartAssessment: (String) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1454,7 +1484,9 @@ private fun RoadmapDetailDialog(
         },
         confirmButton = {
             Button(
-                onClick = onDismiss,
+                onClick = {
+                    onStartAssessment(roadmap.title)
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
             ) {
                 Text("Close")

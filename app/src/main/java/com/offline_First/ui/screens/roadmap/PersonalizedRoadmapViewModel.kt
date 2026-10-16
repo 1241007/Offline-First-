@@ -1,0 +1,418 @@
+package com.offline_First.ui.screens.roadmap
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.offline_First.data.AppContainer
+import com.offline_First.data.repository.RoadmapRepository
+import com.offline_First.domain.model.AssessmentPhase
+import com.offline_First.domain.model.AssessmentSessionState
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
+import com.offline_First.domain.model.PersonalizedRoadmapTopic
+import com.offline_First.domain.model.PersonalizedTopicStatus
+import com.offline_First.domain.model.TopicLearningContent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class PersonalizedRoadmapUiState(
+    val assessmentState: AssessmentSessionState? = null,
+    val activeRoadmap: PersonalizedRoadmapDetail? = null,
+    val savedRoadmaps: List<PersonalizedRoadmapDetail> = emptyList(),
+    val targetCourseInput: String = "",
+    val isValidatingCourse: Boolean = false,
+    val courseValidationError: String? = null,
+    val isLoading: Boolean = false,
+    val isSubmittingAnswer: Boolean = false,
+    val isGenerating: Boolean = false,
+    val errorMessage: String? = null,
+    val selectedTopic: PersonalizedRoadmapTopic? = null,
+    val explanationMessage: String? = null,
+    val activeTopicContent: TopicLearningContent? = null,
+    val isLoadingTopicContent: Boolean = false,
+    val isCompletingTopic: Boolean = false,
+    val topicQuizSelectedIndex: Int? = null,
+    val topicQuizAnswerCorrect: Boolean? = null,
+    val topicQuizExplanation: String? = null,
+    val roadmapJustGenerated: Boolean = false
+)
+
+class PersonalizedRoadmapViewModel(
+    private val repository: RoadmapRepository = AppContainer.roadmapRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(PersonalizedRoadmapUiState())
+    val uiState: StateFlow<PersonalizedRoadmapUiState> = _uiState.asStateFlow()
+
+    init {
+        loadSavedRoadmaps()
+    }
+
+    fun updateCourseInput(input: String) {
+        _uiState.update { it.copy(targetCourseInput = input, courseValidationError = null) }
+    }
+
+    // -----------------------------------------------------------------------
+    // Assessment Session Management
+    // -----------------------------------------------------------------------
+
+    fun validateAndStartAssessment(subject: String, onStarted: () -> Unit = {}) {
+        val trimmed = subject.trim()
+        if (trimmed.length < 2) {
+            _uiState.update { it.copy(courseValidationError = "Please enter a valid course name (e.g., Python, React, Java, SQL, DSA).") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isValidatingCourse = true, courseValidationError = null) }
+            repository.validateSubject(trimmed)
+                .onSuccess { (isValid, stdName) ->
+                    _uiState.update { it.copy(isValidatingCourse = false) }
+                    if (isValid) {
+                        startAssessment(stdName)
+                        onStarted()
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                courseValidationError = "'$trimmed' is not recognized as a valid technology or curriculum topic. Please enter a specific subject like Python, React, Java, SQL, DSA, or Machine Learning."
+                            )
+                        }
+                    }
+                }
+                .onFailure {
+                    // Fallback to starting assessment directly with user entered name
+                    _uiState.update { it.copy(isValidatingCourse = false) }
+                    startAssessment(trimmed)
+                    onStarted()
+                }
+        }
+    }
+
+    fun startAssessment(domain: String = "Python") {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            repository.startPersonalizedAssessment(domain)
+                .onSuccess { session ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            assessmentState = session,
+                            activeRoadmap = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.localizedMessage ?: "Failed to start assessment"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun submitAnswer(answer: String, quizSelectedIndex: Int? = null) {
+        val currentSession = _uiState.value.assessmentState ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmittingAnswer = true, errorMessage = null) }
+            repository.submitAssessmentAnswer(
+                sessionId = currentSession.sessionId,
+                answer = answer,
+                quizSelectedIndex = quizSelectedIndex
+            ).onSuccess { updatedSession ->
+                _uiState.update {
+                    it.copy(
+                        isSubmittingAnswer = false,
+                        assessmentState = updatedSession
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isSubmittingAnswer = false,
+                        errorMessage = error.localizedMessage ?: "Failed to submit answer"
+                    )
+                }
+            }
+        }
+    }
+
+    fun correctProfileField(field: String, value: String) {
+        val currentSession = _uiState.value.assessmentState ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            repository.correctProfileField(currentSession.sessionId, field, value)
+                .onSuccess { updatedSession ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            assessmentState = updatedSession
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.localizedMessage ?: "Failed to correct field"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun dismissCorrectionPrompt() {
+        _uiState.update { state ->
+            state.copy(
+                assessmentState = state.assessmentState?.copy(correctionPrompt = null)
+            )
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Roadmap Generation & CRUD
+    // -----------------------------------------------------------------------
+
+    fun resetAssessment() {
+        _uiState.update {
+            it.copy(
+                assessmentState = null,
+                targetCourseInput = "",
+                courseValidationError = null,
+                roadmapJustGenerated = false
+            )
+        }
+    }
+
+    fun consumeRoadmapGenerated() {
+        _uiState.update { it.copy(roadmapJustGenerated = false) }
+    }
+
+    fun generateRoadmap() {
+        val currentSession = _uiState.value.assessmentState ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGenerating = true, errorMessage = null) }
+            repository.generatePersonalizedRoadmap(currentSession.sessionId)
+                .onSuccess { roadmap ->
+                    _uiState.update { state ->
+                        state.copy(
+                            isGenerating = false,
+                            activeRoadmap = roadmap,
+                            savedRoadmaps = listOf(roadmap) + state.savedRoadmaps.filter { it.id != roadmap.id },
+                            assessmentState = null,
+                            roadmapJustGenerated = true
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isGenerating = false,
+                            errorMessage = error.localizedMessage ?: "Failed to generate roadmap"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun loadSavedRoadmaps() {
+        viewModelScope.launch {
+            repository.getMyPersonalizedRoadmaps()
+                .onSuccess { roadmaps ->
+                    _uiState.update { state ->
+                        state.copy(
+                            savedRoadmaps = roadmaps,
+                            activeRoadmap = state.activeRoadmap ?: roadmaps.firstOrNull()
+                        )
+                    }
+                }
+        }
+    }
+
+    fun openRoadmap(roadmap: PersonalizedRoadmapDetail) {
+        _uiState.update { it.copy(activeRoadmap = roadmap, assessmentState = null) }
+    }
+
+    // -----------------------------------------------------------------------
+    // Dedicated Topic Learning Content & Completion
+    // -----------------------------------------------------------------------
+
+    fun loadTopicContent(roadmapId: String, topicId: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingTopicContent = true,
+                    activeTopicContent = null,
+                    topicQuizSelectedIndex = null,
+                    topicQuizAnswerCorrect = null,
+                    topicQuizExplanation = null,
+                    errorMessage = null
+                )
+            }
+            repository.getTopicLearningContent(roadmapId, topicId)
+                .onSuccess { content ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingTopicContent = false,
+                            activeTopicContent = content
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingTopicContent = false,
+                            errorMessage = error.localizedMessage ?: "Failed to load topic lessons"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun submitTopicQuizAnswer(selectedIndex: Int) {
+        val quiz = _uiState.value.activeTopicContent?.practiceQuiz ?: return
+        val isCorrect = selectedIndex == quiz.correctOptionIndex
+        _uiState.update {
+            it.copy(
+                topicQuizSelectedIndex = selectedIndex,
+                topicQuizAnswerCorrect = isCorrect,
+                topicQuizExplanation = quiz.explanation
+            )
+        }
+    }
+
+    fun completeTopic(
+        roadmapId: String,
+        topicId: String,
+        quizPassed: Boolean = true,
+        onCompleted: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCompletingTopic = true, errorMessage = null) }
+            repository.completeTopic(roadmapId, topicId, quizPassed)
+                .onSuccess { updatedRoadmap ->
+                    _uiState.update { state ->
+                        state.copy(
+                            isCompletingTopic = false,
+                            activeRoadmap = updatedRoadmap,
+                            savedRoadmaps = state.savedRoadmaps.map { if (it.id == updatedRoadmap.id) updatedRoadmap else it }
+                        )
+                    }
+                    onCompleted()
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isCompletingTopic = false,
+                            errorMessage = error.localizedMessage ?: "Failed to save topic completion"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun clearActiveTopicContent() {
+        _uiState.update {
+            it.copy(
+                activeTopicContent = null,
+                topicQuizSelectedIndex = null,
+                topicQuizAnswerCorrect = null,
+                topicQuizExplanation = null
+            )
+        }
+    }
+
+    fun toggleTopicCompleted(topicId: String) {
+        val roadmap = _uiState.value.activeRoadmap ?: return
+        val isAlreadyCompleted = roadmap.completedTopicIds.contains(topicId)
+        completeTopic(roadmap.id, topicId, quizPassed = !isAlreadyCompleted)
+    }
+
+    fun setTopicInProgress(topicId: String) {
+        val roadmap = _uiState.value.activeRoadmap ?: return
+        val currentCompleted = roadmap.completedTopicIds.toMutableSet().apply { remove(topicId) }
+        val currentInProgress = roadmap.inProgressTopicIds.toMutableSet().apply { add(topicId) }
+
+        val updated = roadmap.copy(
+            completedTopicIds = currentCompleted,
+            inProgressTopicIds = currentInProgress,
+            updatedAtMillis = System.currentTimeMillis()
+        ).withRecomputedStatuses()
+
+        updateRoadmapLocallyAndPersist(updated)
+    }
+
+    fun skipTopic(topicId: String) {
+        val roadmap = _uiState.value.activeRoadmap ?: return
+        val updatedTopics = roadmap.topics.map {
+            if (it.id == topicId) it.copy(status = PersonalizedTopicStatus.SKIPPED) else it
+        }
+        val updated = roadmap.copy(
+            topics = updatedTopics,
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        updateRoadmapLocallyAndPersist(updated)
+    }
+
+    fun resetTopicStatus(topicId: String) {
+        val roadmap = _uiState.value.activeRoadmap ?: return
+        val currentCompleted = roadmap.completedTopicIds.toMutableSet().apply { remove(topicId) }
+        val currentInProgress = roadmap.inProgressTopicIds.toMutableSet().apply { remove(topicId) }
+        val updated = roadmap.copy(
+            completedTopicIds = currentCompleted,
+            inProgressTopicIds = currentInProgress,
+            updatedAtMillis = System.currentTimeMillis()
+        ).withRecomputedStatuses()
+        updateRoadmapLocallyAndPersist(updated)
+    }
+
+    private fun updateRoadmapLocallyAndPersist(updated: PersonalizedRoadmapDetail) {
+        _uiState.update { state ->
+            state.copy(
+                activeRoadmap = updated,
+                savedRoadmaps = state.savedRoadmaps.map { if (it.id == updated.id) updated else it }
+            )
+        }
+        viewModelScope.launch {
+            repository.savePersonalizedRoadmap(updated)
+        }
+    }
+
+    fun renameRoadmap(roadmapId: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.renamePersonalizedRoadmap(roadmapId, newTitle)
+                .onSuccess { renamed ->
+                    _uiState.update { state ->
+                        state.copy(
+                            activeRoadmap = if (state.activeRoadmap?.id == roadmapId) renamed else state.activeRoadmap,
+                            savedRoadmaps = state.savedRoadmaps.map { if (it.id == roadmapId) renamed else it }
+                        )
+                    }
+                }
+        }
+    }
+
+    fun deleteRoadmap(roadmapId: String) {
+        viewModelScope.launch {
+            repository.deletePersonalizedRoadmap(roadmapId)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            activeRoadmap = if (state.activeRoadmap?.id == roadmapId) null else state.activeRoadmap,
+                            savedRoadmaps = state.savedRoadmaps.filter { it.id != roadmapId }
+                        )
+                    }
+                }
+        }
+    }
+
+    fun selectTopic(topic: PersonalizedRoadmapTopic?) {
+        _uiState.update { it.copy(selectedTopic = topic) }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+}

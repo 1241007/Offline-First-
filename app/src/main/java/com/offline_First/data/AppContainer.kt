@@ -20,6 +20,7 @@ import com.offline_First.data.repository.RemoteAuthRepository
 object AppContainer {
     private val defaultRepositories = BackendNotConfiguredRepositories()
     private var aiRepoOverride: com.offline_First.data.repository.AIRepository? = null
+    private var authRepoOverride: SupabaseAuthRepository? = null
 
     private var _tokenStorage: TokenStorage? = null
     private var _sessionManager: SessionManager? = null
@@ -84,6 +85,11 @@ object AppContainer {
             }
         )
         aiRepoOverride = ModeAwareAIRepository(localRepository, onlineRepository)
+        authRepoOverride = SupabaseAuthRepository(
+            context.applicationContext,
+            BuildConfig.SUPABASE_URL,
+            BuildConfig.SUPABASE_ANON_KEY
+        )
     }
 
     val tokenStorage: TokenStorage
