@@ -57,7 +57,10 @@ data class RetrievedChunk(
     val sourceId: String? = null,
     val relevanceScore: Float? = null,
     val rawRrfScore: Float? = null,
-    val normalizedScore: Float? = null
+    val normalizedScore: Float? = null,
+    val vectorRank: Int? = null,
+    val sparseRank: Int? = null,
+    val similarityScore: Float? = null
 )
 
 /** Source citation for grounded answers */

@@ -21,6 +21,9 @@ class OnlineGeminiProvider(
 ) : LLMProvider {
     override val name: String = "Online"
     private var activeJob: Job? = null
+    private var capturedCitations: List<com.offline_First.domain.model.SourceCitation> = emptyList()
+
+    override fun getLastCitations(): List<com.offline_First.domain.model.SourceCitation> = capturedCitations
 
     override fun streamInference(
         prompt: String,
@@ -31,6 +34,7 @@ class OnlineGeminiProvider(
         history: List<ChatMessage>,
         systemPrompt: String
     ): Flow<String> = flow {
+        capturedCitations = emptyList()
         val modeStr = when (explanationMode) {
             ExplanationMode.TEACHER -> "teacher"
             ExplanationMode.EXPLAINABLE -> "explainable"
@@ -45,6 +49,8 @@ class OnlineGeminiProvider(
         val subject = if (isSchool) profile?.subject else null
         val language = profile?.preferredLanguage ?: "en"
 
+        var bufferedCitations: List<com.offline_First.data.remote.CitationDto>? = null
+
         ChatApiClient.streamMessage(
             conversationId = conversationId,
             content = prompt,
@@ -57,8 +63,63 @@ class OnlineGeminiProvider(
             subject = subject,
             language = language
         ).collect { chunk ->
-            if (chunk.type == "token" && chunk.content != null) {
-                emit(chunk.content)
+            when (chunk.type) {
+                "token" -> {
+                    val tokenText = chunk.content
+                    if (tokenText != null) {
+                        emit(tokenText)
+                    }
+                }
+                "citations" -> {
+                    if (!chunk.citations.isNullOrEmpty()) {
+                        bufferedCitations = chunk.citations
+                        capturedCitations = chunk.citations.map { c ->
+                            com.offline_First.domain.model.SourceCitation(
+                                textbookTitle = c.textbookTitle,
+                                chapter = c.chapter,
+                                section = c.section,
+                                pageReference = c.pageReference,
+                                sourceId = c.chunkId
+                            )
+                        }
+                    }
+                }
+                "done" -> {
+                    bufferedCitations?.let { list ->
+                        if (list.isNotEmpty()) {
+                            val formatted = buildString {
+                                append("\n\n---\n**Curriculum References:**\n")
+                                list.forEachIndexed { index, c ->
+                                    val title = c.textbookTitle ?: "Curriculum Reference"
+                                    val chapter = if (!c.chapter.isNullOrBlank()) " | Chapter: ${c.chapter}" else ""
+                                    val section = if (!c.section.isNullOrBlank()) " | Section: ${c.section}" else ""
+                                    val page = if (!c.pageReference.isNullOrBlank()) " | ${c.pageReference}" else ""
+                                    append("${index + 1}. *$title*$chapter$section$page\n")
+                                }
+                            }
+                            emit(formatted)
+                            bufferedCitations = null
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback in case 'done' event was omitted but stream finished
+        bufferedCitations?.let { list ->
+            if (list.isNotEmpty()) {
+                val formatted = buildString {
+                    append("\n\n---\n**Curriculum References:**\n")
+                    list.forEachIndexed { index, c ->
+                        val title = c.textbookTitle ?: "Curriculum Reference"
+                        val chapter = if (!c.chapter.isNullOrBlank()) " | Chapter: ${c.chapter}" else ""
+                        val section = if (!c.section.isNullOrBlank()) " | Section: ${c.section}" else ""
+                        val page = if (!c.pageReference.isNullOrBlank()) " | ${c.pageReference}" else ""
+                        append("${index + 1}. *$title*$chapter$section$page\n")
+                    }
+                }
+                emit(formatted)
+                bufferedCitations = null
             }
         }
     }

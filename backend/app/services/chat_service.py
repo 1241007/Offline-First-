@@ -228,10 +228,17 @@ class ChatService:
             if eff_mode_str.lower() in ("student", "school")
             else AppMode.GENERAL
         )
-        eff_board = board or (profile.board if profile else None)
-        eff_class = class_grade or (profile.class_grade if profile else None)
-        eff_subject = subject or (profile.subject if profile else None)
-        eff_language = language or (profile.preferred_language if profile else "en")
+        if profile and profile.education_mode == "school":
+            # In school mode, trusted profile curriculum takes strict precedence over untrusted client parameters
+            eff_board = profile.board or board
+            eff_class = profile.class_grade or class_grade
+            eff_subject = profile.subject or subject
+            eff_language = profile.preferred_language or language or "en"
+        else:
+            eff_board = board or (profile.board if profile else None)
+            eff_class = class_grade or (profile.class_grade if profile else None)
+            eff_subject = subject or (profile.subject if profile else None)
+            eff_language = language or (profile.preferred_language if profile else "en")
 
         # 2. Extract memories
         await self.memory_service.extract_and_save_memories(

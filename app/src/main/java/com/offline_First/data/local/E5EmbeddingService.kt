@@ -20,9 +20,10 @@ private const val TAG = "E5EmbeddingService"
  * Configured with the EXACT same dynamic quantized ONNX artifact (model_quantized.onnx)
  * and tokenizer.json as FastAPI backend to guarantee identical vector representations.
  */
-class E5EmbeddingService(
-    private val context: Context,
-    private val modelDir: File = File(context.filesDir, "e5_small_quantized")
+open class E5EmbeddingService(
+    private val context: Context? = null,
+    private val modelDir: File = File(context?.filesDir ?: File("."), "e5_small_quantized"),
+    private val readyOverride: Boolean? = null
 ) {
 
     companion object {
@@ -99,14 +100,15 @@ class E5EmbeddingService(
     /**
      * Checks if the quantized model and tokenizer files are downloaded and match SHA-256.
      */
-    fun isModelReady(): Boolean {
+    open fun isModelReady(): Boolean {
+        if (readyOverride != null) return readyOverride
         return verifySha256(modelFile, MODEL_SHA256) && verifySha256(tokenizerFile, TOKENIZER_SHA256)
     }
 
     /**
      * Embeds a search query with mandatory 'query: ' prefix.
      */
-    suspend fun embedQuery(text: String): FloatArray = withContext(Dispatchers.IO) {
+    open suspend fun embedQuery(text: String): FloatArray = withContext(Dispatchers.IO) {
         val prefixed = if (text.trim().startsWith("query: ")) text.trim() else "query: ${text.trim()}"
         runInference(prefixed)
     }
@@ -114,7 +116,7 @@ class E5EmbeddingService(
     /**
      * Embeds a document passage with mandatory 'passage: ' prefix.
      */
-    suspend fun embedPassage(text: String): FloatArray = withContext(Dispatchers.IO) {
+    open suspend fun embedPassage(text: String): FloatArray = withContext(Dispatchers.IO) {
         val prefixed = if (text.trim().startsWith("passage: ")) text.trim() else "passage: ${text.trim()}"
         runInference(prefixed)
     }

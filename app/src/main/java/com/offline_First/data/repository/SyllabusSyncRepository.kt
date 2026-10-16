@@ -105,10 +105,11 @@ class SyllabusSyncRepository(
                 return@withContext Result.success(manifest.chunkCount)
             }
 
-            // 3. Paginated chunk download with progress reporting
+            // 3. Paginated chunk download with memory staging (prevents partial dirty state)
             var cursor: String? = null
             var downloadedCount = 0
             val totalCount = manifest.chunkCount
+            val stagedRecords = mutableListOf<SyllabusChunkRecord>()
 
             _syncState.value = SyllabusSyncState.Syncing(
                 packId = packId,
@@ -140,8 +141,8 @@ class SyllabusSyncRepository(
                     )
                 }
 
-                database.importSyllabusRecords(records)
-                downloadedCount += records.size
+                stagedRecords.addAll(records)
+                downloadedCount = stagedRecords.size
                 cursor = page.nextCursor
 
                 val progress = if (totalCount > 0) downloadedCount.toFloat() / totalCount else 1.0f
@@ -162,8 +163,8 @@ class SyllabusSyncRepository(
                 return@withContext Result.failure(IllegalStateException(err))
             }
 
-            // 4. Record verified pack synchronization in SQLite
-            database.recordPackSync(
+            // 4. Atomically swap pack chunks and metadata in a single SQLite transaction
+            database.replacePackChunks(
                 packId = packId,
                 board = manifest.board,
                 classGrade = manifest.classGrade,
@@ -171,7 +172,7 @@ class SyllabusSyncRepository(
                 academicYear = manifest.academicYear,
                 corpusVersion = manifest.corpusVersion,
                 contentHash = manifest.contentHash,
-                chunkCount = downloadedCount
+                records = stagedRecords
             )
 
             Log.i(TAG, "Successfully synced syllabus pack '$packId' ($downloadedCount chunks, hash: ${manifest.contentHash})")

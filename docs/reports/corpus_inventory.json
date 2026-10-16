@@ -1,0 +1,332 @@
+{
+  "summary": {
+    "total_documents": 14,
+    "total_chunks": 219,
+    "null_embeddings": 0,
+    "embedding_dimensions": [
+      384
+    ],
+    "duplicate_chunk_content_hashes": 0,
+    "ingestion_statuses": {
+      "completed": 14
+    },
+    "indexes": {
+      "has_ivfflat_vector_index": true,
+      "has_gin_fts_index": true,
+      "all_indexes": [
+        "syllabus_chunks_pkey",
+        "idx_sc_board",
+        "idx_sc_class",
+        "idx_sc_subject",
+        "idx_sc_hash",
+        "idx_syllabus_chunks_embedding",
+        "idx_syllabus_chunks_fts"
+      ]
+    },
+    "models": [
+      {
+        "model": "intfloat/multilingual-e5-small",
+        "version": "1.0",
+        "chunk_count": 219
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "3ab349fa-a0a9-4e79-a8a9-8045042bd445",
+      "title": "CBSE Class 10 Science Curriculum 2026-27",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Curriculum 2026-27",
+      "ingestion_status": "completed",
+      "chunk_count": 9,
+      "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Science_SecP1_2026-27.pdf",
+      "content_hash": "833556a6a11630b732cd6f3500974c2120e7d6d31c21b773a64bad444257cc8b",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 09:42:48.360140+00:00",
+      "updated_at": "2026-10-15 11:28:39.588988+00:00"
+    },
+    {
+      "id": "605aa141-8e79-4ba6-8bc8-ba8b1045eed8",
+      "title": "Chapter 01 Chemical Reactions And Equations",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Chemical Reactions And Equations",
+      "ingestion_status": "completed",
+      "chunk_count": 6,
+      "source_url": "https://ncert.nic.in/textbook.php?jesc1=1-16",
+      "content_hash": "ade04f95f49752df14f25d3a724be29b384909bb3fc80887fe2aa8eee6ee3804",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 08:29:25.558332+00:00",
+      "updated_at": "2026-10-15 11:21:22.584827+00:00"
+    },
+    {
+      "id": "42c4009c-7d57-4154-98c7-08a2b4345a28",
+      "title": "Chapter 02 Acids Bases and Salts",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Acids Bases and Salts",
+      "ingestion_status": "completed",
+      "chunk_count": 20,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc102.pdf",
+      "content_hash": "8cc7e1f447a55601d2bec9a9b11b64bf8c5bdb8860565379344e25a1a0710010",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 09:42:16.461099+00:00",
+      "updated_at": "2026-10-15 11:21:49.318315+00:00"
+    },
+    {
+      "id": "40d8b3af-8339-4c13-afcf-aeaf5302f606",
+      "title": "Chapter 03 Metals and Non-Metals",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Metals and Non-Metals",
+      "ingestion_status": "completed",
+      "chunk_count": 21,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc103.pdf",
+      "content_hash": "ea9e3092e4e0691293428db195849878f85304272b9cc2097db9dc4d327a6cea",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:21:55.733150+00:00",
+      "updated_at": "2026-10-15 11:22:28.486838+00:00"
+    },
+    {
+      "id": "fe892ab9-7eb6-4c1e-b135-933d0b6a15e3",
+      "title": "Chapter 04 Carbon and its Compounds",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Carbon and its Compounds",
+      "ingestion_status": "completed",
+      "chunk_count": 21,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc104.pdf",
+      "content_hash": "9997c2d74065b9c17e384ede9fb93c64c7704a218c4e89e944b054bfc8796a87",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:22:52.830437+00:00",
+      "updated_at": "2026-10-15 11:23:27.028310+00:00"
+    },
+    {
+      "id": "eb895aa0-36d1-4b6d-8527-ed6440909861",
+      "title": "Chapter 05 Life Processes",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Life Processes",
+      "ingestion_status": "completed",
+      "chunk_count": 21,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc105.pdf",
+      "content_hash": "7d7723e8bb77bc3ace2c263b166e9581231e0082aecfdade520df57471fa31a9",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:23:43.456233+00:00",
+      "updated_at": "2026-10-15 11:24:11.983298+00:00"
+    },
+    {
+      "id": "fa2df677-da00-4da2-a776-1ce52f9f89ef",
+      "title": "Chapter 06 Control and Coordination",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Control and Coordination",
+      "ingestion_status": "completed",
+      "chunk_count": 13,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc106.pdf",
+      "content_hash": "88abd2635fe9e92b75cf8ad7f802b9de2e16325b2669c39b777d125a2681f353",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:24:18.754285+00:00",
+      "updated_at": "2026-10-15 11:24:34.952497+00:00"
+    },
+    {
+      "id": "80b5d603-fdd0-4e85-a5e1-1d9068a5953d",
+      "title": "Chapter 07 How Do Organisms Reproduce",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "How do Organisms Reproduce",
+      "ingestion_status": "completed",
+      "chunk_count": 15,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc107.pdf",
+      "content_hash": "b5808b9110a7a36ea70061880aa932a8d00c0ff72a8835645e7d3ac93e77e1e3",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:24:38.434906+00:00",
+      "updated_at": "2026-10-15 11:24:52.879872+00:00"
+    },
+    {
+      "id": "75fd0754-47b8-4ff3-a4a4-ccfe93dd4bbd",
+      "title": "Chapter 08 Heredity",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Heredity",
+      "ingestion_status": "completed",
+      "chunk_count": 6,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc108.pdf",
+      "content_hash": "2ea96fd1666c6d44698ae491f825c18f7e9f64034cb219a4bd1da8d07f74828f",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:25:39.391232+00:00",
+      "updated_at": "2026-10-15 11:25:51.962311+00:00"
+    },
+    {
+      "id": "b882e414-3e51-45bb-a39e-f476c27d3edf",
+      "title": "Chapter 09 Light Reflection and Refraction",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Light Reflection and Refraction",
+      "ingestion_status": "completed",
+      "chunk_count": 27,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc109.pdf",
+      "content_hash": "0898492e1dbed35787fb34a0095af75153c45a88b7c01da563d661b015df232a",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:26:00.059893+00:00",
+      "updated_at": "2026-10-15 11:26:56.335390+00:00"
+    },
+    {
+      "id": "9cf4fddb-1920-490a-a793-7f29ac233655",
+      "title": "Chapter 10 The Human Eye and Colourful World",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "The Human Eye and Colourful World",
+      "ingestion_status": "completed",
+      "chunk_count": 10,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc110.pdf",
+      "content_hash": "12d8287167a24fc80ce5c47bac97bbf34b9a3beb1db338d55574b20cb3d703bd",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:26:58.945581+00:00",
+      "updated_at": "2026-10-15 11:27:10.491461+00:00"
+    },
+    {
+      "id": "7c86acb4-fee6-47b3-b717-5d9bb18fed48",
+      "title": "Chapter 11 Electricity",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Electricity",
+      "ingestion_status": "completed",
+      "chunk_count": 24,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc111.pdf",
+      "content_hash": "434087961829b04fd10548d96ef825b6b65d1acb4070051baa69a9da4e2e27bd",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:27:12.859078+00:00",
+      "updated_at": "2026-10-15 11:27:47.887796+00:00"
+    },
+    {
+      "id": "be07796a-4952-4699-972e-65740e3f92df",
+      "title": "Chapter 12 Magnetic Effects of Electric Current",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Magnetic Effects of Electric Current",
+      "ingestion_status": "completed",
+      "chunk_count": 13,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc112.pdf",
+      "content_hash": "91ce02a29261bd26d007cbb2cbde0df9cc71e94b35275c86a3b404b354b77af2",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:27:52.150828+00:00",
+      "updated_at": "2026-10-15 11:28:11.880827+00:00"
+    },
+    {
+      "id": "f3fd047a-eaab-4bd9-b9e5-630b1d1579f1",
+      "title": "Chapter 13 Our Environment",
+      "board": "CBSE",
+      "class_grade": "10",
+      "subject": "Science",
+      "chapter": "Our Environment",
+      "ingestion_status": "completed",
+      "chunk_count": 10,
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc113.pdf",
+      "content_hash": "28cd8067b6d9060955fecea309ccd10389b02b55cab3b5e5a2a938c4b36a7e26",
+      "corpus_version": "1.0",
+      "created_at": "2026-10-15 11:28:18.317542+00:00",
+      "updated_at": "2026-10-15 11:28:31.176162+00:00"
+    }
+  ],
+  "provenance": [
+    {
+      "document_title": "CBSE Class 10 Science Curriculum 2026-27",
+      "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Science_SecP1_2026-27.pdf",
+      "is_official_verified": true,
+      "chunk_count": 9
+    },
+    {
+      "document_title": "Chapter 01 Chemical Reactions And Equations",
+      "source_url": "https://ncert.nic.in/textbook.php?jesc1=1-16",
+      "is_official_verified": true,
+      "chunk_count": 6
+    },
+    {
+      "document_title": "Chapter 02 Acids Bases and Salts",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc102.pdf",
+      "is_official_verified": true,
+      "chunk_count": 20
+    },
+    {
+      "document_title": "Chapter 03 Metals and Non-Metals",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc103.pdf",
+      "is_official_verified": true,
+      "chunk_count": 21
+    },
+    {
+      "document_title": "Chapter 04 Carbon and its Compounds",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc104.pdf",
+      "is_official_verified": true,
+      "chunk_count": 21
+    },
+    {
+      "document_title": "Chapter 05 Life Processes",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc105.pdf",
+      "is_official_verified": true,
+      "chunk_count": 21
+    },
+    {
+      "document_title": "Chapter 06 Control and Coordination",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc106.pdf",
+      "is_official_verified": true,
+      "chunk_count": 13
+    },
+    {
+      "document_title": "Chapter 07 How Do Organisms Reproduce",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc107.pdf",
+      "is_official_verified": true,
+      "chunk_count": 15
+    },
+    {
+      "document_title": "Chapter 08 Heredity",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc108.pdf",
+      "is_official_verified": true,
+      "chunk_count": 6
+    },
+    {
+      "document_title": "Chapter 09 Light Reflection and Refraction",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc109.pdf",
+      "is_official_verified": true,
+      "chunk_count": 27
+    },
+    {
+      "document_title": "Chapter 10 The Human Eye and Colourful World",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc110.pdf",
+      "is_official_verified": true,
+      "chunk_count": 10
+    },
+    {
+      "document_title": "Chapter 11 Electricity",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc111.pdf",
+      "is_official_verified": true,
+      "chunk_count": 24
+    },
+    {
+      "document_title": "Chapter 12 Magnetic Effects of Electric Current",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc112.pdf",
+      "is_official_verified": true,
+      "chunk_count": 13
+    },
+    {
+      "document_title": "Chapter 13 Our Environment",
+      "source_url": "https://ncert.nic.in/textbook/pdf/jesc113.pdf",
+      "is_official_verified": true,
+      "chunk_count": 10
+    }
+  ]
+}

@@ -3,16 +3,14 @@
 # ============================================
 *.iml
 .gradle/
-.gradle
 build/
-/build
 /*/build/
 app/build/
 /captures
 .externalNativeBuild
-.cxx
+.cxx/
+**/.cxx/
 local.properties
-/local.properties
 *.apk
 *.aab
 *.ap_
@@ -22,6 +20,8 @@ bin/
 gen/
 out/
 release/
+lint-results/
+lint-baseline*.xml
 
 # Gradle wrapper (keep the jar)
 !gradle-wrapper.jar
@@ -31,26 +31,23 @@ release/
 # ============================================
 # Android Studio / IntelliJ IDEA
 .idea/
-/.idea/
-.idea/*
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-/.idea/sonarlint/
-/.idea/dictionaries
 *.iws
 *.ipr
 
-# VSCode
-.vscode/
+# VSCode (keep team configuration files)
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Cursor / Windsurf / Other AI Editors
+.cursor/
+.windsurf/
+.antigravity/
+.cline/
+.roo/
+.continue/
 
 # Vim
 *.swp
@@ -59,12 +56,11 @@ release/
 *~
 
 # Emacs
-*~
 \#*\#
 .\#*
 
 # ============================================
-# OS
+# OS Generated Files
 # ============================================
 # macOS
 .DS_Store
@@ -73,7 +69,6 @@ release/
 ._*
 .Spotlight-V100
 .Trashes
-
 
 # Windows
 Thumbs.db
@@ -87,9 +82,9 @@ $RECYCLE.BIN/
 # Linux
 .directory
 .Trash-*
+
 # ============================================
-# ============================================
-# Secrets & Environment Files
+# Secrets, Keys & Environment Files
 # ============================================
 .env
 .env.*
@@ -107,6 +102,10 @@ google-services.json
 secrets.xml
 secrets.properties
 *.credentials
+*credentials*.json
+serviceAccountKey*.json
+service-account*.json
+!backend/syllabus_sources/**/sources.json
 
 # ============================================
 # Python & Backend
@@ -119,6 +118,28 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Build & packaging
+*.egg-info/
+.installed.cfg
+*.egg
+eggs/
+.eggs/
+dist/
+sdist/
+develop-eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+backend/.venv/
+backend/venv/
+*/venv/
+*/.venv/
+
+# Testing & Coverage
 .pytest_cache/
 .mypy_cache/
 .dmypy.json
@@ -128,32 +149,38 @@ dmypy.json
 .coverage.*
 htmlcov/
 *.cover
-*.log
 .tox/
 .hypothesis/
-instance/
-.webassets-cache
+coverage/
+test-results/
+junit/
 
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
-backend/.venv/
-backend/venv/
-
-# Database
+# Database & SQLite
 *.db
 *.sqlite
 *.sqlite3
 db.sqlite3
 *.sql
+*.sqlite-journal
+*.sqlite3-journal
+*.db-journal
+*.sqlite-wal
+*.sqlite3-wal
+*.db-wal
+*.sqlite-shm
+*.sqlite3-shm
+*.db-shm
 
-# Alembic
-backend/alembic.ini.local
+# Alembic local configs
+**/alembic.ini.local
+
+# Webassets / instance / notebooks
+instance/
+.webassets-cache
+.ipynb_checkpoints
 
 # ============================================
-# Node.js (if ever used)
+# Node.js (if used)
 # ============================================
 node_modules/
 npm-debug.log*
@@ -179,16 +206,6 @@ temp/
 tmp/
 
 # ============================================
-# Testing & Coverage
-# ============================================
-coverage/
-test-results/
-junit/
-.pytest_cache/
-*.cover
-.hypothesis/
-
-# ============================================
 # Documentation Build Artifacts
 # ============================================
 site/
@@ -211,23 +228,72 @@ _build/
 # ============================================
 .kotlin/
 *.kotlin_module
+.kotlin-daemon/
 
 # ============================================
-# AI / LLM Models & Weights (Large Files)
+# AI / LLM Models & Weights (Large Binary Files)
 # ============================================
 *.gguf
 *.safetensors
 *.onnx
+*.onnx_data
 *.pt
 *.pth
 *.bin
 *.model
+*.tflite
+*.ckpt
+*.h5
+*.weights
+*.joblib
+*.pkl
+*.pickle
+
+# Downloaded model directories (preserve READMEs and placeholders)
 /models/
+backend/models/*/
+!backend/models/README.md
+!backend/models/**/README.md
+!backend/models/**/.gitkeep
+.cache/
+hf_cache/
+.huggingface/
 
 # ============================================
-# Miscellaneous
+# Syllabus Sources & Raw Textbook Corpora
 # ============================================
-# Temporary llama.cpp prebuilt work directory (created by build_llama_prebuilt.sh)
+# Large raw documents (PDFs, EPUBs, etc.) staged locally
+backend/syllabus_sources/**/*.pdf
+backend/syllabus_sources/**/*.epub
+backend/syllabus_sources/**/*.mobi
+backend/syllabus_sources/CBSE/
+backend/syllabus_sources/ICSE/
+backend/syllabus_sources/NCERT/
+backend/syllabus_sources/StateBoard/
+!backend/syllabus_sources/**/README.md
+!backend/syllabus_sources/**/.gitkeep
+!backend/syllabus_sources/**/sources.json
+!backend/syllabus_sources/**/authoritative_curriculum_manifest.json
+
+# ============================================
+# Evaluation, Verification & Audit Run Outputs
+# ============================================
+backend/evals/**/results/
+backend/evals/**/eval_report_*.json
+backend/evals/**/eval_summary_*.md
+backend/evals/**/latest_eval_report.json
+backend/evals/**/latest_eval_summary.md
+backend/*_verification*.json
+backend/*_audit*.json
+backend/*_inventory*.json
+backend/reconciliation_*.json
+backend/retrieval_verification*.json
+backend/post_ingestion_verification*.json
+
+# ============================================
+# Miscellaneous & Native Binaries
+# ============================================
+# Temporary llama.cpp prebuilt work directory
 .llama_build/
 
 # Archives
@@ -241,11 +307,12 @@ _build/
 *.o
 *.a
 *.so
-# Allow prebuilt Android native libraries committed to the repo
-!app/src/main/jniLibs/**/*.so
 *.dylib
 *.dll
 *.exe
+
+# Allow prebuilt Android native libraries committed to the repo
+!app/src/main/jniLibs/**/*.so
 
 # Package files
 *.jar

@@ -42,6 +42,31 @@ class RoutingService:
     - Strict deadline enforcement.
     """
 
+    def __init__(self):
+        self.last_diagnostic: Optional[dict] = None
+
+    def _record_diagnostic(
+        self,
+        route: RouteDecision,
+        rationale: str,
+        context: RAGRequestContext,
+        query: Optional[str] = None
+    ) -> None:
+        app_mode_val = (
+            context.app_mode.value.lower()
+            if hasattr(context.app_mode, "value")
+            else str(context.app_mode).lower()
+        )
+        self.last_diagnostic = {
+            "route": route.value if hasattr(route, "value") else str(route),
+            "rationale": rationale,
+            "app_mode": app_mode_val,
+            "board": context.board,
+            "class_grade": context.class_grade,
+            "subject": context.subject,
+            "query": query,
+        }
+
     def evaluate_deterministic_route(
         self,
         prompt: str,
@@ -55,24 +80,29 @@ class RoutingService:
 
         # 1. Greetings & Pleasantries -> DIRECT
         if GREETINGS_PATTERN.match(cleaned):
+            self._record_diagnostic(RouteDecision.DIRECT, "deterministic_greetings", context)
             return RouteDecision.DIRECT, None
 
         # 2. Simple Arithmetic -> DIRECT
         if ARITHMETIC_PATTERN.match(cleaned):
+            self._record_diagnostic(RouteDecision.DIRECT, "deterministic_arithmetic", context)
             return RouteDecision.DIRECT, None
 
         # 3. App Commands -> DIRECT
         if APP_COMMAND_PATTERN.match(cleaned):
+            self._record_diagnostic(RouteDecision.DIRECT, "deterministic_app_command", context)
             return RouteDecision.DIRECT, None
 
         # 4. Explicit Student Mode with selected chapter or curriculum keywords
         if context.app_mode == AppMode.STUDENT:
             if context.selected_chapter or CURRICULUM_KEYWORDS_PATTERN.search(cleaned):
+                self._record_diagnostic(RouteDecision.RAG, "deterministic_curriculum_keyword", context, cleaned)
                 return RouteDecision.RAG, cleaned
 
         # 5. General Mode without curriculum indicators -> DIRECT
         # (General mode has no document corpus configured in this release)
         if context.app_mode == AppMode.GENERAL and not CURRICULUM_KEYWORDS_PATTERN.search(cleaned):
+            self._record_diagnostic(RouteDecision.DIRECT, "deterministic_general_mode", context)
             return RouteDecision.DIRECT, None
 
         return None
@@ -102,8 +132,10 @@ class RoutingService:
 
         if is_student or has_curriculum_context or has_curriculum_keywords:
             # Must invoke RAG with user's raw prompt rather than silently hallucinating generic text
+            self._record_diagnostic(RouteDecision.RAG, f"fallback_{reason}", context, prompt.strip())
             return RouteDecision.RAG, prompt.strip()
         else:
+            self._record_diagnostic(RouteDecision.DIRECT, f"fallback_{reason}", context)
             return RouteDecision.DIRECT, None
 
     async def route_query(
@@ -172,8 +204,10 @@ class RoutingService:
         parser.finalize()
 
         if parser.is_rag and parser.query:
+            self._record_diagnostic(RouteDecision.RAG, "llm_rag", context, parser.query)
             return RouteDecision.RAG, parser.query
         elif parser.is_direct:
+            self._record_diagnostic(RouteDecision.DIRECT, "llm_direct", context)
             return RouteDecision.DIRECT, None
         else:
             raise ValueError("Malformed header received from LLM router")

@@ -66,6 +66,9 @@ class ChunkResult(BaseModel):
     relevance_score: Optional[float] = None
     raw_rrf_score: Optional[float] = None
     normalized_score: Optional[float] = None
+    similarity_score: Optional[float] = None
+    vector_rank: Optional[int] = None
+    sparse_rank: Optional[int] = None
 
 
 class RetrieveResponse(BaseModel):

@@ -55,6 +55,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
     companion object {
         const val TABLE_CHUNKS = "syllabus_chunks"
         const val TABLE_PACKS = "syllabus_packs"
+        const val DATABASE_VERSION = SYLLABUS_DB_VERSION
         const val EMBEDDING_DIMENSION = 384
 
         // Common short stop words that do not add keyword filtering value
@@ -436,6 +437,82 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     /**
+     * Atomically replaces all chunks for a curriculum pack and updates the pack sync record
+     * in a single ACID transaction. If any failure occurs during staging or writing, the
+     * previous pack chunks and metadata remain completely uncorrupted.
+     */
+    open fun replacePackChunks(
+        packId: String,
+        board: String,
+        classGrade: String,
+        subject: String,
+        academicYear: String? = "2026-27",
+        corpusVersion: String? = "1.0",
+        contentHash: String? = null,
+        records: List<SyllabusChunkRecord>
+    ) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            // 1. Delete previous chunks for this specific curriculum pack
+            db.delete(
+                TABLE_CHUNKS,
+                "board = ? AND class_grade = ? AND subject = ?",
+                arrayOf(board, classGrade, subject)
+            )
+
+            // 2. Insert all new staged records
+            for (rec in records) {
+                val cv = ContentValues().apply {
+                    put("chunk_id", rec.chunkId)
+                    put("board", rec.board)
+                    put("class_grade", rec.classGrade)
+                    put("subject", rec.subject)
+                    put("chapter_title", rec.chapterTitle)
+                    put("section_title", rec.sectionTitle)
+                    put("page_reference", rec.pageReference)
+                    put("content", rec.content)
+                    put("source_id", rec.sourceId)
+                    put("corpus_version", rec.corpusVersion)
+                    put("language", rec.language)
+                    put("content_hash", rec.contentHash)
+                    if (rec.embedding != null) {
+                        put("embedding", floatArrayToBlob(rec.embedding))
+                    }
+                    put("embedding_model", rec.embeddingModel)
+                    put("embedding_version", rec.embeddingVersion)
+                    put("updated_at", System.currentTimeMillis().toString())
+                }
+                db.insertWithOnConflict(TABLE_CHUNKS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+
+            // 3. Atomically update syllabus_packs table
+            val packCv = ContentValues().apply {
+                put("pack_id", packId)
+                put("board", board)
+                put("class_grade", classGrade)
+                put("subject", subject)
+                put("academic_year", academicYear)
+                put("corpus_version", corpusVersion)
+                put("content_hash", contentHash)
+                put("chunk_count", records.size)
+                put("last_synced_at", System.currentTimeMillis())
+            }
+            db.insertWithOnConflict(
+                TABLE_PACKS,
+                null,
+                packCv,
+                SQLiteDatabase.CONFLICT_REPLACE
+            )
+
+            db.setTransactionSuccessful()
+            Log.i(TAG, "Atomically replaced pack '$packId' with ${records.size} chunks (hash: $contentHash)")
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /**
      * Retrieves the stored content hash for a locally synchronized pack.
      */
     open fun getPackContentHash(packId: String): String? {
@@ -679,7 +756,10 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
                         sourceId = sourceId,
                         relevanceScore = sim,
                         rawRrfScore = sim,
-                        normalizedScore = ((sim + 1.0f) / 2.0f).coerceIn(0.0f, 1.0f)
+                        normalizedScore = ((sim + 1.0f) / 2.0f).coerceIn(0.0f, 1.0f),
+                        vectorRank = null,
+                        sparseRank = null,
+                        similarityScore = sim
                     )
                     scoredList.add(ScoredItem(chunk, sim))
                 }
@@ -689,7 +769,9 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         }
 
         scoredList.sortByDescending { it.similarity }
-        return scoredList.take(limit).map { it.chunk }
+        return scoredList.take(limit).mapIndexed { idx, item ->
+            item.chunk.copy(vectorRank = idx + 1)
+        }
     }
 
     /**
@@ -706,12 +788,16 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         val keywordResults = searchChunks(query, board, classGrade, subject, limit = limit * 2)
 
         if (queryEmbedding == null || queryEmbedding.isEmpty()) {
-            return keywordResults.take(limit)
+            return keywordResults.take(limit).mapIndexed { idx, chunk ->
+                chunk.copy(sparseRank = idx + 1)
+            }
         }
 
         val vectorResults = searchByVector(queryEmbedding, board, classGrade, subject, limit = limit * 2)
         if (vectorResults.isEmpty()) {
-            return keywordResults.take(limit)
+            return keywordResults.take(limit).mapIndexed { idx, chunk ->
+                chunk.copy(sparseRank = idx + 1)
+            }
         }
 
         // Reciprocal Rank Fusion (k=60)
@@ -719,16 +805,23 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         val rrfMaxScore = (1.0f / (rrfK + 1)) * 2.0f
         val scores = mutableMapOf<String, Float>()
         val chunkMap = mutableMapOf<String, RetrievedChunk>()
+        val vectorRanks = mutableMapOf<String, Int>()
+        val sparseRanks = mutableMapOf<String, Int>()
+        val similarities = mutableMapOf<String, Float>()
 
         keywordResults.forEachIndexed { idx, chunk ->
             val rank = idx + 1
             scores[chunk.chunkId] = (scores[chunk.chunkId] ?: 0.0f) + (1.0f / (rrfK + rank))
+            sparseRanks[chunk.chunkId] = rank
             chunkMap[chunk.chunkId] = chunk
         }
 
         vectorResults.forEachIndexed { idx, chunk ->
             val rank = idx + 1
             scores[chunk.chunkId] = (scores[chunk.chunkId] ?: 0.0f) + (1.0f / (rrfK + rank))
+            vectorRanks[chunk.chunkId] = rank
+            chunk.similarityScore?.let { similarities[chunk.chunkId] = it }
+                ?: chunk.relevanceScore?.let { similarities[chunk.chunkId] = it }
             chunkMap.putIfAbsent(chunk.chunkId, chunk)
         }
 
@@ -740,7 +833,10 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
             baseChunk.copy(
                 relevanceScore = normalized,
                 rawRrfScore = rawRrf,
-                normalizedScore = normalized
+                normalizedScore = normalized,
+                vectorRank = vectorRanks[entry.key],
+                sparseRank = sparseRanks[entry.key],
+                similarityScore = similarities[entry.key]
             )
         }
     }

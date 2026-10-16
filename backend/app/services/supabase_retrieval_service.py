@@ -1,7 +1,6 @@
-"""Supabase hybrid retrieval service with calibrated RRF scoring and evidence assessment."""
-
 import asyncio
 import logging
+import re
 import time
 from typing import Dict, List, Optional, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,10 +24,54 @@ RRF_K = 60
 # Theoretical maximum for k=60 with 2 retrievers (vector + keyword): (1/61) * 2 = 2/61 ≈ 0.032786885
 RRF_MAX_SCORE = (1.0 / (RRF_K + 1)) * 2
 
-# Calibrated evidence thresholds against labeled retrieval fixtures
+# Calibrated evidence thresholds against labeled retrieval fixtures and empirical evaluation
 SUFFICIENT_NORMALIZED_THRESHOLD = 0.70
+DENSE_ONLY_SUFFICIENT_NORMALIZED_THRESHOLD = 0.50
+DENSE_ONLY_MIN_SIMILARITY = 0.75
 UNCERTAIN_NORMALIZED_THRESHOLD = 0.35
 MIN_CONTENT_LENGTH_BYTES = 80
+DENSE_MAX_COSINE_DISTANCE = 0.35
+
+# Stopwords for lexical corroboration of single-retriever matches
+CORROBORATION_STOPWORDS = {
+    "a", "an", "the", "in", "on", "of", "for", "with", "at", "by", "from",
+    "up", "about", "into", "over", "after", "is", "are", "was", "were", "be",
+    "been", "being", "have", "has", "had", "do", "does", "did", "and", "but",
+    "if", "or", "because", "as", "what", "which", "who", "whom", "this",
+    "that", "these", "those", "am", "it", "its", "you", "your", "he", "she",
+    "they", "their", "we", "us", "our", "how", "why", "when", "where", "can",
+    "could", "should", "would", "will", "give", "explain", "state", "calculate",
+    "write", "find", "formula", "example", "examples", "definition", "define",
+    "between", "using", "points", "point", "textbook", "answer", "question",
+    "diagram", "determine", "identify", "describe", "discuss"
+}
+
+
+def check_lexical_corroboration(query: Optional[str], content: str) -> bool:
+    """
+    Verifies lexical and domain corroboration between the query and retrieved content.
+    
+    Prevents dense-vector nearest-neighbor distractors (such as out-of-syllabus college/research
+    topics that cluster close to high-school science in vector space) from falsely becoming SUFFICIENT.
+
+    Rules:
+    - Extracts domain terms (>= 3 chars) excluding general stopwords.
+    - If 1 or 2 domain terms exist: requires at least 1 match.
+    - If >= 3 domain terms exist: requires at least 2 distinct matches OR >= 30% overlap.
+    """
+    if not query or not content:
+        return False
+    words = re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())
+    content_lower = content.lower()
+    domain_words = [w for w in words if w not in CORROBORATION_STOPWORDS]
+    if not domain_words:
+        return True  # If query has no domain words, cannot disqualify
+
+    matches = [w for w in domain_words if w in content_lower or (len(w) >= 6 and w[:5] in content_lower)]
+
+    if len(domain_words) <= 2:
+        return len(matches) >= 1
+    return len(matches) >= 2 or (len(matches) / len(domain_words)) >= 0.30
 
 
 def compute_rrf_score(
@@ -53,11 +96,31 @@ def compute_rrf_score(
     return raw_rrf, normalized
 
 
-def assess_evidence_outcome(chunks: List[ChunkResult]) -> EvidenceOutcome:
+def assess_evidence_outcome(
+    chunks: List[ChunkResult],
+    query: Optional[str] = None
+) -> EvidenceOutcome:
     """
     Assesses whether the retrieved chunks provide SUFFICIENT, UNCERTAIN, or MISSING evidence.
     
-    Uses calibrated thresholds validated against rrf_retrieval_fixtures.json.
+    Evidence Assessment Policy:
+    1. Content length guard:
+       Top chunk must have at least MIN_CONTENT_LENGTH_BYTES (80 bytes) of trimmed text.
+       Shorter content is downgraded to UNCERTAIN (if normalized score >= 0.35) or MISSING.
+    2. Hybrid match (both dense and keyword support):
+       Requires normalized RRF score >= SUFFICIENT_NORMALIZED_THRESHOLD (0.70).
+    3. Dense-only match:
+       When only dense vector retrieval matches (no keyword support):
+       - Requires normalized score >= DENSE_ONLY_SUFFICIENT_NORMALIZED_THRESHOLD (0.50).
+       - AND cosine similarity >= DENSE_ONLY_MIN_SIMILARITY (0.75).
+       - If query is provided, requires lexical/domain corroboration (at least one domain term in content)
+         to prevent nearest-neighbor distractors (e.g. quantum entanglement, CRISPR) from becoming SUFFICIENT.
+       - Dense-only matches lacking corroboration are downgraded to MISSING to prevent ungrounded generation.
+    4. Keyword-only match:
+       Capped at 0.5000 in 2-retriever RRF; cannot reach SUFFICIENT (0.70); evaluated against UNCERTAIN.
+    5. Fallthrough:
+       Top chunk with normalized RRF score >= UNCERTAIN_NORMALIZED_THRESHOLD (0.35) -> UNCERTAIN.
+       Otherwise -> MISSING.
     """
     if not chunks:
         return EvidenceOutcome.MISSING
@@ -66,12 +129,42 @@ def assess_evidence_outcome(chunks: List[ChunkResult]) -> EvidenceOutcome:
     score = top_chunk.normalized_score if top_chunk.normalized_score is not None else 0.0
     content_len = len(top_chunk.content.strip())
 
-    if score >= SUFFICIENT_NORMALIZED_THRESHOLD and content_len >= MIN_CONTENT_LENGTH_BYTES:
-        return EvidenceOutcome.SUFFICIENT
-    elif score >= UNCERTAIN_NORMALIZED_THRESHOLD:
-        return EvidenceOutcome.UNCERTAIN
-    else:
+    if content_len < MIN_CONTENT_LENGTH_BYTES:
+        if score >= UNCERTAIN_NORMALIZED_THRESHOLD:
+            return EvidenceOutcome.UNCERTAIN
         return EvidenceOutcome.MISSING
+
+    has_dense = top_chunk.vector_rank is not None and top_chunk.vector_rank > 0
+    has_keyword = top_chunk.sparse_rank is not None and top_chunk.sparse_rank > 0
+    sim_score = top_chunk.similarity_score
+
+    # Case 1: Dual retriever support (or mathematically proven dual score >= 0.70)
+    if score >= SUFFICIENT_NORMALIZED_THRESHOLD:
+        return EvidenceOutcome.SUFFICIENT
+
+    # Case 2: Dense-only match requiring dual criteria (score >= 0.50 AND similarity >= 0.75)
+    if (has_dense or top_chunk.vector_rank is None) and not has_keyword:
+        if (
+            score >= DENSE_ONLY_SUFFICIENT_NORMALIZED_THRESHOLD
+            and sim_score is not None
+            and sim_score >= DENSE_ONLY_MIN_SIMILARITY
+        ):
+            # If query is provided, enforce domain corroboration to prevent out-of-syllabus distractors
+            if query is not None:
+                if check_lexical_corroboration(query, top_chunk.content):
+                    return EvidenceOutcome.SUFFICIENT
+                else:
+                    return EvidenceOutcome.MISSING
+            return EvidenceOutcome.SUFFICIENT
+
+    # Case 3: Uncertain evidence
+    if score >= UNCERTAIN_NORMALIZED_THRESHOLD:
+        return EvidenceOutcome.UNCERTAIN
+
+    return EvidenceOutcome.MISSING
+
+
+_TABLE_EXISTS_CACHE: bool = False
 
 
 class SupabaseRetrievalService:
@@ -133,6 +226,11 @@ class SupabaseRetrievalService:
                 timeout=settings.retrieval_timeout_seconds
             )
         except asyncio.TimeoutError:
+            if self.db:
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
             logger.error(f"Retrieval timed out after {settings.retrieval_timeout_seconds}s for query: {query}")
             return RetrieveResponse(
                 chunks=[],
@@ -142,6 +240,11 @@ class SupabaseRetrievalService:
                 error_detail=f"Online retrieval deadline ({settings.retrieval_timeout_seconds}s) exceeded."
             )
         except Exception as exc:
+            if self.db:
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
             logger.error(f"Retrieval error: {exc}", exc_info=True)
             return RetrieveResponse(
                 chunks=[],
@@ -171,42 +274,52 @@ class SupabaseRetrievalService:
                 error_detail="Database session unavailable for online retrieval."
             )
 
-        # Check if syllabus_chunks table exists in DB
-        table_check = await self.db.execute(
-            text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'syllabus_chunks');")
-        )
-        has_table = table_check.scalar()
-        if not has_table:
-            # Knowledge base has not been provisioned with authorized curriculum data
-            return RetrieveResponse(
-                chunks=[],
-                evidence_outcome=EvidenceOutcome.MISSING,
-                query_used=query,
-                search_time_ms=(time.perf_counter() - start_time) * 1000,
-                error_detail="No authorized syllabus curriculum chunks table found in database."
+        # Check if syllabus_chunks table exists in DB (cached to avoid redundant catalog scans)
+        global _TABLE_EXISTS_CACHE
+        if not _TABLE_EXISTS_CACHE:
+            table_check = await self.db.execute(
+                text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'syllabus_chunks');")
             )
+            has_table = table_check.scalar()
+            if not has_table:
+                # Knowledge base has not been provisioned with authorized curriculum data
+                return RetrieveResponse(
+                    chunks=[],
+                    evidence_outcome=EvidenceOutcome.MISSING,
+                    query_used=query,
+                    search_time_ms=(time.perf_counter() - start_time) * 1000,
+                    error_detail="No authorized syllabus curriculum chunks table found in database."
+                )
+            _TABLE_EXISTS_CACHE = True
 
-        # Build parameterized hybrid query with curriculum metadata filters
+        # Build parameterized hybrid query strictly gated to authorized curriculum documents (cbseacademic.nic.in)
+        # Prevents unverified legacy NCERT textbook documents from being served in online RAG
         sql = """
             WITH vector_matches AS (
-                SELECT id, content, board, class_grade, subject, chapter, section,
-                       textbook_title, page_reference, source_id, corpus_version,
-                       ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
-                FROM syllabus_chunks
-                WHERE (:board IS NULL OR board = :board)
-                  AND (:class_grade IS NULL OR class_grade = :class_grade)
-                  AND (:subject IS NULL OR subject ILIKE :subject)
+                SELECT sc.id, sc.content, sc.board, sc.class_grade, sc.subject, sc.chapter, sc.section,
+                       sc.textbook_title, sc.page_reference, sc.source_id, sc.corpus_version,
+                       (1.0 - (sc.embedding <=> CAST(:embedding AS vector))) AS similarity_score,
+                       ROW_NUMBER() OVER (ORDER BY sc.embedding <=> CAST(:embedding AS vector)) AS rank
+                FROM syllabus_chunks sc
+                JOIN syllabus_documents sd ON sc.document_id = sd.id
+                WHERE (sc.embedding <=> CAST(:embedding AS vector)) < :max_cosine_distance
+                  AND sd.source_url LIKE '%cbseacademic.nic.in%'
+                  AND (CAST(:board AS text) IS NULL OR sc.board = CAST(:board AS varchar))
+                  AND (CAST(:class_grade AS text) IS NULL OR sc.class_grade = CAST(:class_grade AS varchar))
+                  AND (CAST(:subject AS text) IS NULL OR sc.subject ILIKE CAST(:subject AS varchar))
                 LIMIT 20
             ),
             keyword_matches AS (
-                SELECT id, content, board, class_grade, subject, chapter, section,
-                       textbook_title, page_reference, source_id, corpus_version,
-                       ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), plainto_tsquery('english', :query)) DESC) AS rank
-                FROM syllabus_chunks
-                WHERE to_tsvector('english', content) @@ plainto_tsquery('english', :query)
-                  AND (:board IS NULL OR board = :board)
-                  AND (:class_grade IS NULL OR class_grade = :class_grade)
-                  AND (:subject IS NULL OR subject ILIKE :subject)
+                SELECT sc.id, sc.content, sc.board, sc.class_grade, sc.subject, sc.chapter, sc.section,
+                       sc.textbook_title, sc.page_reference, sc.source_id, sc.corpus_version,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', sc.content), plainto_tsquery('english', :query)) DESC) AS rank
+                FROM syllabus_chunks sc
+                JOIN syllabus_documents sd ON sc.document_id = sd.id
+                WHERE to_tsvector('english', sc.content) @@ plainto_tsquery('english', :query)
+                  AND sd.source_url LIKE '%cbseacademic.nic.in%'
+                  AND (CAST(:board AS text) IS NULL OR sc.board = CAST(:board AS varchar))
+                  AND (CAST(:class_grade AS text) IS NULL OR sc.class_grade = CAST(:class_grade AS varchar))
+                  AND (CAST(:subject AS text) IS NULL OR sc.subject ILIKE CAST(:subject AS varchar))
                 LIMIT 20
             )
             SELECT 
@@ -222,7 +335,8 @@ class SupabaseRetrievalService:
                 COALESCE(v.source_id, k.source_id) as source_id,
                 COALESCE(v.corpus_version, k.corpus_version) as corpus_version,
                 v.rank as vector_rank,
-                k.rank as keyword_rank
+                k.rank as keyword_rank,
+                v.similarity_score as similarity_score
             FROM vector_matches v
             FULL OUTER JOIN keyword_matches k ON v.id = k.id;
         """
@@ -230,6 +344,7 @@ class SupabaseRetrievalService:
         params = {
             "embedding": str(query_embedding),
             "query": query,
+            "max_cosine_distance": DENSE_MAX_COSINE_DISTANCE,
             "board": context.board,
             "class_grade": context.class_grade,
             "subject": f"%{context.subject}%" if context.subject else None,
@@ -268,12 +383,15 @@ class SupabaseRetrievalService:
                     relevance_score=normalized,
                     raw_rrf_score=raw_rrf,
                     normalized_score=normalized,
+                    similarity_score=float(row.similarity_score) if row.similarity_score is not None else None,
+                    vector_rank=row.vector_rank,
+                    sparse_rank=row.keyword_rank,
                 )
             )
 
         scored_chunks.sort(key=lambda c: c.normalized_score or 0.0, reverse=True)
         top_chunks = scored_chunks[:top_k]
-        outcome = assess_evidence_outcome(top_chunks)
+        outcome = assess_evidence_outcome(top_chunks, query=query)
 
         return RetrieveResponse(
             chunks=top_chunks,

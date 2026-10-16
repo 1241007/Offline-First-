@@ -78,17 +78,26 @@ async def test_syllabus_sync_packs_unauthenticated():
 
 
 @pytest.mark.asyncio
-async def test_syllabus_sync_packs_authenticated():
+async def test_syllabus_sync_packs_authenticated(db_session):
     """Verify GET /api/v1/syllabus/packs succeeds with authenticated user."""
+    from app.core.database import get_db
+
     token = create_access_token(user_id="test-user-sync-123", email="test@example.com")
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/api/v1/syllabus/packs",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "packs" in data
-        assert "total_count" in data
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/syllabus/packs",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert "packs" in data
+            assert "total_count" in data
+    finally:
+        app.dependency_overrides.clear()

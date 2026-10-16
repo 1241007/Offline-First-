@@ -93,8 +93,28 @@ async def list_available_packs(
             )
         )
 
-    # If user profile specifies board/class/subject, sort matching packs to the top
-    if profile:
+    # Enforce trusted curriculum profile gating
+    if profile and profile.education_mode == "school":
+        # Missing profile metadata in school mode never broadens query across unrelated curricula
+        if not profile.board or not profile.class_grade:
+            return SyllabusPackListResponse(packs=[], total_count=0)
+
+        # Strictly restrict to student's enrolled board and class grade
+        filtered_packs = [
+            p for p in packs
+            if p.board.lower() == profile.board.lower()
+            and p.class_grade.lower() == profile.class_grade.lower()
+        ]
+        # Further restrict if a specific subject is assigned to the student's profile
+        if profile.subject and profile.subject.strip():
+            subj_lower = profile.subject.strip().lower()
+            filtered_packs = [
+                p for p in filtered_packs
+                if p.subject.lower() in subj_lower or subj_lower in p.subject.lower()
+            ]
+        packs = filtered_packs
+    elif profile:
+        # General mode or unconstrained profile: prioritize matching packs
         def pack_priority(p: SyllabusPackSummary) -> int:
             score = 0
             if profile.board and p.board.lower() == profile.board.lower():
@@ -108,6 +128,42 @@ async def list_available_packs(
         packs.sort(key=pack_priority)
 
     return SyllabusPackListResponse(packs=packs, total_count=len(packs))
+
+
+def verify_pack_authorization(
+    profile: Optional[Any],
+    board: str,
+    class_grade: str,
+    subject: str,
+    pack_id: str,
+) -> None:
+    """Verifies that the requested pack is authorized for the student's profile."""
+    if not profile or getattr(profile, "education_mode", None) != "school":
+        return
+
+    # In school mode, missing profile curriculum metadata prevents access
+    p_board = getattr(profile, "board", None)
+    p_class = getattr(profile, "class_grade", None)
+    if not p_board or not p_class:
+        raise HTTPException(
+            status_code=403,
+            detail="Access forbidden: Curriculum profile metadata incomplete.",
+        )
+
+    if board.lower() != p_board.lower() or class_grade.lower() != p_class.lower():
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access forbidden: Pack '{pack_id}' is outside your authorized curriculum profile ({p_board} Class {p_class}).",
+        )
+
+    p_subject = getattr(profile, "subject", None)
+    if p_subject and p_subject.strip():
+        s_lower = p_subject.strip().lower()
+        if subject.lower() not in s_lower and s_lower not in subject.lower():
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access forbidden: Pack subject '{subject}' is outside your authorized curriculum profile ({p_subject}).",
+            )
 
 
 @router.get("/packs/{pack_id}/manifest", response_model=SyllabusManifestResponse)
@@ -143,6 +199,11 @@ async def get_pack_manifest(
             status_code=404,
             detail=f"Syllabus pack '{pack_id}' not found or has no authorized ingested chunks.",
         )
+
+    # Enforce trusted curriculum profile authorization
+    profile_repo = ProfileRepository(db)
+    profile = await profile_repo.get_by_user_id(user_id)
+    verify_pack_authorization(profile, matched_row.board, matched_row.class_grade, matched_row.subject, pack_id)
 
     # Compute deterministic SHA-256 content hash across all authorized chunks in pack
     hash_sql = """
@@ -212,6 +273,11 @@ async def get_pack_chunks(
             status_code=404,
             detail=f"Syllabus pack '{pack_id}' not found.",
         )
+
+    # Enforce trusted curriculum profile authorization
+    profile_repo = ProfileRepository(db)
+    profile = await profile_repo.get_by_user_id(user_id)
+    verify_pack_authorization(profile, matched.board, matched.class_grade, matched.subject, pack_id)
 
     # Query chunks with cursor pagination
     query_parts = [
