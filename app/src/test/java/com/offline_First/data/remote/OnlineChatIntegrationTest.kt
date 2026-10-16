@@ -22,6 +22,8 @@ import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.TimeUnit
+import com.offline_First.data.provider.OnlineGeminiProvider
+import com.offline_First.domain.model.ExplanationMode
 
 /**
  * Unit tests covering the complete Online Chat client requirements:
@@ -334,5 +336,61 @@ class OnlineChatIntegrationTest {
         } catch (e: Exception) {
             assertTrue("Exception message mentions 500: ${e.message}", e.message?.contains("500") == true)
         }
+    }
+
+    @Test
+    fun test11_sseCitationsCapturedAndPropagated() = runBlocking {
+        val ssePayload = """
+            data: {"type":"metadata","assistant_message_id":"msg-rag-1"}
+
+            data: {"type":"citations","citations":[{"chunk_id":"chunk-abc-123","textbook_title":"NCERT Class 10 Science","chapter":"Chemical Reactions","section":"1.2","page_reference":"p. 14-16","score":0.91}]}
+
+            data: {"type":"token","content":"A chemical reaction "}
+
+            data: {"type":"token","content":"transforms reactants into products."}
+
+            data: {"type":"done"}
+
+        """.trimIndent()
+
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(ssePayload)
+        )
+
+        val provider = OnlineGeminiProvider(profileProvider = { null })
+        val collectedTokens = mutableListOf<String>()
+
+        provider.streamInference(
+            prompt = "What is a chemical reaction?",
+            conversationId = "conv-citations-test",
+            clientMessageId = "msg-client-1",
+            parentId = null,
+            explanationMode = ExplanationMode.GENERAL,
+            history = emptyList(),
+            systemPrompt = ""
+        ).collect { token ->
+            collectedTokens.add(token)
+        }
+
+        // Verify that tokens were emitted
+        val fullResponse = collectedTokens.joinToString("")
+        assertTrue(fullResponse.contains("A chemical reaction transforms reactants into products."))
+
+        // Verify that citations metadata was appended on 'done'
+        assertTrue(fullResponse.contains("**Curriculum References:**"))
+        assertTrue(fullResponse.contains("*NCERT Class 10 Science* | Chapter: Chemical Reactions | Section: 1.2 | p. 14-16"))
+
+        // Verify that structured SourceCitation list was saved in provider for ChatMessage attribution
+        val capturedCitations = provider.getLastCitations()
+        assertEquals(1, capturedCitations.size)
+        val citation = capturedCitations[0]
+        assertEquals("chunk-abc-123", citation.sourceId)
+        assertEquals("NCERT Class 10 Science", citation.textbookTitle)
+        assertEquals("Chemical Reactions", citation.chapter)
+        assertEquals("1.2", citation.section)
+        assertEquals("p. 14-16", citation.pageReference)
     }
 }

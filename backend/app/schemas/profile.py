@@ -12,6 +12,10 @@ class ProfileResponse(BaseModel):
     interests: Optional[str] = None
     level: str
     education_mode: str = Field(alias="educationMode")
+    board: Optional[str] = None
+    class_grade: Optional[str] = Field(default=None, alias="classGrade")
+    subject: Optional[str] = None
+    preferred_language: Optional[str] = Field(default="en", alias="preferredLanguage")
     
     model_config = ConfigDict(
         populate_by_name=True,
@@ -27,6 +31,10 @@ class ProfileUpdateRequest(BaseModel):
     interests: Optional[str] = None
     level: str
     education_mode: str = Field(alias="educationMode")
+    board: Optional[str] = None
+    class_grade: Optional[str] = Field(default=None, alias="classGrade")
+    subject: Optional[str] = None
+    preferred_language: Optional[str] = Field(default="en", alias="preferredLanguage")
     
     model_config = ConfigDict(
         populate_by_name=True

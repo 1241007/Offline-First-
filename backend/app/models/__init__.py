@@ -7,6 +7,7 @@ from .progress import UserCourseProgress, UserLessonProgress, UserRevisionItem
 from .profile import UserProfile
 from .user import User, RefreshToken, PasswordResetToken
 from .memory import UserMemory
+from .syllabus import SyllabusDocument, SyllabusChunk
 
 __all__ = [
     "Conversation",
@@ -26,4 +27,7 @@ __all__ = [
     "RefreshToken",
     "PasswordResetToken",
     "UserMemory",
+    "SyllabusDocument",
+    "SyllabusChunk",
 ]
+

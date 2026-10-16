@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 from typing import Any, Optional, Union
@@ -47,6 +48,18 @@ class Settings(BaseSettings):
     smtp_password: Optional[str] = None
     smtp_use_tls: bool = True
     backend_public_url: str = "http://localhost:8000"
+
+    # Embedding and RAG configuration
+    embedding_provider: str = "openai"  # "local_e5", "openai", "openrouter", "custom"
+    embedding_api_key: Optional[str] = None
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_dimensions: int = 384
+    embedding_timeout_seconds: float = 3.0
+    embedding_query_prefix: str = "query: "
+    embedding_passage_prefix: str = "passage: "
+    router_timeout_seconds: float = 2.0
+    retrieval_timeout_seconds: float = 3.0
 
     @field_validator("cors_origins", mode="before")
     @classmethod

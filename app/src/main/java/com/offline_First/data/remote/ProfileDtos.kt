@@ -10,7 +10,11 @@ data class ProfileResponseDto(
     @SerialName("mobile") val mobile: String? = null,
     @SerialName("interests") val interests: String? = null,
     @SerialName("level") val level: String,
-    @SerialName("educationMode") val educationMode: String
+    @SerialName("educationMode") val educationMode: String,
+    @SerialName("board") val board: String? = null,
+    @SerialName("classGrade") val classGrade: String? = null,
+    @SerialName("subject") val subject: String? = null,
+    @SerialName("preferredLanguage") val preferredLanguage: String? = "en"
 )
 
 @Serializable
@@ -20,5 +24,9 @@ data class ProfileUpdateRequestDto(
     @SerialName("mobile") val mobile: String? = null,
     @SerialName("interests") val interests: String? = null,
     @SerialName("level") val level: String,
-    @SerialName("educationMode") val educationMode: String
+    @SerialName("educationMode") val educationMode: String,
+    @SerialName("board") val board: String? = null,
+    @SerialName("classGrade") val classGrade: String? = null,
+    @SerialName("subject") val subject: String? = null,
+    @SerialName("preferredLanguage") val preferredLanguage: String? = "en"
 )

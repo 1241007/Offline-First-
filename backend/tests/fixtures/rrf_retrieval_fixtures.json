@@ -1,0 +1,83 @@
+[
+  {
+    "name": "high_confidence_both_rank_1",
+    "vector_rank": 1,
+    "sparse_rank": 1,
+    "content_length": 150,
+    "expected_raw_rrf": 0.0327868852,
+    "expected_normalized_score": 1.0,
+    "expected_outcome": "SUFFICIENT"
+  },
+  {
+    "name": "high_confidence_dense_1_sparse_5",
+    "vector_rank": 1,
+    "sparse_rank": 5,
+    "content_length": 200,
+    "expected_raw_rrf": 0.031778058,
+    "expected_normalized_score": 0.96923,
+    "expected_outcome": "SUFFICIENT"
+  },
+  {
+    "name": "high_confidence_both_rank_5",
+    "vector_rank": 5,
+    "sparse_rank": 5,
+    "content_length": 180,
+    "expected_raw_rrf": 0.03076923,
+    "expected_normalized_score": 0.93846,
+    "expected_outcome": "SUFFICIENT"
+  },
+  {
+    "name": "high_confidence_both_rank_10",
+    "vector_rank": 10,
+    "sparse_rank": 10,
+    "content_length": 250,
+    "expected_raw_rrf": 0.02857143,
+    "expected_normalized_score": 0.87143,
+    "expected_outcome": "SUFFICIENT"
+  },
+  {
+    "name": "uncertain_dense_only_rank_1",
+    "vector_rank": 1,
+    "sparse_rank": null,
+    "content_length": 120,
+    "expected_raw_rrf": 0.01639344,
+    "expected_normalized_score": 0.500,
+    "expected_outcome": "UNCERTAIN"
+  },
+  {
+    "name": "uncertain_sparse_only_rank_3",
+    "vector_rank": null,
+    "sparse_rank": 3,
+    "content_length": 140,
+    "expected_raw_rrf": 0.0158730,
+    "expected_normalized_score": 0.48413,
+    "expected_outcome": "UNCERTAIN"
+  },
+  {
+    "name": "uncertain_short_content_despite_high_ranks",
+    "vector_rank": 1,
+    "sparse_rank": 1,
+    "content_length": 35,
+    "expected_raw_rrf": 0.0327868852,
+    "expected_normalized_score": 1.0,
+    "expected_outcome": "UNCERTAIN"
+  },
+  {
+    "name": "missing_weak_dense_only_rank_35",
+    "vector_rank": 35,
+    "sparse_rank": null,
+    "content_length": 150,
+    "expected_raw_rrf": 0.0105263,
+    "expected_normalized_score": 0.32105,
+    "expected_outcome": "MISSING"
+  },
+  {
+    "name": "missing_empty_results",
+    "vector_rank": null,
+    "sparse_rank": null,
+    "content_length": 0,
+    "expected_raw_rrf": 0.0,
+    "expected_normalized_score": 0.0,
+    "expected_outcome": "MISSING"
+  }
+]

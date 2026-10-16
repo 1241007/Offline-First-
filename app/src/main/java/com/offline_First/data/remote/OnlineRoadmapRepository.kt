@@ -15,6 +15,17 @@ class OnlineRoadmapRepository(
     private val currentUserId: String
         get() = userIdProvider().ifBlank { "default_user" }
 
+    // In-memory cache for fast UI rendering between refreshes
+    private val _roadmapCache = mutableListOf<PersonalizedRoadmapDetail>()
+
+    // Local milestone progress store (keyed: "$roadmapId/$milestoneKey")
+    // Replaced with backend sync in syncPendingMilestoneProgress()
+    private val _localMilestones = mutableMapOf<String, MutableSet<String>>()
+
+    // -----------------------------------------------------------------------
+    // Static roadmap catalogue
+    // -----------------------------------------------------------------------
+
     private fun mapAccentTheme(theme: String): RoadmapAccentTheme {
         return when (theme.lowercase()) {
             "secondary", "purple", "teal", "orange" -> RoadmapAccentTheme.SECONDARY
@@ -449,6 +460,38 @@ class OnlineRoadmapRepository(
         }
         return Result.success(Unit)
     }
+
+    // -----------------------------------------------------------------------
+    // Milestone progress (local-first, pending backend API)
+    // -----------------------------------------------------------------------
+
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> {
+        return _localMilestones[roadmapId]?.toSet() ?: emptySet()
+    }
+
+    override suspend fun toggleMilestoneProgress(
+        roadmapId: String,
+        milestoneKey: String
+    ): Result<Set<String>> {
+        val set = _localMilestones.getOrPut(roadmapId) { mutableSetOf() }
+        if (set.contains(milestoneKey)) {
+            set.remove(milestoneKey)
+        } else {
+            set.add(milestoneKey)
+        }
+        return Result.success(set.toSet())
+    }
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> {
+        // INTEGRATION POINT: POST /api/v1/learning/milestones/sync
+        // Currently a no-op until that endpoint is added.
+        Log.d(TAG, "syncPendingMilestoneProgress: pending backend milestone sync endpoint")
+        return Result.success(Unit)
+    }
+
+    // -----------------------------------------------------------------------
+    // Legacy single-overload (kept for RoadmapBuilderScreen compatibility)
+    // -----------------------------------------------------------------------
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

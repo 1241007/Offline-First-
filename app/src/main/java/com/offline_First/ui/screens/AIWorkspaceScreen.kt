@@ -1550,6 +1550,25 @@ private fun ChatBubbleItem(
                         lineHeight = 21.sp
                     )
                 }
+                if (!message.fromUser && message.citations.isNotEmpty() && !text.contains("Curriculum References")) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Curriculum References:",
+                        fontSize = 12.sp,
+                        color = EduNovaTextSecondary
+                    )
+                    message.citations.forEachIndexed { idx, citation ->
+                        val title = citation.textbookTitle ?: "Curriculum Reference"
+                        val ch = if (!citation.chapter.isNullOrBlank()) " | Chapter: ${citation.chapter}" else ""
+                        val page = if (!citation.pageReference.isNullOrBlank()) " | ${citation.pageReference}" else ""
+                        Text(
+                            text = "${idx + 1}. $title$ch$page",
+                            fontSize = 11.sp,
+                            color = EduNovaPrimary,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+                }
             }
         }
 

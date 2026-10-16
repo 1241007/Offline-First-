@@ -6,9 +6,13 @@ from typing import Optional, AsyncIterator
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.profile_repository import ProfileRepository
 from app.services.openrouter_service import openrouter_service
 gemini_service = openrouter_service  # Backwards compatibility alias
 from app.services.memory_service import MemoryService
+from app.services.routing_service import routing_service
+from app.services.supabase_retrieval_service import SupabaseRetrievalService
+from app.schemas.rag import RAGRequestContext, RouteDecision, EvidenceOutcome, AppMode
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.core.config import settings
@@ -199,28 +203,58 @@ class ChatService:
         explanation_mode: str = "general",
         client_message_id: Optional[str] = None,
         parent_id: Optional[str] = None,
+        app_mode: Optional[str] = None,
+        board: Optional[str] = None,
+        class_grade: Optional[str] = None,
+        subject: Optional[str] = None,
+        language: Optional[str] = "en",
+        selected_chapter: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """
-        Server-Sent Events (SSE) generator for streaming AI responses.
+        Server-Sent Events (SSE) generator for streaming AI responses with intelligent RAG routing.
         Handles client disconnection / Stop generation gracefully by saving partial text.
         """
         conv = await self.get_or_create_conversation(conversation_id, user_id)
 
-        # Extract memories
+        # 1. Resolve Profile Context (no placeholder assumptions)
+        profile_repo = ProfileRepository(self.db)
+        profile = await profile_repo.get_by_user_id(user_id)
+
+        eff_mode_str = app_mode or (
+            "student" if profile and profile.education_mode == "school" else "general"
+        )
+        eff_app_mode = (
+            AppMode.STUDENT
+            if eff_mode_str.lower() in ("student", "school")
+            else AppMode.GENERAL
+        )
+        if profile and profile.education_mode == "school":
+            # In school mode, trusted profile curriculum takes strict precedence over untrusted client parameters
+            eff_board = profile.board or board
+            eff_class = profile.class_grade or class_grade
+            eff_subject = profile.subject or subject
+            eff_language = profile.preferred_language or language or "en"
+        else:
+            eff_board = board or (profile.board if profile else None)
+            eff_class = class_grade or (profile.class_grade if profile else None)
+            eff_subject = subject or (profile.subject if profile else None)
+            eff_language = language or (profile.preferred_language if profile else "en")
+
+        # 2. Extract memories
         await self.memory_service.extract_and_save_memories(
             user_id=user_id,
             message_text=content,
             conversation_id=conversation_id,
         )
 
-        # Get relevant memory context
+        # 3. Get relevant memory context
         memory_context = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
             current_prompt=content,
             limit=5,
         )
 
-        # Save user message
+        # 4. Save user message
         user_msg = await self.repo.save_message(
             conversation_id=conversation_id,
             role="user",
@@ -235,7 +269,7 @@ class ChatService:
         # Yield initial metadata
         yield f"data: {json.dumps({'type': 'metadata', 'user_message_id': user_msg.id, 'assistant_message_id': assistant_id})}\n\n"
 
-        # Context
+        # 5. Build recent conversation history
         recent = await self.repo.get_recent_messages(
             conversation_id=conversation_id,
             limit=settings.chat_context_messages,
@@ -245,15 +279,93 @@ class ChatService:
             role = "user" if msg.role == "user" else "model"
             history.append({"role": role, "parts": [msg.content]})
 
+        # 6. Build RAG Request Context
+        rag_context = RAGRequestContext(
+            execution_mode="ONLINE",
+            app_mode=eff_app_mode,
+            board=eff_board,
+            class_grade=eff_class,
+            subject=eff_subject,
+            language=eff_language,
+            explanation_mode=explanation_mode,
+            selected_chapter=selected_chapter,
+            conversation_history=history,
+        )
+
+        # 7. Evaluate Route
+        route_decision, standalone_query = await routing_service.route_query(content, rag_context)
+        yield f"data: {json.dumps({'type': 'route', 'decision': route_decision.value, 'query': standalone_query})}\n\n"
+
         accumulated_chunks = []
         try:
-            async for token in openrouter_service.generate_response_stream(
-                history=history,
-                explanation_mode=explanation_mode,
-                memory_context=memory_context,
-            ):
-                accumulated_chunks.append(token)
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            if route_decision == RouteDecision.RAG:
+                retrieval_service = SupabaseRetrievalService(self.db)
+                retrieval_query = standalone_query or content
+                retrieval_resp = await retrieval_service.retrieve(retrieval_query, rag_context, top_k=5)
+
+                if retrieval_resp.evidence_outcome == EvidenceOutcome.CORPUS_NOT_CONFIGURED:
+                    msg = "General Mode knowledge retrieval is currently not configured in this release. Please switch to School Mode for syllabus-grounded learning or ask general questions directly."
+                    accumulated_chunks.append(msg)
+                    yield f"data: {json.dumps({'type': 'token', 'content': msg})}\n\n"
+
+                elif retrieval_resp.evidence_outcome == EvidenceOutcome.RETRIEVAL_ERROR:
+                    msg = f"Unable to retrieve curriculum references: {retrieval_resp.error_detail or 'Retrieval error'}. Please check network connection and credentials."
+                    accumulated_chunks.append(msg)
+                    yield f"data: {json.dumps({'type': 'token', 'content': msg})}\n\n"
+
+                elif retrieval_resp.evidence_outcome == EvidenceOutcome.MISSING:
+                    b_str = eff_board or "your"
+                    c_str = f" Class {eff_class}" if eff_class else ""
+                    s_str = f" {eff_subject}" if eff_subject else ""
+                    msg = f"This topic was not found in the official curriculum corpus for {b_str}{c_str}{s_str}. Please verify the chapter or check your curriculum topics."
+                    accumulated_chunks.append(msg)
+                    yield f"data: {json.dumps({'type': 'token', 'content': msg})}\n\n"
+
+                else:
+                    # SUFFICIENT or UNCERTAIN evidence
+                    citations = [
+                        {
+                            "chunk_id": c.chunk_id,
+                            "textbook_title": c.textbook_title,
+                            "chapter": c.chapter,
+                            "section": c.section,
+                            "page_reference": c.page_reference,
+                            "score": c.normalized_score,
+                        }
+                        for c in retrieval_resp.chunks
+                    ]
+                    yield f"data: {json.dumps({'type': 'citations', 'outcome': retrieval_resp.evidence_outcome.value, 'citations': citations})}\n\n"
+
+                    if retrieval_resp.evidence_outcome == EvidenceOutcome.UNCERTAIN:
+                        uncertain_disclaimer = "\n> [!NOTE]\n> Limited curriculum evidence was found for this specific query. If needed, please clarify the exact chapter or topic name.\n\n"
+                        accumulated_chunks.append(uncertain_disclaimer)
+                        yield f"data: {json.dumps({'type': 'token', 'content': uncertain_disclaimer})}\n\n"
+
+                    # Build grounded prompt with syllabus chunks
+                    grounded_context = "\nOfficial Curriculum References:\n"
+                    for i, c in enumerate(retrieval_resp.chunks, 1):
+                        ref = f"[{i}] {c.textbook_title or ''} (Chapter: {c.chapter or 'N/A'}, Page: {c.page_reference or 'N/A'}):\n{c.content}\n\n"
+                        grounded_context += ref
+
+                    combined_memory = f"{memory_context}\n{grounded_context}".strip()
+                    async for token in openrouter_service.generate_response_stream(
+                        history=history,
+                        explanation_mode=explanation_mode,
+                        memory_context=combined_memory,
+                    ):
+                        accumulated_chunks.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+            else:
+                # DIRECT generation
+                async for token in openrouter_service.generate_response_stream(
+                    history=history,
+                    explanation_mode=explanation_mode,
+                    memory_context=memory_context,
+                ):
+                    accumulated_chunks.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
         except Exception as exc:
             logger.warning(f"Stream interrupted or cancelled for conv={conversation_id}: {exc}")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"

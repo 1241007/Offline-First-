@@ -29,6 +29,12 @@ class UserProfile(Base):
     education_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="general"
     )
+    board: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    class_grade: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    subject: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    preferred_language: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, default="en"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

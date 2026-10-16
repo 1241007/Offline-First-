@@ -26,7 +26,7 @@ class RemoteProfileRepository(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private val _profileState = MutableStateFlow<UserProfile?>(loadCachedProfile())
-    val currentProfile: UserProfile? get() = _profileState.value
+    override val currentProfile: UserProfile? get() = _profileState.value
 
     override fun observeUserProfile(): Flow<UserProfile?> = _profileState.asStateFlow()
 
@@ -38,6 +38,10 @@ class RemoteProfileRepository(
         val interests = sp.getString(KEY_INTERESTS, "") ?: ""
         val level = sp.getString(KEY_LEVEL, "Beginner") ?: "Beginner"
         val modeStr = sp.getString(KEY_MODE, "general") ?: "general"
+        val board = sp.getString(KEY_BOARD, null)
+        val classGrade = sp.getString(KEY_CLASS_GRADE, null)
+        val subject = sp.getString(KEY_SUBJECT, null)
+        val preferredLanguage = sp.getString(KEY_LANGUAGE, "en") ?: "en"
         val educationMode = if (modeStr.equals("school", ignoreCase = true)) {
             EducationMode.SCHOOL
         } else {
@@ -49,7 +53,11 @@ class RemoteProfileRepository(
             mobile = mobile,
             interests = interests,
             level = level,
-            educationMode = educationMode
+            educationMode = educationMode,
+            board = board,
+            classGrade = classGrade,
+            subject = subject,
+            preferredLanguage = preferredLanguage
         )
     }
 
@@ -64,6 +72,10 @@ class RemoteProfileRepository(
                 KEY_MODE,
                 if (profile.educationMode == EducationMode.SCHOOL) "school" else "general"
             )
+            ?.putString(KEY_BOARD, profile.board)
+            ?.putString(KEY_CLASS_GRADE, profile.classGrade)
+            ?.putString(KEY_SUBJECT, profile.subject)
+            ?.putString(KEY_LANGUAGE, profile.preferredLanguage)
             ?.apply()
     }
 
@@ -104,7 +116,11 @@ class RemoteProfileRepository(
                         EducationMode.SCHOOL
                     } else {
                         EducationMode.GENERAL
-                    }
+                    },
+                    board = dto.board,
+                    classGrade = dto.classGrade,
+                    subject = dto.subject,
+                    preferredLanguage = dto.preferredLanguage ?: "en"
                 )
 
                 saveCachedProfile(domainProfile)
@@ -129,7 +145,11 @@ class RemoteProfileRepository(
             mobile = profile.mobile.ifBlank { null },
             interests = profile.interests.ifBlank { null },
             level = profile.level,
-            educationMode = if (profile.educationMode == EducationMode.SCHOOL) "school" else "general"
+            educationMode = if (profile.educationMode == EducationMode.SCHOOL) "school" else "general",
+            board = profile.board,
+            classGrade = profile.classGrade,
+            subject = profile.subject,
+            preferredLanguage = profile.preferredLanguage
         )
 
         val payload = json.encodeToString(ProfileUpdateRequestDto.serializer(), dto)
@@ -156,7 +176,11 @@ class RemoteProfileRepository(
                     EducationMode.SCHOOL
                 } else {
                     EducationMode.GENERAL
-                }
+                },
+                board = updatedDto.board,
+                classGrade = updatedDto.classGrade,
+                subject = updatedDto.subject,
+                preferredLanguage = updatedDto.preferredLanguage ?: "en"
             )
             saveCachedProfile(updatedProfile)
             markPendingSync(false)
@@ -199,6 +223,10 @@ class RemoteProfileRepository(
         private const val KEY_INTERESTS = "profile_interests"
         private const val KEY_LEVEL = "profile_level"
         private const val KEY_MODE = "profile_education_mode"
+        private const val KEY_BOARD = "profile_board"
+        private const val KEY_CLASS_GRADE = "profile_class_grade"
+        private const val KEY_SUBJECT = "profile_subject"
+        private const val KEY_LANGUAGE = "profile_language"
         private const val KEY_PENDING_SYNC = "profile_pending_sync"
     }
 }

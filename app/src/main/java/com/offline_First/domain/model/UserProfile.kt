@@ -11,5 +11,9 @@ data class UserProfile(
     val mobile: String,
     val interests: String,
     val level: String,
-    val educationMode: EducationMode = EducationMode.GENERAL
+    val educationMode: EducationMode = EducationMode.GENERAL,
+    val board: String? = null,
+    val classGrade: String? = null,
+    val subject: String? = null,
+    val preferredLanguage: String = "en"
 )

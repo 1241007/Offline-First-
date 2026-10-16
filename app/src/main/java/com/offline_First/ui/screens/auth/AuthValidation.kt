@@ -19,11 +19,10 @@ internal fun validateMobile(value: String): String? {
     }
 }
 
-internal fun validateLoginContact(value: String): String? {
+internal fun validateLoginEmail(value: String): String? {
     val trimmed = value.trim()
     return when {
-        trimmed.isBlank() -> "Please enter your email or mobile number."
-        trimmed.contains("@") -> validateEmail(trimmed)
-        else -> validateMobile(trimmed)?.replace("your mobile number", "a valid mobile number")
+        trimmed.isBlank() -> "Please enter your email address."
+        else -> validateEmail(trimmed)
     }
 }
