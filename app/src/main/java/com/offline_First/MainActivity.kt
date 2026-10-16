@@ -24,9 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.offline_First.data.AppContainer
 import com.offline_First.data.AuthState
+import com.offline_First.ui.components.EduNovaBottomNavItem
 import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.screens.AIWorkspaceScreen
 import com.offline_First.ui.screens.LandingScreen
+import com.offline_First.ui.screens.home.EduNovaHomeScreen
+import com.offline_First.ui.screens.course.CoursesScreen
+import com.offline_First.ui.screens.landing.LandingViewModel
 import com.offline_First.ui.screens.MyLearningScreen
 import com.offline_First.ui.screens.ProfileScreen
 import com.offline_First.ui.screens.RoadmapBuilderScreen
@@ -74,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     initial = com.offline_First.data.local.LocalProfileRepository.defaultProfile()
                 )
                 val personalizedRoadmapViewModel: PersonalizedRoadmapViewModel = viewModel()
+                val landingViewModel: LandingViewModel = viewModel()
 
                 // Restore session on startup
                 LaunchedEffect(Unit) {
@@ -114,6 +119,40 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val navigateToTab: (AppDestination) -> Unit = { next ->
+                    if (destination != next) {
+                        if (next == AppDestination.LANDING) {
+                            navigationStack.clear()
+                        } else {
+                            navigationStack.removeAll {
+                                it == next || it == AppDestination.COURSES || it == AppDestination.SCHOOL_DASHBOARD || it == AppDestination.ROADMAP || it == AppDestination.AI_WORKSPACE || it == AppDestination.MY_LEARNING
+                            }
+                            if (navigationStack.isEmpty() || navigationStack.firstOrNull() != AppDestination.LANDING) {
+                                navigationStack.add(0, AppDestination.LANDING)
+                            }
+                        }
+                        destination = next
+                    }
+                }
+
+                val onBottomNavClick: (EduNovaBottomNavItem) -> Unit = { item ->
+                    when (item) {
+                        EduNovaBottomNavItem.HOME -> navigateToTab(AppDestination.LANDING)
+                        EduNovaBottomNavItem.COURSES -> navigateToTab(AppDestination.COURSES)
+                        EduNovaBottomNavItem.ROADMAP -> navigateToTab(AppDestination.ROADMAP)
+                        EduNovaBottomNavItem.CHAT -> {
+                            openWorkspaceTools = false
+                            navigateToTab(AppDestination.AI_WORKSPACE)
+                        }
+                        EduNovaBottomNavItem.TOOLS -> {
+                            openWorkspaceTools = true
+                            navigateToTab(AppDestination.AI_WORKSPACE)
+                        }
+                        EduNovaBottomNavItem.SUBJECTS -> navigateToTab(AppDestination.SCHOOL_DASHBOARD)
+                        EduNovaBottomNavItem.PRACTICE -> navigateToTab(AppDestination.ROADMAP)
+                    }
+                }
+
                 val navigateBack: () -> Unit = {
                     val previous = navigationStack.lastOrNull()
                     if (previous != null) {
@@ -139,22 +178,77 @@ class MainActivity : ComponentActivity() {
                             CircularProgressIndicator(color = EduNovaPrimary)
                         }
                     }
-                    AppDestination.LANDING -> LandingScreen(
-                        onLogin = { pushDestination(AppDestination.LOGIN) },
-                        isLoggedIn = isLoggedIn,
-                        onAskAI = {
-                            openWorkspaceTools = false
-                            pushDestination(AppDestination.AI_WORKSPACE)
+                    AppDestination.LANDING -> {
+                        val isSchool = profile?.educationMode == com.offline_First.domain.model.EducationMode.SCHOOL
+                        EduNovaHomeScreen(
+                            isSchoolMode = isSchool,
+                            onNavigate = onBottomNavClick,
+                            onOpenProfile = { pushDestination(AppDestination.PROFILE) },
+                            onAskAI = { query ->
+                                openWorkspaceTools = false
+                                pushDestination(AppDestination.AI_WORKSPACE)
+                            },
+                            onOpenAITools = {
+                                openWorkspaceTools = true
+                                pushDestination(AppDestination.AI_WORKSPACE)
+                            },
+                            onRoadmap = { pushDestination(AppDestination.ROADMAP) },
+                            onOpenCourses = {
+                                if (isSchool) {
+                                    navigateToTab(AppDestination.SCHOOL_DASHBOARD)
+                                } else {
+                                    navigateToTab(AppDestination.COURSES)
+                                }
+                            },
+                            onOpenMyLearning = { pushDestination(AppDestination.MY_LEARNING) },
+                            onPractice = { pushDestination(AppDestination.ROADMAP) }
+                        )
+                    }
+
+                    AppDestination.SCHOOL_DASHBOARD -> {
+                        LandingScreen(
+                            onHome = { navigateToTab(AppDestination.LANDING) },
+                            onLogin = { pushDestination(AppDestination.LOGIN) },
+                            isLoggedIn = isLoggedIn,
+                            onAskAI = {
+                                openWorkspaceTools = false
+                                pushDestination(AppDestination.AI_WORKSPACE)
+                            },
+                            onOpenAITools = {
+                                openWorkspaceTools = true
+                                pushDestination(AppDestination.AI_WORKSPACE)
+                            },
+                            onRoadmap = { pushDestination(AppDestination.ROADMAP) },
+                            onOpenProfile = { pushDestination(AppDestination.PROFILE) },
+                            onOpenMyLearning = { pushDestination(AppDestination.MY_LEARNING) },
+                            onOpenSettings = { pushDestination(AppDestination.SETTINGS) },
+                            onOpenCourses = { navigateToTab(AppDestination.COURSES) },
+                            onLanguageSelected = { selectedLanguage = it },
+                            onLogout = {
+                                coroutineScope.launch {
+                                    val currentRt = sessionManager.currentRefreshToken()
+                                    authRepository.logout(currentRt)
+                                    pushDestination(AppDestination.LOGIN)
+                                }
+                            },
+                            onCourseClick = { courseId ->
+                                selectedCourseId = courseId
+                                pushDestination(AppDestination.COURSE_DETAIL)
+                            },
+                            viewModel = landingViewModel
+                        )
+                    }
+
+                    AppDestination.COURSES -> CoursesScreen(
+                        onNavigate = onBottomNavClick,
+                        onCourseClick = { courseId ->
+                            selectedCourseId = courseId
+                            pushDestination(AppDestination.COURSE_DETAIL)
                         },
-                        onOpenAITools = {
-                            openWorkspaceTools = true
-                            pushDestination(AppDestination.AI_WORKSPACE)
-                        },
-                        onRoadmap = { pushDestination(AppDestination.ROADMAP) },
                         onOpenProfile = { pushDestination(AppDestination.PROFILE) },
                         onOpenMyLearning = { pushDestination(AppDestination.MY_LEARNING) },
                         onOpenSettings = { pushDestination(AppDestination.SETTINGS) },
-                        onLanguageSelected = { selectedLanguage = it },
+                        onLogin = { pushDestination(AppDestination.LOGIN) },
                         onLogout = {
                             coroutineScope.launch {
                                 val currentRt = sessionManager.currentRefreshToken()
@@ -162,10 +256,9 @@ class MainActivity : ComponentActivity() {
                                 pushDestination(AppDestination.LOGIN)
                             }
                         },
-                        onCourseClick = { courseId ->
-                            selectedCourseId = courseId
-                            pushDestination(AppDestination.COURSE_DETAIL)
-                        }
+                        onLanguageSelected = { selectedLanguage = it },
+                        isLoggedIn = isLoggedIn,
+                        viewModel = landingViewModel
                     )
 
                     AppDestination.LOGIN -> LoginScreen(
@@ -227,7 +320,11 @@ class MainActivity : ComponentActivity() {
                         onBack = navigateBack,
                         onOpenProfile = { pushDestination(AppDestination.PROFILE) },
                         language = selectedLanguage,
-                        onLanguageSelected = { selectedLanguage = it }
+                        onLanguageSelected = { selectedLanguage = it },
+                        educationMode = profile?.educationMode ?: com.offline_First.domain.model.EducationMode.GENERAL,
+                        onEducationModeChanged = { newMode ->
+                            landingViewModel.setEducationMode(newMode)
+                        }
                     )
                     AppDestination.COURSE_DETAIL -> CourseDetailScreen(
                         courseId = selectedCourseId ?: "c-py",
