@@ -194,4 +194,91 @@ class CourseProgressStoreTest {
         assertEquals(cert.id, reloadedCert!!.id)
         assertEquals("Alice", reloadedCert.learnerName)
     }
+
+    @Test
+    fun completionCountRemainsCorrectAcrossAliases() {
+        val testFile = File(tempFolder.root, "test_alias_progress.json")
+        val store = CourseProgressStore(testFile)
+        CourseIdNormalizer.resetForTesting()
+
+        val lessons = listOf("les-cpp-101", "les-cpp-102")
+
+        // 1. Mark lesson completed under local ID "c-cpp"
+        store.markLessonCompleted("c-cpp", "les-cpp-101", true)
+
+        // 2. Query under canonical slug "cpp-programming"
+        assertTrue(store.isLessonCompleted("cpp-programming", "les-cpp-101"))
+        assertEquals(1, store.getCompletedLessonCount("cpp-programming"))
+        assertEquals(1, store.getCompletedLessonCount("cpp-programming", lessons))
+        assertEquals(0.5f, store.getCourseProgressPercentage("cpp-programming", lessons), 0.001f)
+
+        // 3. Dynamically discover/register backend UUID from actual API course record
+        val backendUuid = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        CourseIdNormalizer.registerRemoteCourse(backendUuid, "cpp-programming", "C++ Programming")
+
+        // 4. Query under backend UUID
+        assertTrue(store.isLessonCompleted(backendUuid, "les-cpp-101"))
+        assertEquals(1, store.getCompletedLessonCount(backendUuid))
+        assertEquals(1, store.getCompletedLessonCount(backendUuid, lessons))
+        assertEquals(0.5f, store.getCourseProgressPercentage(backendUuid, lessons), 0.001f)
+
+        // 5. Complete second lesson under backend UUID
+        store.markLessonCompleted(backendUuid, "les-cpp-102", true)
+
+        // 6. Verify completion count across all 3 identifiers
+        assertEquals(2, store.getCompletedLessonCount("c-cpp"))
+        assertEquals(2, store.getCompletedLessonCount("cpp-programming"))
+        assertEquals(2, store.getCompletedLessonCount(backendUuid))
+        assertEquals(1.0f, store.getCourseProgressPercentage("c-cpp", lessons), 0.001f)
+        assertTrue(store.isCourseCompleted("c-cpp", lessons))
+        assertTrue(store.isCourseCompleted(backendUuid, lessons))
+    }
+
+    @Test
+    fun emitsProgressUpdateOnlyOnActualStateChange() {
+        val testFile = File(tempFolder.root, "test_emission_storage.json")
+        val store = CourseProgressStore(testFile)
+
+        assertEquals(0L, store.progressUpdates.value)
+
+        // Change from false to true -> should emit
+        store.markLessonCompleted("c-cpp", "les-cpp-101", true)
+        val version1 = store.progressUpdates.value
+        assertTrue("First completion must emit version > 0", version1 > 0L)
+
+        // Marking true again -> duplicate, must NOT emit
+        store.markLessonCompleted("c-cpp", "les-cpp-101", true)
+        assertEquals("Duplicate completion must not emit new update", version1, store.progressUpdates.value)
+
+        // Changing from true to false -> should emit
+        store.markLessonCompleted("c-cpp", "les-cpp-101", false)
+        val version2 = store.progressUpdates.value
+        assertTrue("State change to incomplete must emit new version", version2 > version1)
+    }
+
+    @Test
+    fun certificateIdempotenceAcrossAliases() {
+        val testFile = File(tempFolder.root, "test_alias_cert.json")
+        val store = CourseProgressStore(testFile)
+        CourseIdNormalizer.resetForTesting()
+
+        val backendUuid = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        CourseIdNormalizer.registerRemoteCourse(backendUuid, "cpp-programming", "C++ Programming")
+
+        // Issue under c-cpp
+        val cert = store.issueCertificate("c-cpp", "C++ Programming", "Learner One", 10)
+        assertFalse(cert == null)
+
+        // Query under cpp-programming and backend UUID
+        val certBySlug = store.getCertificate("cpp-programming")
+        val certByUuid = store.getCertificate(backendUuid)
+
+        assertEquals(cert!!.id, certBySlug?.id)
+        assertEquals(cert.id, certByUuid?.id)
+
+        // Attempt issue under backend UUID -> should return existing certificate without duplicate
+        val certReissue = store.issueCertificate(backendUuid, "C++ Programming", "Learner One", 10)
+        assertEquals(cert.id, certReissue?.id)
+        assertEquals(1, store.getAllCertificates().size)
+    }
 }

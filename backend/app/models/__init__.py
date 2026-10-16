@@ -3,7 +3,7 @@ from .message import Message
 from .course import CourseCategory, Course, CourseModule, Lesson
 from .roadmap import Roadmap, RoadmapItem
 from .roadmap_assessment import RoadmapAssessmentSession
-from .progress import UserCourseProgress, UserLessonProgress
+from .progress import UserCourseProgress, UserLessonProgress, UserRevisionItem
 from .profile import UserProfile
 from .user import User, RefreshToken, PasswordResetToken
 from .memory import UserMemory

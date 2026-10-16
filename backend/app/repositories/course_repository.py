@@ -26,25 +26,40 @@ class CourseRepository:
 
     async def get_all_courses(
         self,
-        featured_only: bool = False,
+        featured: Optional[bool] = None,
         category_slug: Optional[str] = None,
+        featured_only: Optional[bool] = None,
         limit: Optional[int] = None,
         offset: int = 0
     ) -> List[Course]:
-        """Get active courses with optional filtering and pagination"""
-        query = select(Course).where(Course.status == "active")
-        
-        if featured_only:
-            query = query.where(Course.is_featured == True)
-        
+        """
+        Get all active courses with optional filtering and pagination.
+
+        Supports filtering by:
+        - featured: True for featured only, False for non-featured only, None for all
+        - category_slug: filter by course_categories.slug column
+        - featured_only: backwards-compatibility parameter
+        - limit: Page size
+        - offset: Number of records to skip
+        """
+        query = select(Course).where(Course.status == "active").options(
+            selectinload(Course.category),
+            selectinload(Course.modules).selectinload(CourseModule.lessons)
+        )
+
+        # Resolve featured filter
+        if featured is None and featured_only is not None:
+            featured = True if featured_only else None
+
+        if featured is not None:
+            query = query.where(Course.is_featured == featured)
+
         if category_slug:
-            # Join with category to filter by slug
-            query = query.join(CourseCategory).where(CourseCategory.slug == category_slug)
-        
+            query = query.join(Course.category).where(CourseCategory.slug == category_slug)
+
         query = query.order_by(Course.created_at).offset(offset)
         if limit is not None:
             query = query.limit(limit)
-        
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

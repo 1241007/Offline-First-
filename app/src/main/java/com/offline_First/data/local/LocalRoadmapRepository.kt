@@ -1,9 +1,7 @@
 package com.offline_First.data.local
 
 import com.offline_First.data.repository.RoadmapRepository
-import com.offline_First.domain.model.GeneratedRoadmapPreview
-import com.offline_First.domain.model.RoadmapAccentTheme
-import com.offline_First.domain.model.RoadmapOption
+import com.offline_First.domain.model.*
 import kotlinx.coroutines.delay
 
 class LocalRoadmapRepository : RoadmapRepository {
@@ -128,13 +126,88 @@ class LocalRoadmapRepository : RoadmapRepository {
         )
     )
 
-    override suspend fun getRoadmaps(): Result<List<RoadmapOption>> {
-        return Result.success(roadmaps)
+    override suspend fun getRoadmaps(
+        limit: Int?,
+        offset: Int,
+        category: String?
+    ): Result<List<RoadmapOption>> {
+        val filtered = if (category != null && !category.equals("All", ignoreCase = true)) {
+            roadmaps.filter { it.category.equals(category, ignoreCase = true) }
+        } else {
+            roadmaps
+        }
+        val paged = if (limit != null) {
+            filtered.drop(offset).take(limit)
+        } else if (offset > 0) {
+            filtered.drop(offset)
+        } else {
+            filtered
+        }
+        return Result.success(paged)
     }
 
     override suspend fun getCategories(): List<String> {
         return categories
     }
+
+    override suspend fun startPersonalizedAssessment(): Result<AssessmentSessionState> =
+        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+
+    override suspend fun getActiveAssessmentSession(): Result<AssessmentSessionState?> =
+        Result.success(null)
+
+    override suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionState> =
+        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+
+    override suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int?
+    ): Result<AssessmentSessionState> =
+        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState> =
+        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+
+    override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail> =
+        Result.failure(UnsupportedOperationException("Personalized roadmap generation requires backend connection"))
+
+    override suspend fun getMyPersonalizedRoadmaps(
+        limit: Int?,
+        offset: Int
+    ): Result<List<PersonalizedRoadmapDetail>> =
+        Result.success(emptyList())
+
+    override fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail> =
+        emptyList()
+
+    override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail> =
+        Result.failure(NoSuchElementException("Roadmap not found locally"))
+
+    override suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail> =
+        Result.success(roadmap)
+
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
+        Result.success(Unit)
+
+    override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<PersonalizedRoadmapDetail> =
+        Result.failure(UnsupportedOperationException("Renaming not supported locally"))
+
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> =
+        emptySet()
+
+    override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
+        Result.success(emptySet())
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> =
+        Result.success(Unit)
+
+    override suspend fun syncPendingRoadmaps(): Result<Unit> =
+        Result.success(Unit)
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

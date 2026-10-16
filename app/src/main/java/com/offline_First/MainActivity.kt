@@ -40,6 +40,9 @@ import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
+import com.offline_First.ui.screens.course.CourseDetailScreen
+import com.offline_First.ui.screens.course.LessonViewerScreen
+import com.offline_First.ui.screens.course.RevisionListScreen
 import com.offline_First.ui.theme.EduNovaBackground
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.OfflineFirstTheme
@@ -157,6 +160,10 @@ class MainActivity : ComponentActivity() {
                                 authRepository.logout(currentRt)
                                 pushDestination(AppDestination.LOGIN)
                             }
+                        },
+                        onCourseClick = { courseId ->
+                            selectedCourseId = courseId
+                            pushDestination(AppDestination.COURSE_DETAIL)
                         }
                     )
 

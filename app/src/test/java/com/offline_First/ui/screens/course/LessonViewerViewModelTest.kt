@@ -253,4 +253,41 @@ class LessonViewerViewModelTest {
             assertTrue("URL '$url' should be valid", isHttpsOrHttp)
         }
     }
+
+    @Test
+    fun loadLessonDeduplicatesConsecutiveCallsForSameLessonId() = runBlocking {
+        val viewModel = LessonViewerViewModel(
+            courseId = "c-cpp",
+            lessonId = "les-cpp-101",
+            repository = localRepository,
+            coroutineContext = Dispatchers.Unconfined
+        )
+
+        val firstState = viewModel.uiState.value
+        assertTrue(firstState.state is UiState.Success)
+
+        // Calling loadLesson again for the same lesson should not trigger reload or change instance
+        viewModel.loadLesson("les-cpp-101")
+        val secondState = viewModel.uiState.value
+        assertEquals((firstState.state as UiState.Success).data.lesson.id, (secondState.state as UiState.Success).data.lesson.id)
+    }
+
+    @Test
+    fun loadLessonSwitchesToNextLessonCleanly() = runBlocking {
+        val viewModel = LessonViewerViewModel(
+            courseId = "c-cpp",
+            lessonId = "les-cpp-101",
+            repository = localRepository,
+            coroutineContext = Dispatchers.Unconfined
+        )
+
+        assertEquals("les-cpp-101", (viewModel.uiState.value.state as UiState.Success).data.lesson.id)
+
+        // Switch to next lesson
+        viewModel.loadLesson("les-cpp-102")
+        val nextState = viewModel.uiState.value.state
+        assertTrue(nextState is UiState.Success)
+        assertEquals("les-cpp-102", (nextState as UiState.Success).data.lesson.id)
+        assertEquals(2, nextState.data.currentLessonIndex)
+    }
 }

@@ -3,6 +3,10 @@ package com.offline_First.data
 import android.content.Context
 import com.offline_First.data.local.EncryptedTokenStorage
 import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.local.LocalCourseRepository
+import com.offline_First.data.local.LocalLearningRepository
+import com.offline_First.data.local.LocalProfileRepository
+import com.offline_First.data.local.LocalRoadmapRepository
 import com.offline_First.data.local.TokenStorage
 import com.offline_First.data.remote.AuthApiClient
 import com.offline_First.data.remote.AuthenticatedApiClient
@@ -10,12 +14,16 @@ import com.offline_First.data.remote.ChatApiClient
 import com.offline_First.data.remote.OnlineAIRepository
 import com.offline_First.data.remote.OnlineCourseRepository
 import com.offline_First.data.remote.OnlineRoadmapRepository
+import com.offline_First.data.repository.AIRepository
 import com.offline_First.data.repository.AuthRepository
 import com.offline_First.data.repository.BackendNotConfiguredRepositories
 import com.offline_First.data.repository.CourseRepository
 import com.offline_First.data.repository.LearningRepository
 import com.offline_First.data.repository.ModeAwareAIRepository
+import com.offline_First.data.repository.ProfileRepository
 import com.offline_First.data.repository.RemoteAuthRepository
+import com.offline_First.data.repository.RoadmapRepository
+import java.io.File
 
 object AppContainer {
     private val defaultRepositories = BackendNotConfiguredRepositories()
@@ -27,8 +35,10 @@ object AppContainer {
     private var _authApiClient: AuthApiClient? = null
     private var _authenticatedApiClient: AuthenticatedApiClient? = null
     private var _authRepository: AuthRepository? = null
-    private var _profileRepository: com.offline_First.data.repository.ProfileRepository? = null
-    private var _learningRepository: com.offline_First.data.repository.LearningRepository? = null
+    private var _profileRepository: ProfileRepository? = null
+    private var _learningRepository: LearningRepository? = null
+    private var _courseRepository: CourseRepository? = null
+    private var _roadmapRepository: RoadmapRepository? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -56,10 +66,15 @@ object AppContainer {
             context = appContext,
             authenticatedApiClient = authenticatedApiClient
         )
-        val onlineCourseRepo = com.offline_First.data.remote.OnlineCourseRepository(
-            context = appContext
+        val onlineCourseRepo = OnlineCourseRepository(
+            context = appContext,
+            localFallback = localCourseRepository
         )
-        val onlineRoadmapRepo = com.offline_First.data.remote.OnlineRoadmapRepository(
+        val storageFile = File(appContext.filesDir, "edunova_course_storage.json")
+        onlineCourseRepo.bindStorageFile(storageFile)
+        localCourseRepository.bindStorageFile(storageFile)
+
+        val onlineRoadmapRepo = OnlineRoadmapRepository(
             context = appContext,
             userIdProvider = {
                 (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
@@ -107,15 +122,23 @@ object AppContainer {
     val authRepository: AuthRepository
         get() = _authRepository ?: defaultRepositories
 
-    val aiRepository get() = aiRepoOverride ?: defaultRepositories
-    private var _courseRepository: com.offline_First.data.repository.CourseRepository? = null
-    val courseRepository: com.offline_First.data.repository.CourseRepository
-        get() = _courseRepository ?: OnlineCourseRepository()
-    val learningRepository: com.offline_First.data.repository.LearningRepository
-        get() = _learningRepository ?: defaultRepositories
-    val profileRepository: com.offline_First.data.repository.ProfileRepository
-        get() = _profileRepository ?: defaultRepositories
-    private var _roadmapRepository: com.offline_First.data.repository.RoadmapRepository? = null
-    val roadmapRepository: com.offline_First.data.repository.RoadmapRepository
+    val aiRepository: AIRepository
+        get() = aiRepoOverride ?: defaultRepositories
+
+    val courseRepository: CourseRepository
+        get() = _courseRepository ?: OnlineCourseRepository(localFallback = localCourseRepository)
+
+    val onlineCourseRepository: OnlineCourseRepository
+        get() = (_courseRepository as? OnlineCourseRepository) ?: OnlineCourseRepository(localFallback = localCourseRepository)
+
+    val learningRepository: LearningRepository
+        get() = _learningRepository ?: localLearningRepository
+
+    val profileRepository: ProfileRepository
+        get() = _profileRepository ?: localProfileRepository
+
+    val roadmapRepository: RoadmapRepository
         get() = _roadmapRepository ?: OnlineRoadmapRepository()
+    val onlineRoadmapRepository: OnlineRoadmapRepository
+        get() = (_roadmapRepository as? OnlineRoadmapRepository) ?: OnlineRoadmapRepository()
 }

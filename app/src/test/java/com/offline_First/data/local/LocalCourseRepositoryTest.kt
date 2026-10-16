@@ -88,4 +88,44 @@ class LocalCourseRepositoryTest {
             assertTrue(q.explanation.isNotBlank())
         }
     }
+
+    @Test
+    fun cppCourseIsVisibleAndResolvesBySlugAndLocalId() = runBlocking {
+        // Look up by local ID "c-cpp"
+        val detailById = repository.getCourseDetail("c-cpp").getOrThrow()
+        assertNotNull(detailById)
+        assertEquals("c-cpp", detailById?.id)
+        assertEquals("C++ Programming", detailById?.name)
+
+        // Look up by canonical slug "cpp-programming"
+        val detailBySlug = repository.getCourseDetail("cpp-programming").getOrThrow()
+        assertNotNull(detailBySlug)
+        assertEquals("c-cpp", detailBySlug?.id)
+        assertEquals("C++ Programming", detailBySlug?.name)
+        assertEquals(detailById?.modules?.size, detailBySlug?.modules?.size)
+    }
+
+    @Test
+    fun courseDetailToCoursePopulatesLessonAndModuleCounts() = runBlocking {
+        val detail = repository.getCourseDetail("c-cpp").getOrThrow()!!
+        val course = detail.toCourse()
+
+        assertTrue("Course totalLessons must be positive", course.totalLessons > 0)
+        assertEquals(detail.totalLessonsCount, course.totalLessons)
+        assertTrue("Course modulesCount must be positive", course.modulesCount > 0)
+        assertEquals(detail.modules.size, course.modulesCount)
+    }
+
+    @Test
+    fun getCoursesReflectsCurrentProgress() = runBlocking {
+        val store = repository.progressStore
+        val lessons = listOf("les-cpp-101")
+        store.markLessonCompleted("c-cpp", "les-cpp-101", true)
+
+        val courses = repository.getCourses().getOrThrow()
+        val cpp = courses.first { it.id == "c-cpp" }
+
+        assertEquals(1, cpp.completedLessons)
+        assertTrue(cpp.progress > 0f)
+    }
 }

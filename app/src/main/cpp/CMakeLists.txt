@@ -37,6 +37,7 @@ set_target_properties(llama         PROPERTIES IMPORTED_LOCATION "${PREBUILT_LIB
 
 # ── Our JNI bridge (the only file compiled during a normal Gradle build) ──────
 add_library(edunova_llama SHARED llama_jni.cpp)
+target_link_options(edunova_llama PRIVATE "-Wl,-z,max-page-size=16384")
 
 target_include_directories(edunova_llama PRIVATE
     ${CMAKE_SOURCE_DIR}/include

@@ -29,7 +29,9 @@ data class CourseDetail(
         accent = accent,
         category = category,
         level = level,
-        durationHours = durationHours
+        durationHours = durationHours,
+        totalLessons = totalLessonsCount,
+        modulesCount = modules.size
     )
 }
 
