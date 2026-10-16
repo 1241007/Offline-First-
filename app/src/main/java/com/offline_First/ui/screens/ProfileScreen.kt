@@ -59,6 +59,10 @@ fun ProfileScreen(
     var level by rememberSaveable { mutableStateOf("") }
     var educationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
     var savedEducationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
+    var board by rememberSaveable { mutableStateOf("") }
+    var classGrade by rememberSaveable { mutableStateOf("") }
+    var subject by rememberSaveable { mutableStateOf("") }
+    var preferredLanguage by rememberSaveable { mutableStateOf("en") }
     var editing by rememberSaveable { mutableStateOf(false) }
     var savedName by rememberSaveable { mutableStateOf("") }
     var savedEmail by rememberSaveable { mutableStateOf("") }
@@ -75,6 +79,10 @@ fun ProfileScreen(
             level = profile.level
             educationMode = profile.educationMode
             savedEducationMode = profile.educationMode
+            board = profile.board.orEmpty()
+            classGrade = profile.classGrade.orEmpty()
+            subject = profile.subject.orEmpty()
+            preferredLanguage = profile.preferredLanguage.ifBlank { "en" }
             editing = false
         }
     }
@@ -218,6 +226,11 @@ fun ProfileScreen(
                         )
                     }
                 }
+                if (educationMode == EducationMode.SCHOOL) {
+                    OutlinedTextField(board, { board = it }, label = { Text("Education Board (e.g. CBSE, ICSE)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(classGrade, { classGrade = it }, label = { Text("Class / Grade (e.g. 10)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(subject, { subject = it }, label = { Text("Primary Subject (e.g. Science)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
                 OutlinedTextField(interests, { interests = it }, label = { Text("Learning interests") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(level, { level = it }, label = { Text("Current learning level") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -234,7 +247,11 @@ fun ProfileScreen(
                                         mobile = mobile,
                                         interests = interests,
                                         level = level,
-                                        educationMode = educationMode
+                                        educationMode = educationMode,
+                                        board = board.ifBlank { null },
+                                        classGrade = classGrade.ifBlank { null },
+                                        subject = subject.ifBlank { null },
+                                        preferredLanguage = preferredLanguage
                                     )
                                 )
                             }
@@ -253,6 +270,10 @@ fun ProfileScreen(
                             interests = uiState.profile?.interests.orEmpty()
                             level = uiState.profile?.level.orEmpty()
                             educationMode = savedEducationMode
+                            board = uiState.profile?.board.orEmpty()
+                            classGrade = uiState.profile?.classGrade.orEmpty()
+                            subject = uiState.profile?.subject.orEmpty()
+                            preferredLanguage = uiState.profile?.preferredLanguage ?: "en"
                             error = null
                             editing = false
                         },

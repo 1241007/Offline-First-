@@ -1,0 +1,477 @@
+{
+  "manifest_version": "2.0",
+  "academic_year": "2026-27",
+  "curriculum_board": "CBSE",
+  "generated_at": "2026-10-15T18:20:00Z",
+  "authorization_summary": {
+    "official_cbse_curriculum_documents": {
+      "status": "AUTHORIZED",
+      "terms": "Public statutory curriculum framework published by CBSE Academic for educational implementation."
+    },
+    "official_ncert_textbook_chapters": {
+      "status": "BLOCKED_PENDING_INSTITUTIONAL_AUTHORIZATION",
+      "terms": "Copyrighted by NCERT under Copyright Act, 1957. Online personal study permitted; bulk offline application redistribution requires formal institutional license."
+    }
+  },
+  "classes": {
+    "9": {
+      "stage": "Secondary",
+      "mandatory_core_subjects": [
+        "Science",
+        "Mathematics",
+        "Social_Science",
+        "English"
+      ],
+      "authorized_curriculum_documents": [
+        {
+          "subject": "Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 9-10 Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Science_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Mathematics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 9-10 Mathematics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Mathematics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Maths_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Social_Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 9-10 Social Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Social_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/SocialScience_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "English",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 9-10 English Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_English.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/English_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        }
+      ],
+      "copyrighted_textbooks": [
+        {
+          "subject": "Science",
+          "title": "Exploration",
+          "book_code": "iesc1",
+          "total_chapters": 12,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/iesc1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Mathematics",
+          "title": "Ganita Manjari Part-I & Part-II",
+          "book_code": "iemh1, iemh2",
+          "total_chapters": 14,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/iemh1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Social_Science",
+          "title": "Exploring Society: India and Beyond Part-I & Part-II",
+          "book_code": "iest1, iest2",
+          "total_chapters": 15,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/iest1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "English",
+          "title": "Beehive / Kaveri",
+          "book_code": "iebe1",
+          "total_chapters": 8,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/iebe1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        }
+      ]
+    },
+    "10": {
+      "stage": "Secondary",
+      "mandatory_core_subjects": [
+        "Science",
+        "Mathematics",
+        "Social_Science",
+        "English"
+      ],
+      "authorized_curriculum_documents": [
+        {
+          "subject": "Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 10 Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Science_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION",
+          "ingestion_status": "COMPLETED_IN_SUPABASE"
+        },
+        {
+          "subject": "Mathematics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 10 Mathematics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Mathematics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/Maths_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION",
+          "ingestion_status": "PENDING_INGESTION"
+        },
+        {
+          "subject": "Social_Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 10 Social Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Social_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/SocialScience_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION",
+          "ingestion_status": "PENDING_INGESTION"
+        },
+        {
+          "subject": "English",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 10 English Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_English.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart1/English_SecP1_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION",
+          "ingestion_status": "PENDING_INGESTION"
+        }
+      ],
+      "copyrighted_textbooks": [
+        {
+          "subject": "Science",
+          "title": "Science",
+          "book_code": "jesc1",
+          "total_chapters": 13,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/jesc1{ch:02d}.pdf",
+          "authorization_status": "PRESERVED_EXISTING_BASELINE_IN_SUPABASE",
+          "ingestion_status": "COMPLETED_IN_SUPABASE"
+        },
+        {
+          "subject": "Mathematics",
+          "title": "Mathematics",
+          "book_code": "jemh1",
+          "total_chapters": 14,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/jemh1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Social_Science",
+          "title": "Contemporary India-II / Understanding Economic Development / India & Contemporary World-II / Democratic Politics-II",
+          "book_code": "jess1, jess2, jess3, jess4",
+          "total_chapters": 22,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/jess1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "English",
+          "title": "First Flight & Footprints Without Feet",
+          "book_code": "jeff1, jefp1",
+          "total_chapters": 18,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/jeff1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        }
+      ]
+    },
+    "11": {
+      "stage": "Senior_Secondary",
+      "streams": {
+        "Science": [
+          "Physics",
+          "Chemistry",
+          "Mathematics",
+          "Biology",
+          "Computer_Science"
+        ],
+        "Commerce": [
+          "Accountancy",
+          "Business_Studies",
+          "Economics",
+          "Mathematics"
+        ]
+      },
+      "authorized_curriculum_documents": [
+        {
+          "subject": "Physics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Physics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Physics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Physics_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Chemistry",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Chemistry Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Chemistry.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Chemistry_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Mathematics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Mathematics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Mathematics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Maths_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Biology",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Biology Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Biology.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Biology_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Computer_Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Computer Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Computer_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Computer_Science_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Economics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Economics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Economics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Economics_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Business_Studies",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Business Studies Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Business_Studies.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/BusinessStudies_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Accountancy",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 11-12 Accountancy Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Accountancy.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Accountancy_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        }
+      ],
+      "copyrighted_textbooks": [
+        {
+          "subject": "Physics",
+          "title": "Physics Part-I & Part-II",
+          "book_code": "keph1, keph2",
+          "total_chapters": 14,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/keph1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Chemistry Part-I & Part-II",
+          "book_code": "kech1, kech2",
+          "total_chapters": 9,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kech1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Mathematics",
+          "title": "Mathematics",
+          "book_code": "kemh1",
+          "total_chapters": 14,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kemh1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Biology",
+          "title": "Biology",
+          "book_code": "kebo1",
+          "total_chapters": 19,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kebo1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Computer_Science",
+          "title": "Computer Science",
+          "book_code": "kecs1",
+          "total_chapters": 11,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kecs1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Economics",
+          "title": "Statistics for Economics & Indian Economic Development",
+          "book_code": "kest1, keec1",
+          "total_chapters": 16,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kest1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Business_Studies",
+          "title": "Business Studies",
+          "book_code": "kebs1",
+          "total_chapters": 11,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/kebs1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Accountancy",
+          "title": "Financial Accounting Part-I & Part-II",
+          "book_code": "keac1, keac2",
+          "total_chapters": 10,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/keac1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        }
+      ]
+    },
+    "12": {
+      "stage": "Senior_Secondary",
+      "streams": {
+        "Science": [
+          "Physics",
+          "Chemistry",
+          "Mathematics",
+          "Biology",
+          "Computer_Science"
+        ],
+        "Commerce": [
+          "Accountancy",
+          "Business_Studies",
+          "Economics",
+          "Mathematics"
+        ]
+      },
+      "authorized_curriculum_documents": [
+        {
+          "subject": "Physics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Physics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Physics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Physics_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Chemistry",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Chemistry Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Chemistry.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Chemistry_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Mathematics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Mathematics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Mathematics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Maths_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Biology",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Biology Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Biology.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Biology_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Computer_Science",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Computer Science Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Computer_Science.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Computer_Science_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Economics",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Economics Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Economics.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Economics_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Business_Studies",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Business Studies Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Business_Studies.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/BusinessStudies_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        },
+        {
+          "subject": "Accountancy",
+          "document_type": "curriculum_framework",
+          "title": "CBSE Class 12 Accountancy Curriculum 2026-27",
+          "filename": "Curriculum_2026_27_Accountancy.pdf",
+          "source_url": "https://cbseacademic.nic.in/web_material/CurriculumMain27/SecPart2/Accountancy_SecP2_2026-27.pdf",
+          "authorization_status": "AUTHORIZED_FOR_INGESTION"
+        }
+      ],
+      "copyrighted_textbooks": [
+        {
+          "subject": "Physics",
+          "title": "Physics Part-I & Part-II",
+          "book_code": "leph1, leph2",
+          "total_chapters": 14,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/leph1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Chemistry Part-I & Part-II",
+          "book_code": "lech1, lech2",
+          "total_chapters": 10,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/lech1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Mathematics",
+          "title": "Mathematics Part-I & Part-II",
+          "book_code": "lemh1, lemh2",
+          "total_chapters": 13,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/lemh1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Biology",
+          "title": "Biology",
+          "book_code": "lebo1",
+          "total_chapters": 13,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/lebo1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Computer_Science",
+          "title": "Computer Science",
+          "book_code": "lecs1",
+          "total_chapters": 13,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/lecs1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Economics",
+          "title": "Introductory Macroeconomics & Introductory Microeconomics",
+          "book_code": "leec1, leec2",
+          "total_chapters": 11,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/leec1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Business_Studies",
+          "title": "Business Studies Part-I & Part-II",
+          "book_code": "lebs1, lebs2",
+          "total_chapters": 11,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/lebs1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        },
+        {
+          "subject": "Accountancy",
+          "title": "Accountancy Part-I & Part-II",
+          "book_code": "leac1, leac2",
+          "total_chapters": 10,
+          "url_pattern": "https://ncert.nic.in/textbook/pdf/leac1{ch:02d}.pdf",
+          "authorization_status": "GATED_PENDING_AUTHORIZATION"
+        }
+      ]
+    }
+  }
+}

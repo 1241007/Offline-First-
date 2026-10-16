@@ -52,7 +52,13 @@ data class SendMessageRequestDto(
     val content: String,
     @SerialName("explanation_mode") val explanationMode: String,
     @SerialName("client_message_id") val clientMessageId: String? = null,
-    @SerialName("parent_id") val parentId: String? = null
+    @SerialName("parent_id") val parentId: String? = null,
+    @SerialName("app_mode") val appMode: String? = null,
+    @SerialName("board") val board: String? = null,
+    @SerialName("class_grade") val classGrade: String? = null,
+    @SerialName("subject") val subject: String? = null,
+    @SerialName("language") val language: String? = "en",
+    @SerialName("selected_chapter") val selectedChapter: String? = null
 )
 
 @Serializable
@@ -62,13 +68,27 @@ data class SendMessageResponseDto(
 )
 
 @Serializable
+data class CitationDto(
+    @SerialName("chunk_id") val chunkId: String? = null,
+    @SerialName("textbook_title") val textbookTitle: String? = null,
+    val chapter: String? = null,
+    val section: String? = null,
+    @SerialName("page_reference") val pageReference: String? = null,
+    val score: Float? = null
+)
+
+@Serializable
 data class StreamEventDto(
-    val type: String, // "metadata" | "token" | "done" | "error"
+    val type: String, // "metadata" | "route" | "citations" | "token" | "done" | "error"
     val content: String? = null,
     val detail: String? = null,
     @SerialName("user_message_id") val userMessageId: String? = null,
     @SerialName("assistant_message_id") val assistantMessageId: String? = null,
-    val title: String? = null
+    val title: String? = null,
+    val decision: String? = null,
+    val query: String? = null,
+    val outcome: String? = null,
+    val citations: List<CitationDto>? = null
 )
 
 @Serializable

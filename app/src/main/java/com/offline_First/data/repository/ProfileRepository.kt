@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
  * Repository interface for profile storage.
  */
 interface ProfileRepository {
+    val currentProfile: UserProfile? get() = null
     suspend fun getUserProfile(): Result<UserProfile?>
     suspend fun updateUserProfile(profile: UserProfile): Result<Unit>
     fun observeUserProfile(): Flow<UserProfile?>

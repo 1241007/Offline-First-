@@ -4,14 +4,21 @@ import android.content.Context
 import android.util.Log
 import com.offline_First.data.local.ChatCacheDatabase
 import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.local.SyllabusDatabase
+import com.offline_First.data.local.OfflineSyllabusRepository
+import com.offline_First.data.local.E5EmbeddingService
 import com.offline_First.data.repository.AIRepository
 import com.offline_First.domain.model.ChatMessage
+import com.offline_First.domain.model.RetrievedChunk
 import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
 import com.offline_First.domain.model.UserMemoryItem
+import com.offline_First.domain.model.AppMode
+import com.offline_First.domain.model.EvidenceOutcome
+import com.offline_First.domain.model.RAGRequestContext
 import com.offline_First.data.provider.LLMProvider
 import com.offline_First.data.provider.OnlineGeminiProvider
 import com.offline_First.data.provider.OfflineLlamaProvider
@@ -36,15 +43,30 @@ private const val TAG = "OnlineAIRepository"
  * unifying chat sessions, messages, SQLite persistence, drafts, memories, and sync.
  */
 class OnlineAIRepository(
-    private val context: Context,
+    private val context: Context? = null,
     private val delegate: LocalAIRepository = LocalAIRepository(context),
-    private val userIdProvider: () -> String = { "default_user" }
+    private val userIdProvider: () -> String = { "default_user" },
+    private val offlineSyllabusRepositoryProvider: () -> OfflineSyllabusRepository = {
+        context?.let { OfflineSyllabusRepository(it) } ?: OfflineSyllabusRepository()
+    },
+    private val e5EmbeddingServiceProvider: () -> E5EmbeddingService = { E5EmbeddingService(context) },
+    private val onlineProviderOverride: LLMProvider? = null,
+    private val offlineProviderOverride: LLMProvider? = null,
+    private val cacheDbOverride: ChatCacheDatabase? = null,
+    private val profileProvider: () -> com.offline_First.domain.model.UserProfile? = {
+        try { com.offline_First.data.AppContainer.profileRepository.currentProfile } catch (_: Throwable) { null }
+    },
+    private val initialSession: ChatSession? = null
 ) : AIRepository {
 
-    val cacheDb by lazy { ChatCacheDatabase(context) }
+    val cacheDb by lazy {
+        cacheDbOverride ?: context?.let { ChatCacheDatabase(it) } ?: ChatCacheDatabase(context ?: object : android.content.ContextWrapper(null) {})
+    }
+    private val offlineSyllabusRepository by lazy { offlineSyllabusRepositoryProvider() }
+    private val e5EmbeddingService by lazy { e5EmbeddingServiceProvider() }
 
-    private val onlineProvider: LLMProvider by lazy { OnlineGeminiProvider() }
-    private val offlineProvider: LLMProvider by lazy { OfflineLlamaProvider(delegate) }
+    private val onlineProvider: LLMProvider by lazy { onlineProviderOverride ?: OnlineGeminiProvider() }
+    private val offlineProvider: LLMProvider by lazy { offlineProviderOverride ?: OfflineLlamaProvider(delegate) }
 
     private val _sessionsFlow = MutableStateFlow<List<ChatSession>>(emptyList())
     private val _currentSessionFlow = MutableStateFlow<ChatSession?>(null)
@@ -58,10 +80,27 @@ class OnlineAIRepository(
     private val currentUserId: String
         get() = userIdProvider().ifBlank { "default_user" }
 
+    private inline fun safeCacheDb(action: (ChatCacheDatabase) -> Unit) {
+        try {
+            action(cacheDb)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Cache operation failed: ${e.message}")
+        }
+    }
+
     init {
-        // Load cached conversations for the active user
-        val cached = cacheDb.getConversations(currentUserId)
-        _sessionsFlow.value = cached
+        if (initialSession != null) {
+            _currentSessionFlow.value = initialSession
+            _sessionsFlow.value = listOf(initialSession)
+        } else {
+            // Load cached conversations for the active user
+            val cached = try {
+                cacheDb.getConversations(currentUserId)
+            } catch (_: Throwable) {
+                emptyList()
+            }
+            _sessionsFlow.value = cached
+        }
     }
 
     // --- Settings: delegate to LocalAIRepository ---
@@ -87,7 +126,11 @@ class OnlineAIRepository(
 
     override suspend fun createNewChat(): Result<ChatSession> = withContext(Dispatchers.IO) {
         _errorFlow.value = null
-        val remoteResult = ChatApiClient.createConversation()
+        val remoteResult = try {
+            ChatApiClient.createConversation()
+        } catch (e: Throwable) {
+            Result.failure(e)
+        }
         remoteResult.fold(
             onSuccess = { dto ->
                 val session = ChatSession(
@@ -295,7 +338,7 @@ class OnlineAIRepository(
         val syncStatus = if (isOffline) "pending_sync" else "synced"
 
         // 1. Immediately clear draft in local cache, session, and conversation list
-        cacheDb.updateConversationDraft(current.id, currentUserId, "")
+        safeCacheDb { it.updateConversationDraft(current.id, currentUserId, "") }
         val sessionWithoutDraft = current.copy(
             draftText = "",
             messages = current.messages.filter { it.id != userMsgId } + tempUserMsg
@@ -306,25 +349,115 @@ class OnlineAIRepository(
         }
 
         // 2. Optimistically show & persist user message in local cache & unified session
-        cacheDb.upsertMessage(
-            id = userMsgId,
-            conversationId = current.id,
-            userId = currentUserId,
-            role = "user",
-            content = prompt,
-            createdAt = userTimestamp,
-            parentId = parentId,
-            syncStatus = syncStatus
-        )
+        safeCacheDb {
+            it.upsertMessage(
+                id = userMsgId,
+                conversationId = current.id,
+                userId = currentUserId,
+                role = "user",
+                content = prompt,
+                createdAt = userTimestamp,
+                parentId = parentId,
+                syncStatus = syncStatus
+            )
+        }
 
         // 2. Extract top relevant memories for prompt context
-        val relevantMemories = cacheDb.getRelevantMemories(currentUserId, prompt, limit = 5)
+        val relevantMemories = try {
+            cacheDb.getRelevantMemories(currentUserId, prompt, limit = 5)
+        } catch (_: Throwable) {
+            emptyList()
+        }
         val memoryContext = if (relevantMemories.isNotEmpty()) {
             "\nStudent Context & Known Preferences:\n" +
                 relevantMemories.joinToString("\n") { "- [${it.category}] ${it.content}" }
         } else ""
 
-        val systemPrompt = systemPromptFor(_currentExplanationMode) + memoryContext
+        val profile = profileProvider()
+        val isSchool = profile?.educationMode == com.offline_First.domain.model.EducationMode.SCHOOL
+
+        var syllabusContext = ""
+        var offlineCitations: List<com.offline_First.domain.model.SourceCitation> = emptyList()
+        if (isOffline && isSchool) {
+            val ragContext = RAGRequestContext(
+                executionMode = ConnectionMode.OFFLINE,
+                appMode = AppMode.STUDENT,
+                board = profile?.board,
+                classGrade = profile?.classGrade,
+                subject = profile?.subject
+            )
+
+            val (chunks, outcome) = if (e5EmbeddingService.isModelReady()) {
+                val queryEmb = e5EmbeddingService.embedQuery(prompt)
+                offlineSyllabusRepository.retrieve(
+                    query = prompt,
+                    context = ragContext,
+                    topK = 3,
+                    queryEmbedding = queryEmb
+                )
+            } else {
+                // Graceful keyword fallback when E5 model artifact is not ready
+                offlineSyllabusRepository.retrieve(
+                    query = prompt,
+                    context = ragContext,
+                    topK = 3,
+                    queryEmbedding = null
+                )
+            }
+
+            if (outcome == EvidenceOutcome.MISSING || chunks.isEmpty()) {
+                // Strict abstention behavior on empty/insufficient syllabus evidence
+                val bStr = profile?.board ?: "your curriculum"
+                val cStr = if (profile?.classGrade != null) " Class ${profile.classGrade}" else ""
+                val sStr = if (profile?.subject != null) " ${profile.subject}" else ""
+                val abstentionText = "This topic was not found in the official curriculum corpus for $bStr$cStr$sStr. Please verify the chapter or check your curriculum topics."
+
+                emit(abstentionText)
+
+                val abstentionMsg = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    text = abstentionText,
+                    fromUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    parentId = userMsgId
+                )
+                safeCacheDb {
+                    it.upsertMessage(
+                        id = abstentionMsg.id,
+                        conversationId = current.id,
+                        userId = currentUserId,
+                        role = "assistant",
+                        content = abstentionText,
+                        createdAt = abstentionMsg.timestamp,
+                        parentId = userMsgId,
+                        syncStatus = syncStatus
+                    )
+                }
+                val curr = _currentSessionFlow.value ?: current
+                val finalizedList = curr.messages + abstentionMsg
+                val updatedSession = curr.copy(messages = finalizedList)
+                _currentSessionFlow.value = updatedSession
+                _sessionsFlow.value = listOf(updatedSession.copy(messages = emptyList())) +
+                    _sessionsFlow.value.filter { it.id != updatedSession.id }
+
+                return@flow
+            } else {
+                offlineCitations = chunks.map { c ->
+                    com.offline_First.domain.model.SourceCitation(
+                        textbookTitle = c.textbookTitle,
+                        chapter = c.chapter,
+                        section = c.section,
+                        pageReference = c.pageReference,
+                        sourceId = c.chunkId
+                    )
+                }
+                syllabusContext = "\nOffline Curriculum References:\n" + chunks.mapIndexed { idx: Int, c: RetrievedChunk ->
+                    "[${idx + 1}] ${c.textbookTitle ?: ""} (Chapter: ${c.chapter ?: "N/A"}): ${c.content}"
+                }.joinToString("\n\n")
+            }
+        }
+
+        val systemPrompt = systemPromptFor(_currentExplanationMode) + memoryContext + syllabusContext
 
         // 3. Select active provider: Gemini for ONLINE, llama.cpp for OFFLINE
         val activeProvider: LLMProvider = if (isOffline) {
@@ -350,12 +483,14 @@ class OnlineAIRepository(
                 emit(token)
 
                 // Update active session with live streaming text
+                val currentCitations = if (isOffline) offlineCitations else activeProvider.getLastCitations()
                 val activeMsg = ChatMessage(
                     id = tempAiId,
                     text = responseBuilder.toString(),
                     fromUser = false,
                     timestamp = System.currentTimeMillis(),
-                    parentId = userMsgId
+                    parentId = userMsgId,
+                    citations = currentCitations
                 )
                 val curr = _currentSessionFlow.value ?: current
                 val messages = curr.messages
@@ -376,25 +511,29 @@ class OnlineAIRepository(
             _errorFlow.value = error.message ?: "AI generation failed"
             throw error
         } finally {
+            val resolvedCitations = if (isOffline) offlineCitations else activeProvider.getLastCitations()
             if (!streamCompletedNormally && responseBuilder.isNotEmpty()) {
                 val partialText = responseBuilder.toString()
-                cacheDb.upsertMessage(
-                    id = tempAiId,
-                    conversationId = current.id,
-                    userId = currentUserId,
-                    role = "assistant",
-                    content = partialText,
-                    createdAt = System.currentTimeMillis(),
-                    parentId = userMsgId,
-                    syncStatus = syncStatus
-                )
+                safeCacheDb {
+                    it.upsertMessage(
+                        id = tempAiId,
+                        conversationId = current.id,
+                        userId = currentUserId,
+                        role = "assistant",
+                        content = partialText,
+                        createdAt = System.currentTimeMillis(),
+                        parentId = userMsgId,
+                        syncStatus = syncStatus
+                    )
+                }
                 val curr = _currentSessionFlow.value ?: current
                 val stoppedMsg = ChatMessage(
                     id = tempAiId,
                     text = partialText,
                     fromUser = false,
                     timestamp = System.currentTimeMillis(),
-                    parentId = userMsgId
+                    parentId = userMsgId,
+                    citations = resolvedCitations
                 )
                 _currentSessionFlow.value = curr.copy(
                     messages = curr.messages.filter { it.id != tempAiId } + stoppedMsg
@@ -406,24 +545,27 @@ class OnlineAIRepository(
                     text = finalContent,
                     fromUser = false,
                     timestamp = System.currentTimeMillis(),
-                    parentId = userMsgId
-                )
-                cacheDb.upsertMessage(
-                    id = tempAiId,
-                    conversationId = current.id,
-                    userId = currentUserId,
-                    role = "assistant",
-                    content = finalContent,
-                    createdAt = finalAiMsg.timestamp,
                     parentId = userMsgId,
-                    syncStatus = syncStatus
+                    citations = resolvedCitations
                 )
-                val curr = _currentSessionFlow.value ?: current
-                val finalizedList = curr.messages.filter { it.id != tempAiId } + finalAiMsg
                 val finalTitle = if (current.messages.isEmpty() && prompt.isNotBlank()) {
                     prompt.take(40).trim().replaceFirstChar { it.uppercase() }
                 } else current.title
-                cacheDb.updateConversationTitle(current.id, currentUserId, finalTitle)
+                safeCacheDb {
+                    it.upsertMessage(
+                        id = tempAiId,
+                        conversationId = current.id,
+                        userId = currentUserId,
+                        role = "assistant",
+                        content = finalContent,
+                        createdAt = finalAiMsg.timestamp,
+                        parentId = userMsgId,
+                        syncStatus = syncStatus
+                    )
+                    it.updateConversationTitle(current.id, currentUserId, finalTitle)
+                }
+                val curr = _currentSessionFlow.value ?: current
+                val finalizedList = curr.messages.filter { it.id != tempAiId } + finalAiMsg
                 val updatedSession = curr.copy(title = finalTitle, messages = finalizedList)
                 _currentSessionFlow.value = updatedSession
                 _sessionsFlow.value = listOf(updatedSession.copy(messages = emptyList())) +

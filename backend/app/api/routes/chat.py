@@ -193,6 +193,12 @@ async def stream_message(
         explanation_mode=request.explanation_mode,
         client_message_id=request.client_message_id,
         parent_id=request.parent_id,
+        app_mode=request.app_mode,
+        board=request.board,
+        class_grade=request.class_grade,
+        subject=request.subject,
+        language=request.language,
+        selected_chapter=request.selected_chapter,
     )
 
     return StreamingResponse(

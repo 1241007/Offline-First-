@@ -40,7 +40,11 @@ class ProfileService:
             mobile=profile.mobile,
             interests=profile.interests,
             level=profile.level,
-            education_mode=profile.education_mode
+            education_mode=profile.education_mode,
+            board=profile.board,
+            class_grade=profile.class_grade,
+            subject=profile.subject,
+            preferred_language=profile.preferred_language or "en"
         )
     
     async def update_profile(
@@ -59,7 +63,11 @@ class ProfileService:
                 mobile=data.mobile,
                 interests=data.interests,
                 level=data.level,
-                education_mode=data.education_mode
+                education_mode=data.education_mode,
+                board=data.board,
+                class_grade=data.class_grade,
+                subject=data.subject,
+                preferred_language=data.preferred_language
             )
         else:
             profile = await self.repo.create_profile(
@@ -69,7 +77,11 @@ class ProfileService:
                 mobile=data.mobile,
                 interests=data.interests,
                 level=data.level,
-                education_mode=data.education_mode
+                education_mode=data.education_mode,
+                board=data.board,
+                class_grade=data.class_grade,
+                subject=data.subject,
+                preferred_language=data.preferred_language
             )
         
         # Keep user mobile in sync if changed
@@ -86,5 +98,9 @@ class ProfileService:
             mobile=profile.mobile,
             interests=profile.interests,
             level=profile.level,
-            education_mode=profile.education_mode
+            education_mode=profile.education_mode,
+            board=profile.board,
+            class_grade=profile.class_grade,
+            subject=profile.subject,
+            preferred_language=profile.preferred_language or "en"
         )

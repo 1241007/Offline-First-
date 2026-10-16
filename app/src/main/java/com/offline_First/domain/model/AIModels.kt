@@ -66,7 +66,8 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val parentId: String? = null,
     val isEdited: Boolean = false,
-    val syncStatus: String = "synced"
+    val syncStatus: String = "synced",
+    val citations: List<SourceCitation> = emptyList()
 )
 
 /**

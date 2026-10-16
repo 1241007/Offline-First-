@@ -251,7 +251,13 @@ object ChatApiClient {
         content: String,
         explanationMode: String = "general",
         clientMessageId: String? = null,
-        parentId: String? = null
+        parentId: String? = null,
+        appMode: String? = null,
+        board: String? = null,
+        classGrade: String? = null,
+        subject: String? = null,
+        language: String? = "en",
+        selectedChapter: String? = null
     ): Flow<StreamEventDto> = callbackFlow {
         android.util.Log.i("ChatApiClient", "ONLINE_CHAT: request_started")
         val url = buildUrl("/chat/conversations/$conversationId/messages/stream")
@@ -260,7 +266,13 @@ object ChatApiClient {
                 content = content,
                 explanationMode = explanationMode,
                 clientMessageId = clientMessageId,
-                parentId = parentId
+                parentId = parentId,
+                appMode = appMode,
+                board = board,
+                classGrade = classGrade,
+                subject = subject,
+                language = language,
+                selectedChapter = selectedChapter
             )
         )
         val mediaType = "application/json; charset=utf-8".toMediaType()

@@ -60,6 +60,12 @@ class SendMessageRequest(BaseModel):
     explanation_mode: str = "general"  # "teacher" | "general" | "explainable"
     client_message_id: Optional[str] = None
     parent_id: Optional[str] = None
+    app_mode: Optional[str] = None
+    board: Optional[str] = None
+    class_grade: Optional[str] = None
+    subject: Optional[str] = None
+    language: Optional[str] = "en"
+    selected_chapter: Optional[str] = None
 
 
 class SendMessageResponse(BaseModel):
@@ -72,6 +78,12 @@ class StreamMessageRequest(BaseModel):
     explanation_mode: str = "general"
     client_message_id: Optional[str] = None
     parent_id: Optional[str] = None
+    app_mode: Optional[str] = None
+    board: Optional[str] = None
+    class_grade: Optional[str] = None
+    subject: Optional[str] = None
+    language: Optional[str] = "en"
+    selected_chapter: Optional[str] = None
 
 
 class UpdateConversationRequest(BaseModel):

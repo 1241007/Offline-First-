@@ -29,4 +29,9 @@ interface LLMProvider {
      * Immediately cancels or halts ongoing generation.
      */
     suspend fun stopInference()
+
+    /**
+     * Returns source citations captured during the most recent stream inference.
+     */
+    fun getLastCitations(): List<com.offline_First.domain.model.SourceCitation> = emptyList()
 }
