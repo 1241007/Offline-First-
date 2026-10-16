@@ -137,7 +137,7 @@ fun LessonViewerScreen(
     onNavigateToLesson: (lessonId: String) -> Unit = {},
     onOpenRevisionList: () -> Unit = {},
     viewModel: LessonViewerViewModel = viewModel(
-        key = "$courseId-$lessonId",
+        key = courseId,
         factory = LessonViewerViewModel.Factory(courseId, lessonId)
     )
 ) {
@@ -195,14 +195,14 @@ fun LessonViewerScreen(
                 is UiState.Error -> {
                     LessonErrorState(
                         message = state.message,
-                        onRetry = { viewModel.loadLesson(lessonId) },
+                        onRetry = { viewModel.loadLesson(lessonId, forceReload = true) },
                         onBack = onBack
                     )
                 }
                 is UiState.Empty -> {
                     LessonErrorState(
                         message = uiState.errorMessage ?: "We could not find the requested lesson.",
-                        onRetry = { viewModel.loadLesson(lessonId) },
+                        onRetry = { viewModel.loadLesson(lessonId, forceReload = true) },
                         onBack = onBack
                     )
                 }

@@ -40,6 +40,21 @@ val backendBaseUrl: String =
         ?: providers.gradleProperty("backendBaseUrl").orNull
         ?: "https://edunova-backend-9waj.onrender.com")
 
+val supabaseUrl: String =
+    (System.getenv("SUPABASE_URL")
+        ?: dotEnv["SUPABASE_URL"]
+        ?: providers.gradleProperty("supabaseUrl").orNull
+        ?: "")
+
+val supabaseAnonKey: String =
+    (System.getenv("SUPABASE_ANON_KEY")
+        ?: dotEnv["SUPABASE_ANON_KEY"]
+        ?: providers.gradleProperty("supabaseAnonKey").orNull
+        ?: "")
+
+fun quotedBuildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
     namespace = "com.offline_First"
     ndkVersion = "27.2.12479018"
@@ -57,9 +72,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "OFFLINE_MODEL_SMALL_URL", "\"$smallOfflineModelUrl\"")
-        buildConfigField("String", "OFFLINE_MODEL_LARGE_URL", "\"$largeOfflineModelUrl\"")
-        buildConfigField("String", "BACKEND_BASE_URL", "\"$backendBaseUrl\"")
+        buildConfigField("String", "OFFLINE_MODEL_SMALL_URL", quotedBuildConfigString(smallOfflineModelUrl))
+        buildConfigField("String", "OFFLINE_MODEL_LARGE_URL", quotedBuildConfigString(largeOfflineModelUrl))
+        buildConfigField("String", "BACKEND_BASE_URL", quotedBuildConfigString(backendBaseUrl))
+        buildConfigField("String", "SUPABASE_URL", quotedBuildConfigString(supabaseUrl))
+        buildConfigField("String", "SUPABASE_ANON_KEY", quotedBuildConfigString(supabaseAnonKey))
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

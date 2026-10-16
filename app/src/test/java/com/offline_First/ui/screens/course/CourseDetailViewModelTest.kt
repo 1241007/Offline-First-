@@ -224,4 +224,31 @@ class CourseDetailViewModelTest {
         assertEquals("c-cpp", course.id)
         assertEquals("C++ Programming", course.name)
     }
+
+    @Test
+    fun reactiveProgressUpdateRefreshesViewModelWithoutLoadingState() = runBlocking {
+        val repo = LocalCourseRepository()
+        val viewModel = CourseDetailViewModel(
+            courseId = "c-cpp",
+            repository = repo,
+            coroutineContext = Dispatchers.Unconfined
+        )
+
+        val initialState = viewModel.uiState.value
+        assertTrue(initialState.courseDetailState is UiState.Success)
+        assertEquals(0, initialState.completedLessonsCount)
+        assertEquals(0f, initialState.progressPercentage)
+
+        // Simulate external completion (e.g., from LessonViewerScreen)
+        repo.markLessonCompleted("c-cpp", "les-cpp-101", true)
+
+        val updatedState = viewModel.uiState.value
+        assertTrue("State must remain Success, not Loading", updatedState.courseDetailState is UiState.Success)
+        assertEquals(1, updatedState.completedLessonsCount)
+        assertTrue("Progress percentage must be greater than 0", updatedState.progressPercentage > 0f)
+
+        val detail = (updatedState.courseDetailState as UiState.Success).data
+        val firstLesson = detail.modules.first().lessons.first()
+        assertTrue("Lesson isCompleted flag must be updated", firstLesson.isCompleted)
+    }
 }

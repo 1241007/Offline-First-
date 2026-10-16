@@ -39,6 +39,52 @@ class CourseDetailViewModel(
 
     init {
         loadCourseDetail()
+        observeProgressUpdates()
+    }
+
+    private fun observeProgressUpdates() {
+        viewModelScope.launch(coroutineContext) {
+            repository.observeProgressUpdates().collect { version ->
+                if (version > 0L) {
+                    val currentDetail = (_uiState.value.courseDetailState as? UiState.Success)?.data
+                    if (currentDetail != null) {
+                        refreshProgressOnly(currentDetail)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshProgressOnly(detail: CourseDetail) {
+        val allLessons = detail.modules.flatMap { it.lessons }
+        val allLessonIds = allLessons.map { it.id }
+        val totalCount = allLessonIds.size
+        val completedCount = repository.getCompletedLessonCount(courseId, allLessonIds)
+        val progress = repository.getCourseProgressPercentage(courseId, allLessonIds)
+        val isCompleted = repository.isCourseCompleted(courseId, allLessonIds)
+
+        var cert = repository.getCertificate(courseId)
+        if (cert == null && isCompleted && totalCount > 0) {
+            val learnerName = _uiState.value.learnerName
+            cert = repository.issueCertificate(courseId, detail.name, learnerName, totalCount)
+        }
+
+        val updatedModules = detail.modules.map { m ->
+            m.copy(
+                lessons = m.lessons.map { l ->
+                    l.copy(isCompleted = repository.isLessonCompleted(courseId, l.id))
+                }
+            )
+        }
+
+        _uiState.value = _uiState.value.copy(
+            courseDetailState = UiState.Success(detail.copy(modules = updatedModules)),
+            completedLessonsCount = completedCount,
+            totalLessonsCount = totalCount,
+            progressPercentage = progress,
+            isCourseCompleted = isCompleted,
+            certificate = cert
+        )
     }
 
     fun loadCourseDetail() {
@@ -108,36 +154,7 @@ class CourseDetailViewModel(
             val wasCompleted = repository.isLessonCompleted(courseId, lessonId)
             val newCompleted = !wasCompleted
             repository.markLessonCompleted(courseId, lessonId, newCompleted)
-
-            // Recalculate
-            val allLessonIds = currentDetail.modules.flatMap { it.lessons }.map { it.id }
-            val totalCount = allLessonIds.size
-            val completedCount = repository.getCompletedLessonCount(courseId, allLessonIds)
-            val progress = repository.getCourseProgressPercentage(courseId, allLessonIds)
-            val isCompleted = repository.isCourseCompleted(courseId, allLessonIds)
-
-            var cert = repository.getCertificate(courseId)
-            if (cert == null && isCompleted && totalCount > 0) {
-                cert = repository.issueCertificate(courseId, currentDetail.name, _uiState.value.learnerName, totalCount)
-            }
-
-            val updatedModules = currentDetail.modules.map { m ->
-                m.copy(
-                    lessons = m.lessons.map { l ->
-                        if (l.id == lessonId) l.copy(isCompleted = newCompleted)
-                        else l.copy(isCompleted = repository.isLessonCompleted(courseId, l.id))
-                    }
-                )
-            }
-
-            _uiState.value = _uiState.value.copy(
-                courseDetailState = UiState.Success(currentDetail.copy(modules = updatedModules)),
-                completedLessonsCount = completedCount,
-                totalLessonsCount = totalCount,
-                progressPercentage = progress,
-                isCourseCompleted = isCompleted,
-                certificate = cert
-            )
+            refreshProgressOnly(currentDetail)
         }
     }
 

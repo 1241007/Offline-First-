@@ -18,6 +18,7 @@ import okhttp3.Response
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 
 private val json = Json {
     ignoreUnknownKeys = true
@@ -415,12 +416,21 @@ object ChatApiClient {
         offset: Int = 0
     ): Result<List<CourseDto>> = runCatching {
         val params = mutableListOf<String>()
-        if (featured == true) params.add("featured=true")
-        if (category != null) params.add("category=$category")
-        if (limit != null) params.add("limit=$limit")
-        if (offset > 0) params.add("offset=$offset")
-        val path = if (params.isEmpty()) "/courses" else "/courses?" + params.joinToString("&")
-        val (code, body) = get(path)
+        if (featured != null) {
+            params.add("featured=$featured")
+        }
+        if (!category.isNullOrBlank()) {
+            val encodedCategory = java.net.URLEncoder.encode(category, "UTF-8")
+            params.add("category=$encodedCategory")
+        }
+        if (limit != null) {
+            params.add("limit=$limit")
+        }
+        if (offset > 0) {
+            params.add("offset=$offset")
+        }
+        val query = if (params.isNotEmpty()) "?" + params.joinToString("&") else ""
+        val (code, body) = get("/courses$query")
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<CourseDto>>(body)
     }

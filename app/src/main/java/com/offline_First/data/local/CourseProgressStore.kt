@@ -2,6 +2,9 @@ package com.offline_First.data.local
 
 import com.offline_First.domain.model.CourseCertificate
 import com.offline_First.domain.model.RevisionItem
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -11,6 +14,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
 internal data class PersistentCourseState(
@@ -33,6 +37,10 @@ class CourseProgressStore(
         prettyPrint = false
         encodeDefaults = true
     }
+
+    private val progressVersion = AtomicLong(0L)
+    private val _progressUpdates = MutableStateFlow(0L)
+    val progressUpdates: StateFlow<Long> = _progressUpdates.asStateFlow()
 
     private val completedLessons = ConcurrentHashMap.newKeySet<String>()
     private val revisionItemsMap = ConcurrentHashMap<String, RevisionItem>()
@@ -97,29 +105,52 @@ class CourseProgressStore(
 
     fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean) {
         synchronized(this) {
-            val key = makeKey(courseId, lessonId)
+            val currentlyCompleted = isLessonCompleted(courseId, lessonId)
+            if (currentlyCompleted == completed) {
+                // Safeguard: Avoid duplicate or unnecessary emissions
+                return
+            }
+            val aliases = CourseIdNormalizer.getAllAliases(courseId)
             if (completed) {
-                completedLessons.add(key)
-                // Also support plain lessonId key for flexible lookups
+                for (alias in aliases) {
+                    completedLessons.add(makeKey(alias, lessonId))
+                }
                 completedLessons.add(lessonId)
             } else {
-                completedLessons.remove(key)
-                completedLessons.remove(lessonId)
+                for (alias in aliases) {
+                    completedLessons.remove(makeKey(alias, lessonId))
+                }
+                val isUsedByOtherCourse = completedLessons.any { it.endsWith(":$lessonId") }
+                if (!isUsedByOtherCourse) {
+                    completedLessons.remove(lessonId)
+                }
             }
             saveToFile()
+            _progressUpdates.value = progressVersion.incrementAndGet()
         }
     }
 
     fun isLessonCompleted(courseId: String, lessonId: String): Boolean {
-        return completedLessons.contains(makeKey(courseId, lessonId)) || completedLessons.contains(lessonId)
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        val hasAliasKey = aliases.any { alias -> completedLessons.contains(makeKey(alias, lessonId)) }
+        return hasAliasKey || completedLessons.contains(lessonId)
     }
 
     /**
-     * Return count of completed lessons strictly belonging to the specified course.
+     * Return count of completed lessons strictly belonging to the specified course (matching any known alias).
      */
     fun getCompletedLessonCount(courseId: String): Int {
-        val prefix = "$courseId:"
-        return completedLessons.count { it.startsWith(prefix) }
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        return completedLessons.mapNotNull { entry ->
+            val colonIndex = entry.indexOf(':')
+            if (colonIndex > 0) {
+                val prefix = entry.substring(0, colonIndex)
+                val lessonId = entry.substring(colonIndex + 1)
+                if (aliases.contains(prefix)) lessonId else null
+            } else {
+                null
+            }
+        }.distinct().count()
     }
 
     /**
@@ -153,17 +184,22 @@ class CourseProgressStore(
     // --- Certificates ---
 
     /**
-     * Retrieve existing certificate for a course if already issued.
+     * Retrieve existing certificate for a course if already issued (matching any known alias).
      */
     fun getCertificate(courseId: String): CourseCertificate? {
-        return certificatesMap[courseId]
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        for (alias in aliases) {
+            val cert = certificatesMap[alias]
+            if (cert != null) return cert
+        }
+        return null
     }
 
     /**
      * List all issued certificates sorted by issue timestamp.
      */
     fun getAllCertificates(): List<CourseCertificate> {
-        return certificatesMap.values.sortedByDescending { it.issuedAtTimestamp }
+        return certificatesMap.values.distinctBy { it.id }.sortedByDescending { it.issuedAtTimestamp }
     }
 
     /**
@@ -180,8 +216,8 @@ class CourseProgressStore(
         synchronized(this) {
             if (totalLessons <= 0) return null
 
-            // Return existing certificate to prevent duplicate issuance
-            certificatesMap[courseId]?.let { return it }
+            // Return existing certificate to prevent duplicate issuance across aliases
+            getCertificate(courseId)?.let { return it }
 
             val randomHex = UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
             val certId = "EDUNOVA-CERT-$randomHex"
@@ -197,7 +233,10 @@ class CourseProgressStore(
                 verificationType = "LOCAL_PERSISTED",
                 issuedAtTimestamp = System.currentTimeMillis()
             )
-            certificatesMap[courseId] = cert
+            val aliases = CourseIdNormalizer.getAllAliases(courseId)
+            for (alias in aliases) {
+                certificatesMap[alias] = cert
+            }
             saveToFile()
             return cert
         }
@@ -215,18 +254,27 @@ class CourseProgressStore(
 
     fun removeRevisionItem(courseId: String, lessonId: String) {
         synchronized(this) {
-            val key = makeKey(courseId, lessonId)
-            revisionItemsMap.remove(key)
+            val aliases = CourseIdNormalizer.getAllAliases(courseId)
+            for (alias in aliases) {
+                revisionItemsMap.remove(makeKey(alias, lessonId))
+            }
+            // Also clean up by lessonId if courseId alias was mapped
+            val matchingKeys = revisionItemsMap.keys().toList().filter { key ->
+                val parts = key.split(":")
+                parts.size == 2 && parts[1] == lessonId && aliases.contains(parts[0])
+            }
+            matchingKeys.forEach { revisionItemsMap.remove(it) }
             saveToFile()
         }
     }
 
     fun isMarkedForRevision(courseId: String, lessonId: String): Boolean {
-        return revisionItemsMap.containsKey(makeKey(courseId, lessonId))
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        return aliases.any { alias -> revisionItemsMap.containsKey(makeKey(alias, lessonId)) }
     }
 
     fun getRevisionItems(): List<RevisionItem> {
-        return revisionItemsMap.values.sortedByDescending { it.markedAt }
+        return revisionItemsMap.values.distinctBy { it.lessonId }.sortedByDescending { it.markedAt }
     }
 
     fun clearAll() {

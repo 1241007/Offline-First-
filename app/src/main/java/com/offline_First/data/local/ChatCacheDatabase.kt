@@ -30,6 +30,7 @@ import kotlinx.serialization.decodeFromString
 private const val DB_NAME = "edunova_chat_cache.db"
 private const val DB_VERSION = 3
 
+
 data class PendingMilestoneSync(
     val roadmapId: String,
     val userId: String,
@@ -277,6 +278,10 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // Do not drop tables
+        onUpgrade(db, oldVersion, newVersion)
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         onUpgrade(db, oldVersion, newVersion)
     }
 

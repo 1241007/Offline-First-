@@ -13,6 +13,8 @@ enum class AppDestination {
     AI_WORKSPACE,
     ROADMAP,
     ROADMAP_BUILDER,
+    PERSONALIZED_ROADMAP,
+    TOPIC_DETAIL,
     MY_LEARNING,
     PROFILE,
     SETTINGS,

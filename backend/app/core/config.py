@@ -1,11 +1,12 @@
 import os
+from typing import Optional
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 from typing import Any, Optional, Union
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Root .env is three directories above backend/app/core/config.py (i.e. E:\Offline First\.env)
+# Root .env is three directories above backend/app/core/config.py
 _ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 _BACKEND_ENV = Path(__file__).resolve().parents[2] / ".env"
 
