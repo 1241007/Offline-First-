@@ -47,10 +47,18 @@ data class RoadmapDetailDto(
 data class AssessmentQuizPublicDto(
     val question: String,
     val options: List<String> = emptyList(),
-    @SerialName("skill_tested") val skillTested: String? = null,
+    @SerialName("skillTested") val skillTested: String? = null,
+    @SerialName("skill_tested") val skillTestedSnake: String? = null,
     val difficulty: String? = null,
-    @SerialName("selection_rationale") val selectionRationale: String? = null
-)
+    @SerialName("selectionRationale") val selectionRationale: String? = null,
+    @SerialName("selection_rationale") val selectionRationaleSnake: String? = null
+) {
+    val effectiveSkillTested: String?
+        get() = skillTested ?: skillTestedSnake
+
+    val effectiveSelectionRationale: String?
+        get() = selectionRationale ?: selectionRationaleSnake
+}
 
 @Serializable
 data class AssessmentMessageItemDto(

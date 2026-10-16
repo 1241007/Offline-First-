@@ -330,5 +330,99 @@ class OnlineRoadmapRepositoryTest {
         assertEquals("1 hour/day", preview.studyTime)
         assertEquals(3, preview.stages.size)
     }
+
+    @Test
+    fun startPersonalizedAssessment_synthesizesCurrentQuestionAndPhase() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(201)
+                .setBody("""
+                    {
+                        "id": "sess-start-1",
+                        "state": "COLLECTING_GOALS",
+                        "currentStepId": null,
+                        "completedSteps": [],
+                        "goal": null,
+                        "targetLevel": null,
+                        "targetTimeline": null,
+                        "weeklyHours": null,
+                        "latestMessage": null,
+                        "options": ["Option A", "Option B"],
+                        "quiz": null,
+                        "completenessPercentage": 20,
+                        "roadmapId": null,
+                        "messages": [
+                            {
+                                "sender": "mentor",
+                                "text": "What is your primary learning goal?",
+                                "options": ["Option A", "Option B"],
+                                "quiz": null,
+                                "stepId": "STEP_GOAL",
+                                "timestamp": null
+                            }
+                        ]
+                    }
+                """.trimIndent())
+        )
+
+        val result = repository.startPersonalizedAssessment()
+        assertTrue(result.isSuccess)
+        val session = result.getOrThrow()
+        assertEquals("sess-start-1", session.id)
+        assertEquals(AssessmentPhase.PROFILE_COLLECTION, session.phase)
+        assertNotNull(session.currentQuestion)
+        assertEquals("What is your primary learning goal?", session.currentQuestion!!.prompt)
+        assertEquals(listOf("Option A", "Option B"), session.currentQuestion!!.options)
+        assertEquals(1, session.questionNumber)
+        assertEquals(5, session.totalQuestions)
+        assertFalse(session.isComplete)
+    }
+
+    @Test
+    fun submitAssessmentAnswer_withQuiz_mapsDiagnosticQuizCorrectly() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""
+                    {
+                        "id": "sess-start-1",
+                        "state": "ASSESSING_SKILLS",
+                        "currentStepId": "STAGE_SKILLS",
+                        "completedSteps": ["STAGE_GOAL", "STAGE_BASELINE", "STAGE_CONSTRAINTS"],
+                        "goal": "Python",
+                        "targetLevel": "Beginner",
+                        "targetTimeline": "6 months",
+                        "weeklyHours": 10.0,
+                        "latestMessage": null,
+                        "options": [],
+                        "quiz": {
+                            "question": "What does GIL stand for in CPython?",
+                            "options": ["Global Interpreter Lock", "General Interface Layer"],
+                            "skillTested": "Python Concurrency",
+                            "difficulty": "Intermediate",
+                            "selectionRationale": "Assesses knowledge of Python execution model"
+                        },
+                        "completenessPercentage": 75,
+                        "roadmapId": null,
+                        "messages": []
+                    }
+                """.trimIndent())
+        )
+
+        val result = repository.submitAssessmentAnswer(
+            sessionId = "sess-start-1",
+            answer = "Global Interpreter Lock",
+            quizSelectedIndex = 0
+        )
+        assertTrue(result.isSuccess)
+        val session = result.getOrThrow()
+        assertEquals(AssessmentPhase.DIAGNOSTIC, session.phase)
+        assertNotNull(session.currentQuestion)
+        assertEquals("What does GIL stand for in CPython?", session.currentQuestion!!.prompt)
+        assertEquals(listOf("Global Interpreter Lock", "General Interface Layer"), session.currentQuestion!!.options)
+        assertEquals("Python Concurrency", session.currentQuestion!!.topicTag)
+        assertEquals(2, session.currentQuestion!!.difficultyLevel)
+        assertEquals("Assesses knowledge of Python execution model", session.currentQuestion!!.explanation)
+    }
 }
 

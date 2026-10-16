@@ -56,9 +56,9 @@ class OnlineRoadmapRepository(
         return DiagnosticQuiz(
             question = question,
             options = options,
-            skillTested = skillTested,
+            skillTested = effectiveSkillTested,
             difficulty = difficulty,
-            selectionRationale = selectionRationale
+            selectionRationale = effectiveSelectionRationale
         )
     }
 
@@ -135,8 +135,8 @@ class OnlineRoadmapRepository(
             null
         } else {
             AssessmentQuestion(
-                id = "${currentStepId ?: state}_${completedSteps.size}_${quiz?.skillTested ?: effectivePrompt.hashCode()}",
-                topicTag = quiz?.skillTested ?: currentStepId ?: "general",
+                id = "${currentStepId ?: state}_${completedSteps.size}_${quiz?.effectiveSkillTested ?: effectivePrompt.hashCode()}",
+                topicTag = quiz?.effectiveSkillTested ?: currentStepId ?: "general",
                 questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
                 prompt = effectivePrompt,
                 options = effectiveOptions,
@@ -145,7 +145,7 @@ class OnlineRoadmapRepository(
                     "intermediate" -> 2
                     else -> 1
                 },
-                explanation = quiz?.selectionRationale ?: ""
+                explanation = quiz?.effectiveSelectionRationale ?: ""
             )
         }
 
