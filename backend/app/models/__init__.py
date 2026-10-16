@@ -2,9 +2,12 @@ from .conversation import Conversation
 from .message import Message
 from .course import CourseCategory, Course, CourseModule, Lesson
 from .roadmap import Roadmap, RoadmapItem
+from .roadmap_assessment import RoadmapAssessmentSession
 from .progress import UserCourseProgress, UserLessonProgress
 from .profile import UserProfile
-from .personalized_roadmap import AssessmentSessionModel, PersonalizedRoadmapModel
+from .user import User, RefreshToken, PasswordResetToken
+from .memory import UserMemory
+from .syllabus import SyllabusDocument, SyllabusChunk
 
 __all__ = [
     "Conversation",
@@ -15,9 +18,16 @@ __all__ = [
     "Lesson",
     "Roadmap",
     "RoadmapItem",
+    "RoadmapAssessmentSession",
     "UserCourseProgress",
     "UserLessonProgress",
+    "UserRevisionItem",
     "UserProfile",
-    "AssessmentSessionModel",
-    "PersonalizedRoadmapModel",
+    "User",
+    "RefreshToken",
+    "PasswordResetToken",
+    "UserMemory",
+    "SyllabusDocument",
+    "SyllabusChunk",
 ]
+

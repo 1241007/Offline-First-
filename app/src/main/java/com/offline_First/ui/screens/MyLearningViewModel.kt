@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class MyLearningUiState(
+    val selectedTab: Int = 0, // 0 = In Progress, 1 = Completed
     val inProgressCourses: UiState<List<LearningCourse>> = UiState.Loading,
-    val completedCourses: UiState<List<LearningCourse>> = UiState.Loading,
+    val completedCourses: UiState<List<LearningCourse>> = UiState.Empty,
+    val completedLoaded: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -25,24 +27,73 @@ class MyLearningViewModel(
     val uiState: StateFlow<MyLearningUiState> = _uiState.asStateFlow()
 
     init {
-        loadCourses()
+        loadInProgressCourses()
     }
 
-    private fun loadCourses() {
+    fun selectTab(tabIndex: Int) {
+        _uiState.value = _uiState.value.copy(selectedTab = tabIndex)
+        if (tabIndex == 1 && !_uiState.value.completedLoaded) {
+            loadCompletedCourses()
+        }
+    }
+
+    fun retry() {
+        if (_uiState.value.selectedTab == 0) {
+            loadInProgressCourses()
+        } else {
+            loadCompletedCourses()
+        }
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    private fun loadInProgressCourses() {
         viewModelScope.launch {
-            val inProgress = repository.getInProgressCourses()
-            val completed = repository.getCompletedCourses()
-            val error = inProgress.exceptionOrNull() ?: completed.exceptionOrNull()
-            _uiState.value = MyLearningUiState(
-                inProgressCourses = inProgress.fold(
+            _uiState.value = _uiState.value.copy(
+                inProgressCourses = UiState.Loading,
+                errorMessage = null
+            )
+            val result = repository.getInProgressCourses()
+            val errorMsg = result.exceptionOrNull()?.let { err ->
+                when (err) {
+                    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                        "Unable to connect to server. Please check your internet connection."
+                    else -> err.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to load courses."
+                }
+            }
+            _uiState.value = _uiState.value.copy(
+                inProgressCourses = result.fold(
                     onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
-                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
+                    onFailure = { UiState.Error(errorMsg ?: "Unable to load courses.") }
                 ),
-                completedCourses = completed.fold(
+                errorMessage = errorMsg
+            )
+        }
+    }
+
+    private fun loadCompletedCourses() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                completedCourses = UiState.Loading,
+                errorMessage = null
+            )
+            val result = repository.getCompletedCourses()
+            val errorMsg = result.exceptionOrNull()?.let { err ->
+                when (err) {
+                    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+                        "Unable to connect to server. Please check your internet connection."
+                    else -> err.localizedMessage?.takeIf { !it.contains("Exception") } ?: "Unable to load courses."
+                }
+            }
+            _uiState.value = _uiState.value.copy(
+                completedCourses = result.fold(
                     onSuccess = { if (it.isEmpty()) UiState.Empty else UiState.Success(it) },
-                    onFailure = { UiState.Error(it.localizedMessage ?: "Unable to load courses.") }
+                    onFailure = { UiState.Error(errorMsg ?: "Unable to load courses.") }
                 ),
-                errorMessage = error?.localizedMessage
+                completedLoaded = true,
+                errorMessage = errorMsg
             )
         }
     }

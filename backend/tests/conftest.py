@@ -3,10 +3,16 @@ import pytest_asyncio
 from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
-from app.core.database import Base
+from app.core.database import Base, get_db
 from app.main import app
-from app.core.database import get_db
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB
+
+# Allow SQLite to compile PostgreSQL JSONB columns during unit tests
+@compiles(JSONB, "sqlite")
+def compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 # Use in-memory SQLite for tests
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -34,7 +40,12 @@ async def client(db_session):
     async def override_get_db():
         yield db_session
 
+    async def override_get_current_user_id():
+        return "test-user-id"
+
+    from app.core.deps import get_current_user_id
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user_id] = override_get_current_user_id
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

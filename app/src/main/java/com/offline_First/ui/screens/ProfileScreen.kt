@@ -59,6 +59,10 @@ fun ProfileScreen(
     var level by rememberSaveable { mutableStateOf("") }
     var educationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
     var savedEducationMode by rememberSaveable { mutableStateOf(com.offline_First.domain.model.EducationMode.GENERAL) }
+    var board by rememberSaveable { mutableStateOf("") }
+    var classGrade by rememberSaveable { mutableStateOf("") }
+    var subject by rememberSaveable { mutableStateOf("") }
+    var preferredLanguage by rememberSaveable { mutableStateOf("en") }
     var editing by rememberSaveable { mutableStateOf(false) }
     var savedName by rememberSaveable { mutableStateOf("") }
     var savedEmail by rememberSaveable { mutableStateOf("") }
@@ -75,6 +79,10 @@ fun ProfileScreen(
             level = profile.level
             educationMode = profile.educationMode
             savedEducationMode = profile.educationMode
+            board = profile.board.orEmpty()
+            classGrade = profile.classGrade.orEmpty()
+            subject = profile.subject.orEmpty()
+            preferredLanguage = profile.preferredLanguage.ifBlank { "en" }
             editing = false
         }
     }
@@ -82,6 +90,13 @@ fun ProfileScreen(
         uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(uiState.saveSuccess) {
+        if (uiState.saveSuccess) {
+            snackbarHostState.showSnackbar("Profile updated successfully")
+            viewModel.resetSaveSuccess()
         }
     }
 
@@ -103,47 +118,80 @@ fun ProfileScreen(
             }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(padding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Surface(
+        if (uiState.isLoading && uiState.profile == null) {
+            Box(
                 modifier = Modifier
-                    .size(76.dp)
-                    .clip(CircleShape),
-                color = primaryColor
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        savedName.firstOrNull()?.uppercase() ?: "E",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.headlineMedium
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(color = primaryColor)
+                    Text("Loading profile...", color = onSurfaceVariant)
                 }
             }
-            Text(savedName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(savedEmail, color = onSurfaceVariant)
-            if (!editing) {
-                ProfileValue("Full Name", savedName)
-                ProfileValue("Email", savedEmail)
-                ProfileValue("Mobile Number", mobile)
-                ProfileValue(
-                    "Education Mode",
-                    if (savedEducationMode == EducationMode.SCHOOL) "School (Class 9–12)" else "General (College & Beyond)"
-                )
-                ProfileValue("Learning interests", interests)
-                ProfileValue("Current learning level", level)
-                Button(
-                    onClick = { editing = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                ) {
-                    Text("Edit Profile")
+        } else if (uiState.profile == null && uiState.errorMessage != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        uiState.errorMessage ?: "Unable to load profile.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Button(onClick = { viewModel.reload() }, colors = ButtonDefaults.buttonColors(containerColor = primaryColor)) {
+                        Text("Retry")
+                    }
                 }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(padding)
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape),
+                    color = primaryColor
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            savedName.firstOrNull()?.uppercase() ?: "E",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                    }
+                }
+                Text(savedName.ifBlank { "User" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(savedEmail, color = onSurfaceVariant)
+                if (!editing) {
+                    ProfileValue("Full Name", savedName)
+                    ProfileValue("Email", savedEmail)
+                    ProfileValue("Mobile Number", mobile.ifBlank { "Not provided" })
+                    ProfileValue(
+                        "Education Mode",
+                        if (savedEducationMode == EducationMode.SCHOOL) "School (Class 9–12)" else "General (College & Beyond)"
+                    )
+                    ProfileValue("Learning interests", interests.ifBlank { "Not set" })
+                    ProfileValue("Current learning level", level.ifBlank { "Beginner" })
+                    Button(
+                        onClick = { editing = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                    ) {
+                        Text("Edit Profile")
+                    }
                 OutlinedButton(onClick = onLanguage, modifier = Modifier.fillMaxWidth()) {
                     Text("Language")
                 }
@@ -178,6 +226,11 @@ fun ProfileScreen(
                         )
                     }
                 }
+                if (educationMode == EducationMode.SCHOOL) {
+                    OutlinedTextField(board, { board = it }, label = { Text("Education Board (e.g. CBSE, ICSE)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(classGrade, { classGrade = it }, label = { Text("Class / Grade (e.g. 10)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(subject, { subject = it }, label = { Text("Primary Subject (e.g. Science)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
                 OutlinedTextField(interests, { interests = it }, label = { Text("Learning interests") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(level, { level = it }, label = { Text("Current learning level") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -194,14 +247,21 @@ fun ProfileScreen(
                                         mobile = mobile,
                                         interests = interests,
                                         level = level,
-                                        educationMode = educationMode
+                                        educationMode = educationMode,
+                                        board = board.ifBlank { null },
+                                        classGrade = classGrade.ifBlank { null },
+                                        subject = subject.ifBlank { null },
+                                        preferredLanguage = preferredLanguage
                                     )
                                 )
                             }
                         },
+                        enabled = !uiState.isSaving,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                    ) { Text("Save Changes") }
+                    ) {
+                        Text(if (uiState.isSaving) "Saving..." else "Save Changes")
+                    }
                     OutlinedButton(
                         onClick = {
                             name = savedName
@@ -210,15 +270,21 @@ fun ProfileScreen(
                             interests = uiState.profile?.interests.orEmpty()
                             level = uiState.profile?.level.orEmpty()
                             educationMode = savedEducationMode
+                            board = uiState.profile?.board.orEmpty()
+                            classGrade = uiState.profile?.classGrade.orEmpty()
+                            subject = uiState.profile?.subject.orEmpty()
+                            preferredLanguage = uiState.profile?.preferredLanguage ?: "en"
                             error = null
                             editing = false
                         },
+                        enabled = !uiState.isSaving,
                         modifier = Modifier.weight(1f)
                     ) { Text("Cancel") }
                 }
             }
         }
     }
+}
 }
 
 @Composable

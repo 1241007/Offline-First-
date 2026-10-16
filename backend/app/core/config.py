@@ -2,38 +2,103 @@ import os
 from typing import Optional
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
+from typing import Any, Optional, Union
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Root .env is two directories above the backend/app/ package
-_ROOT_ENV = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+# Root .env is three directories above backend/app/core/config.py (i.e. E:\Offline First\.env)
+_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+_BACKEND_ENV = Path(__file__).resolve().parents[2] / ".env"
+
+_DEV_PLACEHOLDER = "edunova-dev-secret-key-32bytes-long-change-in-production!"
 
 
 class Settings(BaseSettings):
     environment: str = "development"
     database_url: str
-    gemini_api_key: str
-    gemini_model: str = "gemini-3.8-flash"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "google/gemini-3.8-flash"
+    openrouter_roadmap_model: str = "anthropic/claude-sonnet-4.5"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_max_tokens: int = 1024
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-3.5-flash"
     chat_context_messages: int = 12
     gemini_max_output_tokens: int = 1024
     db_pool_size: int = 5
     db_max_overflow: int = 10
     allow_dev_user_id: bool = False  # DEVELOPMENT ONLY: Allow user_id query parameter
-    openrouter_api_key: Optional[str] = None
-    openrouter_model: str = "openrouter/free"
+    jwt_secret_key: str  # No default — must be set via environment
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    reset_token_expire_minutes: int = 15
+    redis_url: Optional[str] = None  # Optional: Redis for distributed rate limiting
+    cors_origins: Union[list[str], str] = [
+        "http://10.0.2.2:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    email_provider: str = "dev"  # "resend", "smtp", or "dev"
+    email_api_key: Optional[str] = None  # Resend API key
+    email_from: str = "EduNova <onboarding@resend.dev>"
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+    backend_public_url: str = "http://localhost:8000"
 
-    @property
-    def clean_openrouter_api_key(self) -> Optional[str]:
-        return self.openrouter_api_key.strip() if self.openrouter_api_key else None
+    # Embedding and RAG configuration
+    embedding_provider: str = "openai"  # "local_e5", "openai", "openrouter", "custom"
+    embedding_api_key: Optional[str] = None
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_dimensions: int = 384
+    embedding_timeout_seconds: float = 3.0
+    embedding_query_prefix: str = "query: "
+    embedding_passage_prefix: str = "passage: "
+    router_timeout_seconds: float = 2.0
+    retrieval_timeout_seconds: float = 3.0
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            if v.strip().startswith("["):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
+        return [str(v)]
 
     model_config = SettingsConfigDict(
-        env_file=str(_ROOT_ENV),
+        env_file=(str(_ROOT_ENV), str(_BACKEND_ENV)),
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
+    @model_validator(mode="after")
+    def validate_secrets(self) -> "Settings":
+        if self.environment != "development" and self.jwt_secret_key == _DEV_PLACEHOLDER:
+            raise ValueError(
+                "JWT_SECRET_KEY must be changed from the development placeholder "
+                "before running in production"
+            )
+        return self
+
     @property
     def async_database_url(self) -> str:
         raw_url = self.database_url
+        if raw_url.startswith("sqlite://") or raw_url.startswith("sqlite+aiosqlite://"):
+            if not raw_url.startswith("sqlite+aiosqlite://"):
+                return raw_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+            return raw_url
+
         if raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
             raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 

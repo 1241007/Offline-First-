@@ -6,12 +6,13 @@ import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ContinueLearningItem
 import com.offline_First.domain.model.Course
+import com.offline_First.domain.model.CourseDetail
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.LearningCourse
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
-import com.offline_First.domain.model.PersonalizedRoadmapDetail
+import com.offline_First.domain.model.RevisionItem
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.StudyFocusItem
 import com.offline_First.domain.model.Subject
@@ -80,6 +81,37 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun sendMessage(prompt: String): Result<ChatMessage> = unavailable("AI chat")
 
+    override fun streamMessage(
+        prompt: String,
+        parentId: String?,
+        clientMessageId: String?
+    ): Flow<String> = flowOf()
+
+    override suspend fun stopGeneration(): Result<Unit> = Result.success(Unit)
+
+    override fun regenerateLastResponse(): Flow<String> = flowOf()
+
+    override fun editMessageAndRegenerate(messageId: String, newContent: String): Flow<String> = flowOf()
+
+    override suspend fun saveDraft(sessionId: String, draftText: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun togglePin(sessionId: String, isPinned: Boolean): Result<Unit> = Result.success(Unit)
+
+    override suspend fun toggleArchive(sessionId: String, isArchived: Boolean): Result<Unit> = Result.success(Unit)
+
+    override suspend fun loadMoreMessages(sessionId: String, beforeTimestamp: Long?, limit: Int): Result<List<ChatMessage>> =
+        unavailable("Chat history")
+
+    override suspend fun loadMoreConversations(beforeCursor: Long?, limit: Int): Result<List<ChatSession>> =
+        unavailable("Chat history")
+
+    override suspend fun getMemories(): Result<List<com.offline_First.domain.model.UserMemoryItem>> =
+        Result.success(emptyList())
+
+    override suspend fun deleteMemory(memoryId: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncOfflineData(): Result<Unit> = Result.success(Unit)
+
     override suspend fun signIn(contact: String, password: String): Result<Unit> =
         unavailable("Authentication")
 
@@ -89,15 +121,59 @@ class BackendNotConfiguredRepositories :
     override suspend fun requestPasswordReset(contact: String): Result<Unit> =
         unavailable("Authentication")
 
-    override suspend fun signOut(): Result<Unit> {
-        authSession.value = false
-        return Result.success(Unit)
-    }
+    override suspend fun logout(refreshToken: String?): Result<Unit> =
+        unavailable("Authentication")
 
-    override suspend fun getCourses(): Result<List<Course>> = unavailable("Course catalog")
+    override suspend fun restoreSession(): Result<Boolean> = Result.success(false)
+
+    override fun observeAuthState(): Flow<com.offline_First.data.AuthState> =
+        flowOf(com.offline_First.data.AuthState.Unauthenticated)
+
+    override suspend fun fetchMe(): Result<com.offline_First.data.remote.UserDto> =
+        Result.failure(UnsupportedOperationException("Backend not configured"))
+
+    override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> = unavailable("Course catalog")
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> =
         unavailable("Featured courses")
+
+    override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> =
+        unavailable("Course detail")
+
+    override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> =
+        unavailable("Lesson completion")
+
+    override suspend fun isLessonCompleted(courseId: String, lessonId: String): Boolean = false
+
+    override suspend fun getCompletedLessonCount(courseId: String, lessonIds: Collection<String>): Int = 0
+
+    override suspend fun getCourseProgressPercentage(courseId: String, lessonIds: Collection<String>): Float = 0f
+
+    override suspend fun isCourseCompleted(courseId: String, lessonIds: Collection<String>): Boolean = false
+
+    override suspend fun getCertificate(courseId: String): com.offline_First.domain.model.CourseCertificate? = null
+
+    override suspend fun getAllCertificates(): List<com.offline_First.domain.model.CourseCertificate> = emptyList()
+
+    override suspend fun issueCertificate(
+        courseId: String,
+        courseName: String,
+        learnerName: String,
+        totalLessons: Int
+    ): com.offline_First.domain.model.CourseCertificate? = null
+
+    override suspend fun addRevisionItem(item: RevisionItem): Result<Unit> =
+        unavailable("Revision items")
+
+    override suspend fun removeRevisionItem(courseId: String, lessonId: String): Result<Unit> =
+        unavailable("Revision items")
+
+    override suspend fun isMarkedForRevision(courseId: String, lessonId: String): Boolean = false
+
+    override suspend fun getRevisionItems(): Result<List<RevisionItem>> =
+        unavailable("Revision items")
+
+
 
     override suspend fun getInProgressCourses(): Result<List<LearningCourse>> =
         unavailable("Learning progress")
@@ -122,10 +198,6 @@ class BackendNotConfiguredRepositories :
 
     override fun observeUserProfile(): Flow<UserProfile?> = flowOf(null)
 
-    // -----------------------------------------------------------------------
-    // RoadmapRepository — static roadmaps
-    // -----------------------------------------------------------------------
-
     override suspend fun getRoadmaps(
         limit: Int?,
         offset: Int,
@@ -134,14 +206,62 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun getCategories(): List<String> = emptyList()
 
+    override suspend fun startPersonalizedAssessment(): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Personalized roadmap assessment")
+
+    override suspend fun getActiveAssessmentSession(): Result<com.offline_First.domain.model.AssessmentSessionState?> =
+        unavailable("Active assessment session")
+
+    override suspend fun getAssessmentSession(sessionId: String): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Assessment session")
+
+    override suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int?
+    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Assessment message")
+
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
+        unavailable("Profile field correction")
+
+    override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap generation")
+
+    override suspend fun getMyPersonalizedRoadmaps(
+        limit: Int?,
+        offset: Int
+    ): Result<List<com.offline_First.domain.model.PersonalizedRoadmapDetail>> =
+        unavailable("User personalized roadmaps")
+
+    override fun getMyPersonalizedRoadmapsCached(): List<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        emptyList()
+
+    override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap detail")
+
+    override suspend fun savePersonalizedRoadmap(roadmap: com.offline_First.domain.model.PersonalizedRoadmapDetail): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Save personalized roadmap")
+
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
+        unavailable("Delete personalized roadmap")
+
+    override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
+        unavailable("Rename personalized roadmap")
+
     override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
 
-    override suspend fun toggleMilestoneProgress(
-        roadmapId: String,
-        milestoneKey: String
-    ): Result<Set<String>> = unavailable("Milestone progress")
+
+    override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
+        unavailable("Milestone sync")
 
     override suspend fun syncPendingMilestoneProgress(): Result<Unit> = Result.success(Unit)
+
+    override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

@@ -1,6 +1,6 @@
 """Learning progress service for business logic"""
 
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.course_repository import CourseRepository
@@ -15,11 +15,18 @@ class LearningService:
         self.repo = LearningRepository(db)
         self.course_repo = CourseRepository(db)
     
-    async def get_in_progress_courses(self, user_id: str) -> List[LearningCourseResponse]:
-        """Get user's in-progress courses"""
+    async def get_in_progress_courses(
+        self,
+        user_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[LearningCourseResponse]:
+        """Get user's in-progress courses with optional pagination"""
         progress_records = await self.repo.get_user_course_progress(
             user_id=user_id,
-            status="in_progress"
+            status="in_progress",
+            limit=limit,
+            offset=offset
         )
         
         result = []
@@ -51,11 +58,18 @@ class LearningService:
         
         return result
     
-    async def get_completed_courses(self, user_id: str) -> List[LearningCourseResponse]:
-        """Get user's completed courses"""
+    async def get_completed_courses(
+        self,
+        user_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[LearningCourseResponse]:
+        """Get user's completed courses with optional pagination"""
         progress_records = await self.repo.get_user_course_progress(
             user_id=user_id,
-            status="completed"
+            status="completed",
+            limit=limit,
+            offset=offset
         )
         
         return [

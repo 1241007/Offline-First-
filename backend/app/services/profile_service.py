@@ -14,11 +14,25 @@ class ProfileService:
         self.repo = ProfileRepository(db)
     
     async def get_profile(self, user_id: str) -> Optional[ProfileResponse]:
-        """Get user profile"""
+        """Get user profile, auto-creating a default one if needed for an active user."""
         profile = await self.repo.get_by_user_id(user_id)
         
         if not profile:
-            return None
+            from app.models.user import User
+            from sqlalchemy import select
+            user = await self.db.scalar(select(User).where(User.id == user_id))
+            if not user:
+                return None
+            profile = await self.repo.create_profile(
+                user_id=user_id,
+                full_name=user.email.split("@")[0],
+                email=user.email,
+                mobile=user.mobile,
+                interests=None,
+                level="Beginner",
+                education_mode="general"
+            )
+            await self.db.commit()
         
         return ProfileResponse(
             full_name=profile.full_name,
@@ -26,7 +40,11 @@ class ProfileService:
             mobile=profile.mobile,
             interests=profile.interests,
             level=profile.level,
-            education_mode=profile.education_mode
+            education_mode=profile.education_mode,
+            board=profile.board,
+            class_grade=profile.class_grade,
+            subject=profile.subject,
+            preferred_language=profile.preferred_language or "en"
         )
     
     async def update_profile(
@@ -34,12 +52,10 @@ class ProfileService:
         user_id: str,
         data: ProfileUpdateRequest
     ) -> ProfileResponse:
-        """Update or create user profile"""
-        # Check if profile exists
+        """Update or create user profile and synchronize user contact info"""
         existing = await self.repo.get_by_user_id(user_id)
         
         if existing:
-            # Update existing
             profile = await self.repo.update_profile(
                 user_id=user_id,
                 full_name=data.full_name,
@@ -47,10 +63,13 @@ class ProfileService:
                 mobile=data.mobile,
                 interests=data.interests,
                 level=data.level,
-                education_mode=data.education_mode
+                education_mode=data.education_mode,
+                board=data.board,
+                class_grade=data.class_grade,
+                subject=data.subject,
+                preferred_language=data.preferred_language
             )
         else:
-            # Create new
             profile = await self.repo.create_profile(
                 user_id=user_id,
                 full_name=data.full_name,
@@ -58,9 +77,19 @@ class ProfileService:
                 mobile=data.mobile,
                 interests=data.interests,
                 level=data.level,
-                education_mode=data.education_mode
+                education_mode=data.education_mode,
+                board=data.board,
+                class_grade=data.class_grade,
+                subject=data.subject,
+                preferred_language=data.preferred_language
             )
         
+        # Keep user mobile in sync if changed
+        from app.models.user import User
+        from sqlalchemy import update
+        await self.db.execute(
+            update(User).where(User.id == user_id).values(mobile=data.mobile)
+        )
         await self.db.commit()
         
         return ProfileResponse(
@@ -69,5 +98,9 @@ class ProfileService:
             mobile=profile.mobile,
             interests=profile.interests,
             level=profile.level,
-            education_mode=profile.education_mode
+            education_mode=profile.education_mode,
+            board=profile.board,
+            class_grade=profile.class_grade,
+            subject=profile.subject,
+            preferred_language=profile.preferred_language or "en"
         )

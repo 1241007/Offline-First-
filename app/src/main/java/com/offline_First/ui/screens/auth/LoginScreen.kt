@@ -109,8 +109,11 @@ fun LoginScreen(
                         Text("Forgot password?", fontWeight = FontWeight.SemiBold)
                     }
                 }
-                PrimaryAuthButton(text = "Login") {
-                    val nextContactError = validateLoginEmail(contact)
+                PrimaryAuthButton(
+                    text = if (uiState.isSubmitting) "Logging in..." else "Login",
+                    enabled = !uiState.isSubmitting
+                ) {
+                    val nextContactError = validateLoginContact(contact)
                     val nextPasswordError = when {
                         password.isBlank() -> "Password cannot be empty."
                         password.length < 6 -> "Password must contain at least 6 characters."

@@ -126,6 +126,8 @@ import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
 import com.offline_First.domain.model.ExplanationMode
 import com.offline_First.domain.model.OfflineAIStatus
+import com.offline_First.domain.model.UserMemoryItem
+import com.offline_First.ui.components.LazyListPrefetchEffect
 import com.offline_First.ui.screens.ai.AIScreen
 import com.offline_First.ui.screens.ai.AIViewModel
 import com.offline_First.ui.theme.EduNovaAccent
@@ -242,6 +244,9 @@ fun AIWorkspaceScreen(
                     },
                     onRenameChat = { id, title -> viewModel.startRenameChat(id, title) },
                     onDeleteChat = { id -> viewModel.deleteChat(id) },
+                    onTogglePin = { id, isPinned -> viewModel.togglePin(id, isPinned) },
+                    onToggleArchive = { id, isArchived -> viewModel.toggleArchive(id, isArchived) },
+                    onLoadMoreConversations = { viewModel.loadMoreConversations() },
                     onBackToHome = {
                         coroutineScope.launch { drawerState.close() }
                         handleExitToHome()
@@ -288,7 +293,12 @@ fun AIWorkspaceScreen(
                             errorMessage = uiState.errorMessage,
                             onClearError = { viewModel.clearError() },
                             onDraftChanged = { viewModel.onDraftMessageChanged(it) },
-                            onSendMessage = { viewModel.sendMessage() },
+                            onSendMessage = { prompt -> viewModel.sendMessage(prompt, com.offline_First.data.local.MonotonicClock.elapsedMillis()) },
+                            onStopGeneration = { viewModel.stopGeneration() },
+                            onRegenerate = { viewModel.regenerateLastResponse() },
+                            onEditMessage = { id, text -> viewModel.startEditMessage(id, text) },
+                            onOpenMemories = { viewModel.setMemoriesSheetVisible(true) },
+                            onLoadMoreMessages = { viewModel.loadMoreMessages() },
                             onOpenHistory = {
                                 coroutineScope.launch { drawerState.open() }
                                 viewModel.setDrawerOpen(true)
@@ -359,6 +369,26 @@ fun AIWorkspaceScreen(
                     onTitleChange = { viewModel.onRenameDraftChanged(it) },
                     onConfirm = { viewModel.confirmRenameChat() },
                     onDismiss = { viewModel.cancelRenameChat() }
+                )
+            }
+
+            // Long-Term Memories Bottom Sheet
+            if (uiState.showMemoriesSheet) {
+                MemoriesSheet(
+                    memories = uiState.memories,
+                    isLoading = uiState.isLoadingMemories,
+                    onDismiss = { viewModel.setMemoriesSheetVisible(false) },
+                    onDeleteMemory = { viewModel.deleteMemory(it) }
+                )
+            }
+
+            // Edit Message Dialog
+            if (uiState.editingMessageId != null) {
+                EditMessageDialog(
+                    initialText = uiState.editDraftText,
+                    onTextChange = { viewModel.onEditDraftChanged(it) },
+                    onConfirm = { viewModel.confirmEditAndRegenerate() },
+                    onDismiss = { viewModel.cancelEditMessage() }
                 )
             }
 
@@ -691,17 +721,19 @@ private fun AISettingsScreenView(
 
                 // Online Card
                 SelectableSettingCard(
-                    title = "☁  Online",
+                    title = "Online",
                     description = "Uses online AI and requires internet.",
                     isSelected = connectionMode == ConnectionMode.ONLINE,
+                    icon = Icons.Default.Cloud,
                     onClick = { onSelectConnectionMode(ConnectionMode.ONLINE) }
                 )
 
                 // Offline Card
                 SelectableSettingCard(
-                    title = "📱  Offline",
+                    title = "Offline",
                     description = "Works without internet.",
                     isSelected = connectionMode == ConnectionMode.OFFLINE,
+                    icon = Icons.Default.PhoneAndroid,
                     onClick = { onSelectConnectionMode(ConnectionMode.OFFLINE) }
                 )
             }
@@ -718,15 +750,16 @@ private fun AISettingsScreenView(
                 )
 
                 ExplanationMode.entries.forEach { mode ->
-                    val titlePrefix = when (mode) {
-                        ExplanationMode.TEACHER -> "👨‍🏫"
-                        ExplanationMode.GENERAL -> "💬"
-                        ExplanationMode.EXPLAINABLE -> "📖"
+                    val icon = when (mode) {
+                        ExplanationMode.TEACHER -> Icons.Default.School
+                        ExplanationMode.GENERAL -> Icons.Default.ChatBubbleOutline
+                        ExplanationMode.EXPLAINABLE -> Icons.AutoMirrored.Filled.MenuBook
                     }
                     SelectableSettingCard(
-                        title = "$titlePrefix  ${mode.displayName}",
+                        title = mode.displayName,
                         description = mode.description,
                         isSelected = explanationMode == mode,
+                        icon = icon,
                         onClick = { onSelectExplanationMode(mode) }
                     )
                 }
@@ -876,6 +909,7 @@ private fun SelectableSettingCard(
     title: String,
     description: String,
     isSelected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -894,6 +928,23 @@ private fun SelectableSettingCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) EduNovaPrimary.copy(alpha = 0.15f) else EduNovaBackground),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isSelected) EduNovaPrimary else EduNovaTextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -1159,7 +1210,12 @@ private fun CleanChatScreenView(
     errorMessage: String?,
     onClearError: () -> Unit,
     onDraftChanged: (String) -> Unit,
-    onSendMessage: () -> Unit,
+    onSendMessage: (String?) -> Unit,
+    onStopGeneration: () -> Unit,
+    onRegenerate: () -> Unit,
+    onEditMessage: (String, String) -> Unit,
+    onOpenMemories: () -> Unit,
+    onLoadMoreMessages: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAttachments: () -> Unit,
@@ -1167,6 +1223,10 @@ private fun CleanChatScreenView(
 ) {
     val listState = rememberLazyListState()
     val messages = session?.messages ?: emptyList()
+
+    LazyListPrefetchEffect(listState = listState, prefetchThreshold = 3) {
+        onLoadMoreMessages()
+    }
 
     LaunchedEffect(messages.size, isGenerating) {
         if (messages.isNotEmpty()) {
@@ -1219,6 +1279,16 @@ private fun CleanChatScreenView(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onOpenMemories,
+                        modifier = Modifier.semantics { contentDescription = "Long-Term Memory" }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Long-Term Memory",
+                            tint = EduNovaPrimary
+                        )
+                    }
                     IconButton(
                         onClick = onOpenHistory,
                         modifier = Modifier.semantics { contentDescription = "Chat History" }
@@ -1328,7 +1398,11 @@ private fun CleanChatScreenView(
                     }
                 } else {
                     items(messages, key = { it.id }) { message ->
-                        ChatBubbleItem(message = message)
+                        ChatBubbleItem(
+                            message = message,
+                            onEdit = { onEditMessage(message.id, message.text) },
+                            onRegenerate = onRegenerate
+                        )
                     }
 
                     if (isGenerating) {
@@ -1400,22 +1474,58 @@ private fun CleanChatScreenView(
                 }
             }
 
+            // Stop Generation Floating Pill
+            if (isGenerating) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Button(
+                        onClick = onStopGeneration,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(10.dp),
+                            shape = RoundedCornerShape(2.dp),
+                            color = MaterialTheme.colorScheme.error
+                        ) {}
+                        Spacer(Modifier.width(8.dp))
+                        Text("Stop generation", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             // Bottom Input Row
             AIChatBottomBar(
                 draft = draft,
                 onDraftChanged = onDraftChanged,
-                onSend = { onSendMessage() },
-                onOpenAttachments = onOpenAttachments
+                onSend = { prompt -> onSendMessage(prompt) },
+                onOpenAttachments = onOpenAttachments,
+                isGenerating = isGenerating,
+                onStopGeneration = onStopGeneration,
+                hasError = errorMessage != null,
+                onRetry = onRegenerate
             )
         }
     }
 }
 
 @Composable
-private fun ChatBubbleItem(message: ChatMessage) {
-    Row(
+private fun ChatBubbleItem(
+    message: ChatMessage,
+    onEdit: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null
+) {
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
+        horizontalAlignment = if (message.fromUser) Alignment.End else Alignment.Start
     ) {
         Surface(
             color = if (message.fromUser) EduNovaPrimary else EduNovaSurface,
@@ -1429,7 +1539,6 @@ private fun ChatBubbleItem(message: ChatMessage) {
             modifier = Modifier.fillMaxWidth(if (message.fromUser) 0.82f else 0.90f)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                // If text contains code block, display neatly formatted
                 val text = message.text
                 if (text.contains("```")) {
                     FormattedMarkdownChatText(text = text, isFromUser = message.fromUser)
@@ -1439,6 +1548,65 @@ private fun ChatBubbleItem(message: ChatMessage) {
                         color = if (message.fromUser) Color.White else EduNovaTextPrimary,
                         fontSize = 14.sp,
                         lineHeight = 21.sp
+                    )
+                }
+                if (!message.fromUser && message.citations.isNotEmpty() && !text.contains("Curriculum References")) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Curriculum References:",
+                        fontSize = 12.sp,
+                        color = EduNovaTextSecondary
+                    )
+                    message.citations.forEachIndexed { idx, citation ->
+                        val title = citation.textbookTitle ?: "Curriculum Reference"
+                        val ch = if (!citation.chapter.isNullOrBlank()) " | Chapter: ${citation.chapter}" else ""
+                        val page = if (!citation.pageReference.isNullOrBlank()) " | ${citation.pageReference}" else ""
+                        Text(
+                            text = "${idx + 1}. $title$ch$page",
+                            fontSize = 11.sp,
+                            color = EduNovaPrimary,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Sub-actions row: Edit for user, Regenerate for assistant
+        Row(
+            modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (message.fromUser) {
+                if (message.isEdited) {
+                    Text(
+                        text = "(edited)",
+                        fontSize = 10.sp,
+                        color = EduNovaTextSecondary,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { onEdit?.invoke() },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit message",
+                        tint = EduNovaTextSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = { onRegenerate?.invoke() },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Regenerate",
+                        tint = EduNovaTextSecondary,
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             }
@@ -1452,11 +1620,19 @@ private fun FormattedMarkdownChatText(text: String, isFromUser: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEachIndexed { index, part ->
             if (index % 2 == 1) {
-                // Code block
-                val cleanedCode = part.trim().removePrefix("kotlin").removePrefix("java").trim()
+                // Code block: strip any optional language tag on first line
+                val rawTrimmed = part.trim()
+                val lines = rawTrimmed.lines()
+                val firstLine = lines.firstOrNull()?.trim().orEmpty()
+                val cleanedCode = if (lines.size > 1 && firstLine.isNotEmpty() && firstLine.all { it.isLetterOrDigit() || it in "+#-_" }) {
+                    lines.drop(1).joinToString("\n").trim()
+                } else {
+                    rawTrimmed
+                }
                 Surface(
                     color = Color(0xFF1E1E24),
                     shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF2D3748)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -1485,7 +1661,11 @@ private fun AIChatBottomBar(
     draft: String,
     onDraftChanged: (String) -> Unit,
     onSend: (String) -> Unit,
-    onOpenAttachments: () -> Unit
+    onOpenAttachments: () -> Unit,
+    isGenerating: Boolean = false,
+    onStopGeneration: () -> Unit = {},
+    hasError: Boolean = false,
+    onRetry: (() -> Unit)? = null
 ) {
     Surface(
         color = EduNovaBackground,
@@ -1529,19 +1709,40 @@ private fun AIChatBottomBar(
                     IconButton(onClick = { }) {
                         Icon(Icons.Default.Mic, "Voice input", tint = EduNovaTextSecondary)
                     }
-                    IconButton(
-                        onClick = {
-                            if (draft.isNotBlank()) {
-                                onSend(draft.trim())
+                    if (isGenerating) {
+                        IconButton(
+                            onClick = onStopGeneration
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(16.dp),
+                                shape = RoundedCornerShape(3.dp),
+                                color = MaterialTheme.colorScheme.error
+                            ) {}
+                        }
+                    } else {
+                        if (hasError && onRetry != null) {
+                            IconButton(onClick = onRetry) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Retry",
+                                    tint = EduNovaPrimary
+                                )
                             }
-                        },
-                        enabled = draft.isNotBlank()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send message",
-                            tint = if (draft.isNotBlank()) EduNovaPrimary else EduNovaTextSecondary.copy(alpha = 0.4f)
-                        )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (draft.isNotBlank()) {
+                                    onSend(draft.trim())
+                                }
+                            },
+                            enabled = draft.isNotBlank()
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send message",
+                                tint = if (draft.isNotBlank()) EduNovaPrimary else EduNovaTextSecondary.copy(alpha = 0.4f)
+                            )
+                        }
                     }
                 }
             }
@@ -1560,8 +1761,17 @@ private fun ChatHistoryDrawerContent(
     onSelectChat: (String) -> Unit,
     onRenameChat: (String, String) -> Unit,
     onDeleteChat: (String) -> Unit,
+    onTogglePin: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleArchive: (String, Boolean) -> Unit = { _, _ -> },
+    onLoadMoreConversations: () -> Unit = {},
     onBackToHome: () -> Unit = {}
 ) {
+    val drawerListState = rememberLazyListState()
+
+    LazyListPrefetchEffect(listState = drawerListState, prefetchThreshold = 3) {
+        onLoadMoreConversations()
+    }
+
     val (todayChats, yesterdayChats, last7DaysChats, olderChats) = remember(sessions) {
         val now = Calendar.getInstance()
         val todayStart = (now.clone() as Calendar).apply {
@@ -1618,6 +1828,7 @@ private fun ChatHistoryDrawerContent(
         )
 
         LazyColumn(
+            state = drawerListState,
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -1648,55 +1859,63 @@ private fun ChatHistoryDrawerContent(
             } else {
                 if (todayChats.isNotEmpty()) {
                     item { HistorySectionHeader("Today") }
-                items(todayChats, key = { it.id }) { session ->
-                    HistoryItemRow(
-                        session = session,
-                        isSelected = session.id == currentSessionId,
-                        onClick = { onSelectChat(session.id) },
-                        onRename = { onRenameChat(session.id, session.title) },
-                        onDelete = { onDeleteChat(session.id) }
-                    )
+                    items(todayChats, key = { it.id }) { session ->
+                        HistoryItemRow(
+                            session = session,
+                            isSelected = session.id == currentSessionId,
+                            onClick = { onSelectChat(session.id) },
+                            onRename = { onRenameChat(session.id, session.title) },
+                            onDelete = { onDeleteChat(session.id) },
+                            onTogglePin = { onTogglePin(session.id, !session.isPinned) },
+                            onToggleArchive = { onToggleArchive(session.id, !session.isArchived) }
+                        )
+                    }
                 }
-            }
 
-            if (yesterdayChats.isNotEmpty()) {
-                item { HistorySectionHeader("Yesterday") }
-                items(yesterdayChats, key = { it.id }) { session ->
-                    HistoryItemRow(
-                        session = session,
-                        isSelected = session.id == currentSessionId,
-                        onClick = { onSelectChat(session.id) },
-                        onRename = { onRenameChat(session.id, session.title) },
-                        onDelete = { onDeleteChat(session.id) }
-                    )
+                if (yesterdayChats.isNotEmpty()) {
+                    item { HistorySectionHeader("Yesterday") }
+                    items(yesterdayChats, key = { it.id }) { session ->
+                        HistoryItemRow(
+                            session = session,
+                            isSelected = session.id == currentSessionId,
+                            onClick = { onSelectChat(session.id) },
+                            onRename = { onRenameChat(session.id, session.title) },
+                            onDelete = { onDeleteChat(session.id) },
+                            onTogglePin = { onTogglePin(session.id, !session.isPinned) },
+                            onToggleArchive = { onToggleArchive(session.id, !session.isArchived) }
+                        )
+                    }
                 }
-            }
 
-            if (last7DaysChats.isNotEmpty()) {
-                item { HistorySectionHeader("Last 7 Days") }
-                items(last7DaysChats, key = { it.id }) { session ->
-                    HistoryItemRow(
-                        session = session,
-                        isSelected = session.id == currentSessionId,
-                        onClick = { onSelectChat(session.id) },
-                        onRename = { onRenameChat(session.id, session.title) },
-                        onDelete = { onDeleteChat(session.id) }
-                    )
+                if (last7DaysChats.isNotEmpty()) {
+                    item { HistorySectionHeader("Last 7 Days") }
+                    items(last7DaysChats, key = { it.id }) { session ->
+                        HistoryItemRow(
+                            session = session,
+                            isSelected = session.id == currentSessionId,
+                            onClick = { onSelectChat(session.id) },
+                            onRename = { onRenameChat(session.id, session.title) },
+                            onDelete = { onDeleteChat(session.id) },
+                            onTogglePin = { onTogglePin(session.id, !session.isPinned) },
+                            onToggleArchive = { onToggleArchive(session.id, !session.isArchived) }
+                        )
+                    }
                 }
-            }
 
-            if (olderChats.isNotEmpty()) {
-                item { HistorySectionHeader("Older") }
-                items(olderChats, key = { it.id }) { session ->
-                    HistoryItemRow(
-                        session = session,
-                        isSelected = session.id == currentSessionId,
-                        onClick = { onSelectChat(session.id) },
-                        onRename = { onRenameChat(session.id, session.title) },
-                        onDelete = { onDeleteChat(session.id) }
-                    )
+                if (olderChats.isNotEmpty()) {
+                    item { HistorySectionHeader("Older") }
+                    items(olderChats, key = { it.id }) { session ->
+                        HistoryItemRow(
+                            session = session,
+                            isSelected = session.id == currentSessionId,
+                            onClick = { onSelectChat(session.id) },
+                            onRename = { onRenameChat(session.id, session.title) },
+                            onDelete = { onDeleteChat(session.id) },
+                            onTogglePin = { onTogglePin(session.id, !session.isPinned) },
+                            onToggleArchive = { onToggleArchive(session.id, !session.isArchived) }
+                        )
+                    }
                 }
-            }
             }
         }
 
@@ -1743,7 +1962,9 @@ private fun HistoryItemRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onTogglePin: () -> Unit = {},
+    onToggleArchive: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -1772,6 +1993,21 @@ private fun HistoryItemRow(
                 color = EduNovaTextPrimary,
                 modifier = Modifier.weight(1f)
             )
+            if (session.isPinned) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = EduNovaPrimary.copy(alpha = 0.1f),
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    Text(
+                        text = "PIN",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = EduNovaPrimary,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
             Box {
                 IconButton(
                     onClick = { menuExpanded = true },
@@ -1789,6 +2025,22 @@ private fun HistoryItemRow(
                     onDismissRequest = { menuExpanded = false },
                     modifier = Modifier.background(EduNovaSurface)
                 ) {
+                    DropdownMenuItem(
+                        text = { Text(if (session.isPinned) "Unpin" else "Pin", fontSize = 13.sp, color = EduNovaTextPrimary) },
+                        leadingIcon = { Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            menuExpanded = false
+                            onTogglePin()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (session.isArchived) "Unarchive" else "Archive", fontSize = 13.sp, color = EduNovaTextPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Description, null, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            menuExpanded = false
+                            onToggleArchive()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Rename", fontSize = 13.sp, color = EduNovaTextPrimary) },
                         leadingIcon = { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)) },
@@ -1885,16 +2137,11 @@ private fun ToolsSheet(
                 Pair("Study Planner", Icons.Default.CalendarMonth to EduNovaAccent),
                 Pair("Mind Map", Icons.Default.AccountTree to EduNovaSecondary),
                 Pair("Image Analysis", Icons.Default.Image to EduNovaSecondary),
-                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
+                Pair("PYQ (Exam Vault)", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
                 Pair("Reports", Icons.Default.Analytics to EduNovaAccent),
+                Pair("AI Visual Video", Icons.Default.SmartDisplay to EduNovaSecondary),
                 Pair("Audio Learning", Icons.Default.Headphones to EduNovaSecondary)
-            ) + if (isClass912Student) {
-                listOf(
-                    Pair("PYQ", Icons.AutoMirrored.Filled.MenuBook to EduNovaPrimary),
-                    Pair("Exam Mode", Icons.Default.Timer to EduNovaPrimary),
-                    Pair("Exam Review", Icons.AutoMirrored.Filled.FactCheck to EduNovaSecondary)
-                )
-            } else emptyList()
+            )
 
             tools.forEach { (name, iconAccent) ->
                 Surface(
@@ -1971,6 +2218,62 @@ private fun ActiveToolScreen(
     isClass912: Boolean,
     onBack: () -> Unit
 ) {
+    if (toolName.equals("Quiz", ignoreCase = true) || toolName.contains("Quiz", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveQuizTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Flashcards", ignoreCase = true) || toolName.contains("Flashcard", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveFlashcardTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Mind Map", ignoreCase = true) || toolName.contains("Mind Map", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveMindMapTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.equals("Reports", ignoreCase = true) || toolName.contains("Report", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveReportsTool(
+            initialTopic = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Planner", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveStudyPlannerTool(
+            initialGoal = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("Image", ignoreCase = true) || toolName.contains("Analysis", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractiveImageAnalysisTool(
+            initialQuery = "",
+            onBack = onBack
+        )
+        return
+    }
+
+    if (toolName.contains("PYQ", ignoreCase = true) || toolName.contains("Exam", ignoreCase = true)) {
+        com.offline_First.ui.screens.ai.tools.InteractivePyqExamTool(
+            initialChapter = "",
+            onBack = onBack
+        )
+        return
+    }
+
     Scaffold(
         containerColor = EduNovaBackground,
         contentWindowInsets = WindowInsets(0),
@@ -2023,3 +2326,195 @@ private fun ActiveToolScreen(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MemoriesSheet(
+    memories: List<UserMemoryItem>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onDeleteMemory: (String) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = EduNovaPrimaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = EduNovaPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Long-Term Memory",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = EduNovaTextPrimary
+                    )
+                    Text(
+                        "Facts remembered to personalize answers",
+                        fontSize = 12.sp,
+                        color = EduNovaTextSecondary
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            HorizontalDivider(color = EduNovaBorder)
+
+            if (isLoading && memories.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = EduNovaPrimary)
+                }
+            } else if (memories.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "No memories yet",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = EduNovaTextPrimary
+                    )
+                    Text(
+                        "EduNova automatically learns your preferences, goals, and facts as you chat.",
+                        textAlign = TextAlign.Center,
+                        fontSize = 13.sp,
+                        color = EduNovaTextSecondary,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(memories, key = { it.id }) { memory ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = EduNovaSurface,
+                            border = BorderStroke(1.dp, EduNovaBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = EduNovaPrimary.copy(alpha = 0.1f)
+                                    ) {
+                                        Text(
+                                            text = memory.category.uppercase(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = EduNovaPrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = memory.content,
+                                        fontSize = 13.sp,
+                                        color = EduNovaTextPrimary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onDeleteMemory(memory.id) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete memory",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.navigationBarsPadding())
+        }
+    }
+}
+
+@Composable
+private fun EditMessageDialog(
+    initialText: String,
+    onTextChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Edit Message", fontWeight = FontWeight.Bold, color = EduNovaTextPrimary)
+        },
+        text = {
+            OutlinedTextField(
+                value = initialText,
+                onValueChange = onTextChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp),
+                shape = RoundedCornerShape(12.dp),
+                maxLines = 6
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
+            ) {
+                Text("Save & Submit")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = EduNovaTextSecondary)
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(18.dp)
+    )
+}
+

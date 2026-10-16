@@ -1,173 +1,212 @@
-"""Pydantic schemas for Personalized Roadmap and Assessment endpoints"""
+"""Pydantic schemas for Personalized Roadmap Assessment and Generation"""
 
+from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.roadmap import RoadmapItemResponse
 
 
-class AssessmentQuestionResponse(BaseModel):
-    id: str
-    topic_tag: str
-    question_type: str = "multiple_choice"  # multiple_choice, code_output, debugging, free_text
-    prompt: str
-    code_snippet: Optional[str] = None
-    options: List[str] = []
-    correct_option_index: Optional[int] = None
-    difficulty_level: int = 1
-    explanation: str = ""
+class AssessmentQuizPublicDto(BaseModel):
+    """Diagnostic quiz presented to the client. Never contains correct_index or answers!"""
+    question: str
+    options: List[str]
+    skill_tested: Optional[str] = Field(None, alias="skillTested")
+    difficulty: Optional[str] = None
+    selection_rationale: Optional[str] = Field(None, alias="selectionRationale")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class TopicMasteryStateResponse(BaseModel):
-    topic_tag: str
-    mastery_level: str = "unknown"  # unknown, weak, adequate, strong
-    evidence_count: int = 0
-    correct_count: int = 0
+class AssessmentMessageItem(BaseModel):
+    """Single turn in an assessment session"""
+    sender: str  # "mentor" or "learner"
+    text: str
+    options: List[str] = Field(default_factory=list)
+    quiz: Optional[AssessmentQuizPublicDto] = None
+    step_id: Optional[str] = Field(None, alias="stepId")
+    timestamp: Optional[str] = None
 
-
-class CorrectionPromptResponse(BaseModel):
-    field: str
-    current_value: str
-    suggested_value: str
-    reason: str
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AssessmentSessionResponse(BaseModel):
-    session_id: str
-    domain: str = "Python"
-    phase: str = "profile_collection"  # profile_collection, diagnostic, summary, roadmap_ready
-    profile_goal: str = ""
-    profile_level: str = ""
-    profile_study_hours_per_week: int = 5
-    profile_timeline_weeks: Optional[int] = None
-    current_question: Optional[AssessmentQuestionResponse] = None
-    question_number: int = 0
-    total_questions: int = 0
-    mastery_map: Dict[str, TopicMasteryStateResponse] = {}
-    is_complete: bool = False
-    generated_roadmap_id: Optional[str] = None
-    last_answer_correct: Optional[bool] = None
-    last_answer_explanation: str = ""
-    correction_prompt: Optional[CorrectionPromptResponse] = None
-    error_message: Optional[str] = None
-
-
-class SubmitAnswerRequest(BaseModel):
-    answer: str
-    quiz_selected_index: Optional[int] = None
-
-
-class CorrectProfileFieldRequest(BaseModel):
-    field: str
-    value: str
-
-
-class PersonalizedRoadmapTopicResponse(BaseModel):
+    """Full assessment session state response for the client"""
     id: str
-    topic_tag: str
+    state: str
+    current_step_id: Optional[str] = Field(None, alias="currentStepId")
+    completed_steps: List[str] = Field(default_factory=list, alias="completedSteps")
+    goal: Optional[str] = None
+    target_level: Optional[str] = Field(None, alias="targetLevel")
+    target_timeline: Optional[str] = Field(None, alias="targetTimeline")
+    weekly_hours: Optional[float] = Field(None, alias="weeklyHours")
+    latest_message: Optional[str] = Field(None, alias="latestMessage")
+    options: List[str] = Field(default_factory=list)
+    quiz: Optional[AssessmentQuizPublicDto] = None
+    completeness_percentage: int = Field(0, alias="completenessPercentage")
+    summary: Optional[Dict[str, Any]] = None
+    roadmap_id: Optional[str] = Field(None, alias="roadmapId")
+    messages: List[AssessmentMessageItem] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class SubmitAssessmentAnswerRequest(BaseModel):
+    """Learner's response to the mentor's question or quiz"""
+    answer: str
+    quiz_selected_index: Optional[int] = Field(None, alias="quizSelectedIndex")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProfileCorrectionRequest(BaseModel):
+    """In-place correction of a specific profile field before generation"""
+    field: str  # "goal", "target_level", "weekly_hours", "target_timeline"
+    value: Any
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# --- Structured Roadmap Schemas ---
+
+class PersonalizedTaskSchema(BaseModel):
+    id: str
     title: str
-    short_description: str = ""
-    estimated_minutes: int = 20
-    prerequisite_topic_ids: List[str] = []
-    status: str = "locked"  # locked, unlocked, in_progress, completed, skipped
-    mastery_level: str = "unknown"  # unknown, weak, adequate, strong
-    priority_score: int = 0
-    accelerated: bool = False
-    explanation: str = ""
+    description: Optional[str] = ""
+    instructions: str = ""
+    estimated_hours: float = Field(1.0, alias="estimatedHours")
+    resources: List[str] = Field(default_factory=list)
+    completion_criteria: str = Field("", alias="completionCriteria")
+    is_completed: bool = Field(False, alias="isCompleted")
+    dependencies: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class PersonalizedRoadmapEdgeResponse(BaseModel):
-    from_topic_id: str
-    to_topic_id: str
+class PersonalizedMilestoneSchema(BaseModel):
+    title: str
+    completion_criteria: List[str] = Field(default_factory=list, alias="completionCriteria")
+    assessment: str = ""
+    passing_criteria: str = Field(..., alias="passingCriteria")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PersonalizedPhaseSchema(BaseModel):
+    title: str
+    objective: str
+    duration_weeks: int = Field(1, alias="durationWeeks")
+    topics: List[str] = Field(default_factory=list)
+    tasks: List[PersonalizedTaskSchema] = Field(default_factory=list)
+    activities: List[str] = Field(default_factory=list)
+    resources: List[str] = Field(default_factory=list)
+    milestones: List[PersonalizedMilestoneSchema] = Field(default_factory=list)
+    recommended_course_ids: List[str] = Field(default_factory=list, alias="recommendedCourseIds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class WeeklyScheduleItemSchema(BaseModel):
+    day_or_week: str = Field(..., alias="dayOrWeek")
+    focus_topic: str = Field(..., alias="focusTopic")
+    estimated_hours: float = Field(..., alias="estimatedHours")
+    tasks: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SkillGapItemSchema(BaseModel):
+    skill: str
+    status: str = "developing"  # "demonstrated", "developing", "not_yet_demonstrated", "unknown"
+    source: str = "diagnostic_verified"  # "diagnostic_verified", "course_completion", "self_reported", "inferred"
+    confidence: float = 1.0
+    rationale: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentSummarySchema(BaseModel):
+    strengths: List[str] = Field(default_factory=list)
+    skill_gaps: List[str] = Field(default_factory=list, alias="skillGaps")
+    verified_evidence: List[str] = Field(default_factory=list, alias="verifiedEvidence")
+    self_reported_information: List[str] = Field(default_factory=list, alias="selfReportedInformation")
+    unknowns: List[str] = Field(default_factory=list)
+    skill_gap_breakdown: List[SkillGapItemSchema] = Field(default_factory=list, alias="skillGapBreakdown")
+    curriculum_rationale: Optional[str] = Field(None, alias="curriculumRationale")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PersonalizedRoadmapSchema(BaseModel):
+    """Full structured roadmap output validated against AI model JSON generation"""
+    title: str
+    goal: str
+    starting_level: str = Field(..., alias="startingLevel")
+    category: str = "General"
+    estimated_duration: str = Field(..., alias="estimatedDuration")
+    weekly_hours: float = Field(..., alias="weeklyHours")
+    assessment_summary: AssessmentSummarySchema = Field(..., alias="assessmentSummary")
+    phases: List[PersonalizedPhaseSchema] = Field(default_factory=list)
+    weekly_schedule: List[WeeklyScheduleItemSchema] = Field(default_factory=list, alias="weeklySchedule")
+    assumptions: List[str] = Field(default_factory=list)
+    capstone_project: str = Field(..., alias="capstoneProject")
+    next_action: str = Field(..., alias="nextAction")
+    completed_milestones: List[str] = Field(default_factory=list, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PersonalizedRoadmapDetailResponse(BaseModel):
+    """Detailed response for a saved personalized roadmap"""
     id: str
-    title: str = "My Python Roadmap"
-    domain: str = "Python"
-    goal: str = ""
-    level: str = ""
-    study_hours_per_week: int = 5
-    estimated_weeks: int = 8
-    topics: List[PersonalizedRoadmapTopicResponse] = []
-    edges: List[PersonalizedRoadmapEdgeResponse] = []
-    assessment_session_id: str = ""
-    created_at: str = ""
-    updated_at: str = ""
-    completed_topic_ids: List[str] = []
-    in_progress_topic_ids: List[str] = []
-
-
-class RenameRoadmapRequest(BaseModel):
     title: str
+    goal: str
+    category: str
+    level: str
+    duration: str
+    stages: int
+    icon: str
+    accent_theme: str = Field("primary", alias="accentTheme")
+    structure: PersonalizedRoadmapSchema
+    items: List[RoadmapItemResponse] = Field(default_factory=list)
+    created_at: Optional[str] = Field(None, alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
-class ValidateSubjectRequest(BaseModel):
-    subject: str
-
-
-class ValidateSubjectResponse(BaseModel):
-    is_valid: bool
-    standardized_name: str
-    message: str
-
-
-class StartAssessmentRequest(BaseModel):
-    domain: Optional[str] = "Python"
-    goal: Optional[str] = None
-    level: Optional[str] = None
-    study_hours_per_week: Optional[int] = 5
-
-
-class TopicLearningResourceResponse(BaseModel):
+class SavePersonalizedRoadmapRequest(BaseModel):
+    """Request to save or sync a personalized roadmap created locally or generated offline"""
+    id: Optional[str] = None
     title: str
-    url: str
-    source_name: str
-    description: str
-    is_verified: bool = True
+    goal: str
+    category: Optional[str] = "General"
+    level: Optional[str] = "Beginner"
+    duration: Optional[str] = "8 weeks"
+    icon: Optional[str] = "school"
+    accent_theme: Optional[str] = Field("primary", alias="accentTheme")
+    structure: PersonalizedRoadmapSchema
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class TopicCodeExampleResponse(BaseModel):
-    title: str
-    code: str
-    explanation: str
-    expected_output: str = ""
+class RoadmapMilestonesSyncRequest(BaseModel):
+    """Request to toggle or batch sync completed milestones"""
+    milestone_key: Optional[str] = Field(None, alias="milestoneKey")
+    is_completed: Optional[bool] = Field(None, alias="isCompleted")
+    completed_milestones: Optional[List[str]] = Field(None, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class TopicCommonMistakeResponse(BaseModel):
-    mistake: str
-    why_it_happens: str
-    how_to_fix: str
+class RoadmapMilestonesSyncResponse(BaseModel):
+    """Current state of completed milestones for a personalized roadmap"""
+    roadmap_id: str = Field(..., alias="roadmapId")
+    completed_milestones: List[str] = Field(default_factory=list, alias="completedMilestones")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class TopicPracticeQuizResponse(BaseModel):
-    question: str
-    options: List[str]
-    correct_option_index: int
-    explanation: str
+class RenamePersonalizedRoadmapRequest(BaseModel):
+    """Request to rename a personalized roadmap"""
+    title: str = Field(..., min_length=1, max_length=255)
 
-
-class TopicLearningContentResponse(BaseModel):
-    topic_id: str
-    topic_title: str
-    domain: str
-    learning_objectives: List[str] = []
-    beginner_explanation: str = ""
-    syntax_and_concepts: str = ""
-    code_examples: List[TopicCodeExampleResponse] = []
-    common_mistakes: List[TopicCommonMistakeResponse] = []
-    practice_quiz: Optional[TopicPracticeQuizResponse] = None
-    resources: List[TopicLearningResourceResponse] = []
-
-
-class CompleteTopicRequest(BaseModel):
-    quiz_score: Optional[int] = 100
-    quiz_passed: bool = True
-
-
-class CompleteTopicResponse(BaseModel):
-    roadmap_id: str
-    completed_topic_id: str
-    unlocked_topic_ids: List[str] = []
-    next_recommended_topic_id: Optional[str] = None
-    overall_progress_percent: int = 0
-    roadmap: PersonalizedRoadmapDetailResponse
-
+    model_config = ConfigDict(populate_by_name=True)

@@ -6,16 +6,24 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import com.offline_First.data.AppContainer
+import com.offline_First.data.AuthState
 import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.screens.AIWorkspaceScreen
 import com.offline_First.ui.screens.LandingScreen
@@ -32,10 +40,11 @@ import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
 import com.offline_First.ui.screens.auth.RegisterScreen
+import com.offline_First.ui.theme.EduNovaBackground
+import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.OfflineFirstTheme
 import kotlinx.coroutines.launch
 
-private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,22 +53,55 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OfflineFirstTheme {
-                var destination by rememberSaveable { mutableStateOf(AppDestination.LANDING) }
+                val coroutineScope = rememberCoroutineScope()
+                val sessionManager = remember { AppContainer.sessionManager }
+                val authRepository = remember { AppContainer.authRepository }
+                val authState by sessionManager.authState.collectAsState()
+
+                var destination by rememberSaveable { mutableStateOf(AppDestination.LOADING) }
                 val navigationStack = rememberSaveable { mutableStateListOf<AppDestination>() }
                 var openWorkspaceTools by rememberSaveable { mutableStateOf(false) }
                 var selectedLanguage by rememberSaveable { mutableStateOf("English") }
-                val coroutineScope = rememberCoroutineScope()
-                val authRepository = remember { AppContainer.authRepository }
-                val isLoggedIn by authRepository.observeSession().collectAsState(initial = false)
+                var selectedCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+                var selectedLessonId by rememberSaveable { mutableStateOf<String?>(null) }
                 val profileRepository = remember { AppContainer.profileRepository }
-                val profile by profileRepository.observeUserProfile().collectAsState(initial = null)
-                val personalizedRoadmapViewModel: PersonalizedRoadmapViewModel = viewModel()
 
-                LaunchedEffect(authRepository) {
-                    authRepository.restoreSession().onFailure { error ->
-                        Log.e(TAG, "Could not restore the Supabase session.", error)
+
+                val profile by profileRepository.observeUserProfile().collectAsState(
+                    initial = com.offline_First.data.local.LocalProfileRepository.defaultProfile()
+                )
+
+                // Restore session on startup
+                LaunchedEffect(Unit) {
+                    authRepository.restoreSession()
+                }
+
+                // React to authState transitions
+                LaunchedEffect(authState) {
+                    when (authState) {
+                        AuthState.Initializing -> {
+                            if (destination != AppDestination.LOADING) {
+                                destination = AppDestination.LOADING
+                            }
+                        }
+                        is AuthState.Authenticated -> {
+                            if (destination == AppDestination.LOADING || destination == AppDestination.LOGIN) {
+                                destination = AppDestination.LANDING
+                            }
+                        }
+                        AuthState.SessionExpired -> {
+                            destination = AppDestination.LOGIN
+                        }
+                        AuthState.Unauthenticated -> {
+                            if (destination == AppDestination.LOADING) {
+                                destination = AppDestination.LANDING
+                            }
+                        }
+                        AuthState.Authenticating, AuthState.Refreshing -> Unit
                     }
                 }
+
+                val isLoggedIn = authState is AuthState.Authenticated
 
                 val pushDestination: (AppDestination) -> Unit = { next ->
                     if (destination != next) {
@@ -78,11 +120,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                BackHandler(enabled = destination != AppDestination.LANDING) {
+                BackHandler(enabled = destination != AppDestination.LANDING && destination != AppDestination.LOADING) {
                     navigateBack()
                 }
 
                 when (destination) {
+                    AppDestination.LOADING -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(EduNovaBackground),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = EduNovaPrimary)
+                        }
+                    }
                     AppDestination.LANDING -> LandingScreen(
                         onLogin = { pushDestination(AppDestination.LOGIN) },
                         isLoggedIn = isLoggedIn,
@@ -101,17 +153,19 @@ class MainActivity : ComponentActivity() {
                         onLanguageSelected = { selectedLanguage = it },
                         onLogout = {
                             coroutineScope.launch {
-                                authRepository.signOut().onFailure { error ->
-                                    Log.e(TAG, "Could not revoke the Supabase session.", error)
-                                }
+                                val currentRt = sessionManager.currentRefreshToken()
+                                authRepository.logout(currentRt)
                                 pushDestination(AppDestination.LOGIN)
                             }
                         }
                     )
+
                     AppDestination.LOGIN -> LoginScreen(
                         onRegister = { pushDestination(AppDestination.REGISTER) },
                         onForgotPassword = { pushDestination(AppDestination.FORGOT_PASSWORD) },
-                        onLoginSuccess = { pushDestination(AppDestination.LANDING) }
+                        onLoginSuccess = {
+                            pushDestination(AppDestination.LANDING)
+                        }
                     )
                     AppDestination.REGISTER -> RegisterScreen(
                         onLogin = { pushDestination(AppDestination.LOGIN) }
@@ -167,7 +221,39 @@ class MainActivity : ComponentActivity() {
                         language = selectedLanguage,
                         onLanguageSelected = { selectedLanguage = it }
                     )
+                    AppDestination.COURSE_DETAIL -> CourseDetailScreen(
+                        courseId = selectedCourseId ?: "c-py",
+                        onBack = navigateBack,
+                        onLessonClick = { lessonId ->
+                            selectedLessonId = lessonId
+                            pushDestination(AppDestination.LESSON_VIEWER)
+                        },
+                        onOpenRevisionList = {
+                            pushDestination(AppDestination.REVISION_LIST)
+                        }
+                    )
+                    AppDestination.LESSON_VIEWER -> LessonViewerScreen(
+                        courseId = selectedCourseId ?: "c-py",
+                        lessonId = selectedLessonId ?: "",
+                        onBack = navigateBack,
+                        onNavigateToLesson = { nextLessonId ->
+                            selectedLessonId = nextLessonId
+                        },
+                        onOpenRevisionList = {
+                            pushDestination(AppDestination.REVISION_LIST)
+                        }
+                    )
+                    AppDestination.REVISION_LIST -> RevisionListScreen(
+                        onBack = navigateBack,
+                        onOpenLesson = { courseId, lessonId ->
+                            selectedCourseId = courseId
+                            selectedLessonId = lessonId
+                            pushDestination(AppDestination.LESSON_VIEWER)
+                        }
+                    )
                 }
+
+
             }
         }
     }

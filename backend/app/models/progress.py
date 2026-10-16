@@ -98,3 +98,33 @@ class UserLessonProgress(Base):
         "Lesson",
         back_populates="user_progress"
     )
+
+
+class UserRevisionItem(Base):
+    __tablename__ = "user_revision_items"
+    __table_args__ = (
+        Index("ix_user_revision_items_user_lesson", "user_id", "lesson_id", unique=True),
+        Index("ix_user_revision_items_user_course", "user_id", "course_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("courses.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    lesson_id: Mapped[str] = mapped_column(
+        ForeignKey("lessons.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    # Relationships
+    course: Mapped["Course"] = relationship("Course")
+    lesson: Mapped["Lesson"] = relationship("Lesson")

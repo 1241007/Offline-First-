@@ -90,8 +90,11 @@ fun ForgotPasswordScreen(
                     error = contactError,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
-                PrimaryAuthButton(text = "Send reset link") {
-                    val nextError = validateLoginEmail(contact)
+                PrimaryAuthButton(
+                    text = if (uiState.isSubmitting) "Sending reset link..." else "Send reset link",
+                    enabled = !uiState.isSubmitting
+                ) {
+                    val nextError = validateLoginContact(contact)
                     contactError = nextError
                     if (nextError == null) {
                         viewModel.requestPasswordReset(contact.trim())

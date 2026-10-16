@@ -1,23 +1,89 @@
 package com.offline_First.data
 
 import android.content.Context
-import com.offline_First.BuildConfig
+import com.offline_First.data.local.EncryptedTokenStorage
 import com.offline_First.data.local.LocalAIRepository
+import com.offline_First.data.local.TokenStorage
+import com.offline_First.data.remote.AuthApiClient
+import com.offline_First.data.remote.AuthenticatedApiClient
+import com.offline_First.data.remote.ChatApiClient
 import com.offline_First.data.remote.OnlineAIRepository
 import com.offline_First.data.remote.OnlineCourseRepository
 import com.offline_First.data.remote.OnlineRoadmapRepository
+import com.offline_First.data.repository.AuthRepository
 import com.offline_First.data.repository.BackendNotConfiguredRepositories
+import com.offline_First.data.repository.CourseRepository
+import com.offline_First.data.repository.LearningRepository
 import com.offline_First.data.repository.ModeAwareAIRepository
-import com.offline_First.data.remote.SupabaseAuthRepository
+import com.offline_First.data.repository.RemoteAuthRepository
 
 object AppContainer {
-    private val repositories = BackendNotConfiguredRepositories()
+    private val defaultRepositories = BackendNotConfiguredRepositories()
     private var aiRepoOverride: com.offline_First.data.repository.AIRepository? = null
     private var authRepoOverride: SupabaseAuthRepository? = null
 
+    private var _tokenStorage: TokenStorage? = null
+    private var _sessionManager: SessionManager? = null
+    private var _authApiClient: AuthApiClient? = null
+    private var _authenticatedApiClient: AuthenticatedApiClient? = null
+    private var _authRepository: AuthRepository? = null
+    private var _profileRepository: com.offline_First.data.repository.ProfileRepository? = null
+    private var _learningRepository: com.offline_First.data.repository.LearningRepository? = null
+
     fun initialize(context: Context) {
-        val localRepository = LocalAIRepository(context.applicationContext)
-        val onlineRepository = OnlineAIRepository(context.applicationContext, localRepository)
+        val appContext = context.applicationContext
+
+        val tokenStorage = EncryptedTokenStorage(appContext)
+        val sessionManager = SessionManager(tokenStorage)
+        val authApiClient = AuthApiClient()
+        val authenticatedApiClient = AuthenticatedApiClient(
+            tokenStorage = tokenStorage,
+            sessionManager = sessionManager,
+            publicClient = { authApiClient.okHttpClient }
+        )
+        ChatApiClient.initialize(authenticatedApiClient.okHttpClient)
+        val remoteAuthRepo = RemoteAuthRepository(
+            authApiClient = authApiClient,
+            authenticatedApiClient = authenticatedApiClient,
+            sessionManager = sessionManager,
+            tokenStorage = tokenStorage
+        )
+        val remoteProfileRepo = com.offline_First.data.remote.RemoteProfileRepository(
+            context = appContext,
+            authenticatedApiClient = authenticatedApiClient
+        )
+        val remoteLearningRepo = com.offline_First.data.remote.RemoteLearningRepository(
+            context = appContext,
+            authenticatedApiClient = authenticatedApiClient
+        )
+        val onlineCourseRepo = com.offline_First.data.remote.OnlineCourseRepository(
+            context = appContext
+        )
+        val onlineRoadmapRepo = com.offline_First.data.remote.OnlineRoadmapRepository(
+            context = appContext,
+            userIdProvider = {
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+            }
+        )
+
+        _tokenStorage = tokenStorage
+        _sessionManager = sessionManager
+        _authApiClient = authApiClient
+        _authenticatedApiClient = authenticatedApiClient
+        _authRepository = remoteAuthRepo
+        _profileRepository = remoteProfileRepo
+        _learningRepository = remoteLearningRepo
+        _courseRepository = onlineCourseRepo
+        _roadmapRepository = onlineRoadmapRepo
+
+        val localRepository = LocalAIRepository(appContext)
+        val onlineRepository = OnlineAIRepository(
+            context = appContext,
+            delegate = localRepository,
+            userIdProvider = {
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+            }
+        )
         aiRepoOverride = ModeAwareAIRepository(localRepository, onlineRepository)
         authRepoOverride = SupabaseAuthRepository(
             context.applicationContext,
@@ -26,10 +92,30 @@ object AppContainer {
         )
     }
 
-    val authRepository get() = authRepoOverride ?: repositories
-    val aiRepository get() = aiRepoOverride ?: repositories
-    val courseRepository = OnlineCourseRepository()
-    val learningRepository get() = repositories
-    val profileRepository get() = repositories
-    val roadmapRepository = OnlineRoadmapRepository()
+    val tokenStorage: TokenStorage
+        get() = _tokenStorage ?: throw IllegalStateException("AppContainer must be initialized before use")
+
+    val sessionManager: SessionManager
+        get() = _sessionManager ?: throw IllegalStateException("AppContainer must be initialized before use")
+
+    val authApiClient: AuthApiClient
+        get() = _authApiClient ?: throw IllegalStateException("AppContainer must be initialized before use")
+
+    val authenticatedApiClient: AuthenticatedApiClient
+        get() = _authenticatedApiClient ?: throw IllegalStateException("AppContainer must be initialized before use")
+
+    val authRepository: AuthRepository
+        get() = _authRepository ?: defaultRepositories
+
+    val aiRepository get() = aiRepoOverride ?: defaultRepositories
+    private var _courseRepository: com.offline_First.data.repository.CourseRepository? = null
+    val courseRepository: com.offline_First.data.repository.CourseRepository
+        get() = _courseRepository ?: OnlineCourseRepository()
+    val learningRepository: com.offline_First.data.repository.LearningRepository
+        get() = _learningRepository ?: defaultRepositories
+    val profileRepository: com.offline_First.data.repository.ProfileRepository
+        get() = _profileRepository ?: defaultRepositories
+    private var _roadmapRepository: com.offline_First.data.repository.RoadmapRepository? = null
+    val roadmapRepository: com.offline_First.data.repository.RoadmapRepository
+        get() = _roadmapRepository ?: OnlineRoadmapRepository()
 }

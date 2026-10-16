@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, CheckConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
 
@@ -18,6 +19,7 @@ class CourseCategory(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
@@ -69,6 +71,11 @@ class Course(Base):
     level: Mapped[str] = mapped_column(String(50), nullable=False)
     duration_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     accent_color: Mapped[str] = mapped_column(String(50), nullable=False, default="primary")
+    prerequisites: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list
+    )
     is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
@@ -165,6 +172,10 @@ class Lesson(Base):
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    resource_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resource_provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    video_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    video_provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

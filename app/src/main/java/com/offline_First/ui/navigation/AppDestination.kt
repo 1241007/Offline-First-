@@ -5,6 +5,7 @@ package com.offline_First.ui.navigation
  * Lightweight enum-based navigation preserving the proven stack-based architecture.
  */
 enum class AppDestination {
+    LOADING,
     LANDING,
     LOGIN,
     REGISTER,
@@ -16,5 +17,8 @@ enum class AppDestination {
     TOPIC_DETAIL,
     MY_LEARNING,
     PROFILE,
-    SETTINGS
+    SETTINGS,
+    COURSE_DETAIL,
+    LESSON_VIEWER,
+    REVISION_LIST
 }

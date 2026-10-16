@@ -117,9 +117,14 @@ fun AuthPasswordField(
 }
 
 @Composable
-fun PrimaryAuthButton(text: String, onClick: () -> Unit) {
+fun PrimaryAuthButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp)

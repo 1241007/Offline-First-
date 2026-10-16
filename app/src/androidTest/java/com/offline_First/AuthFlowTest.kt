@@ -7,6 +7,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.filter
+import androidx.compose.ui.test.onFirst
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -91,6 +93,7 @@ class AuthFlowTest {
         composeRule.onNodeWithText("Login").performClick()
         composeRule.onAllNodesWithText("Email or mobile number")
             .filter(hasSetTextAction())
+            .onFirst()
             .performTextInput("learner@example.com")
 
         composeRule.activityRule.scenario.recreate()

@@ -6,27 +6,10 @@ import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapOption
 
 /**
- * Repository interface for roadmap queries, milestone progress, and the
- * AI-powered personalized-roadmap feature.
- *
- * Decouples presentation from whether data originates from local cache or remote API.
- *
- * INTEGRATION NOTE:
- * The static-roadmap implementation (getRoadmaps, getCategories, milestone progress)
- * and the personalized-roadmap implementation (assessment, generation, persistence)
- * share this interface so that a single concrete class can serve both, or
- * separate implementations can be composed via delegation.
+ * Repository interface for system and personalized roadmap operations.
+ * Handles online API communication, offline caching, and session persistence.
  */
 interface RoadmapRepository {
-
-    // -----------------------------------------------------------------------
-    // Static roadmap catalogue (shared with friend's branch)
-    // -----------------------------------------------------------------------
-
-    /**
-     * Returns paginated static roadmaps.
-     * [limit] null = no limit. [category] null = all categories.
-     */
     suspend fun getRoadmaps(
         limit: Int? = null,
         offset: Int = 0,
@@ -35,35 +18,55 @@ interface RoadmapRepository {
 
     suspend fun getCategories(): List<String>
 
-    // -----------------------------------------------------------------------
-    // Milestone / topic progress for static roadmaps (Python, WebDev, …)
-    // -----------------------------------------------------------------------
+    // --- Personalized Roadmap Assessment & Generation ---
 
-    /**
-     * Returns the set of milestone keys that the learner has marked for [roadmapId].
-     * Keys are prefixed strings like "topic_<id>", "inprogress_<id>", "skipped_<id>".
-     */
+    suspend fun startPersonalizedAssessment(): Result<AssessmentSessionState>
+
+    suspend fun getActiveAssessmentSession(): Result<AssessmentSessionState?>
+
+    suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionState>
+
+    suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int? = null
+    ): Result<AssessmentSessionState>
+
+    suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState>
+
+    suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail>
+
+    suspend fun getMyPersonalizedRoadmaps(
+        limit: Int? = null,
+        offset: Int = 0
+    ): Result<List<PersonalizedRoadmapDetail>>
+
+    fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail>
+
+    suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail>
+
+    suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail>
+    
+    suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit>
+
+    suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<PersonalizedRoadmapDetail>
+
+
+    // --- Offline-First Milestone Progress & Sync ---
+
     suspend fun getCompletedMilestones(roadmapId: String): Set<String>
 
-    /**
-     * Toggles (adds if absent, removes if present) a milestone key in the store.
-     * Returns the updated set of milestone keys.
-     */
-    suspend fun toggleMilestoneProgress(
-        roadmapId: String,
-        milestoneKey: String
-    ): Result<Set<String>>
+    suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>>
 
-    /**
-     * Pushes any locally-pending milestone progress to the remote backend.
-     * Safe to call when offline — implementations should queue for retry.
-     */
     suspend fun syncPendingMilestoneProgress(): Result<Unit>
 
-    // -----------------------------------------------------------------------
-    // Legacy single-overload (kept for backward compat with RoadmapBuilderScreen)
-    // -----------------------------------------------------------------------
+    suspend fun syncPendingRoadmaps(): Result<Unit>
 
+    // Legacy method for backward compatibility
     suspend fun generatePersonalizedRoadmap(
         goal: String,
         level: String,
