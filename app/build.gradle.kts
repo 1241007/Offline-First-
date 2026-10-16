@@ -149,6 +149,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.0.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.18.0")
     testImplementation(libs.junit)
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
