@@ -838,8 +838,11 @@ class LocalCourseRepository(
         progressStore.bindStorageFile(file)
     }
 
-    override suspend fun getCourses(): Result<List<Course>> {
-        return Result.success(allCourses)
+    override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
+        val paged = allCourses.drop(offset).let { list ->
+            if (limit != null && limit > 0) list.take(limit) else list
+        }
+        return Result.success(paged)
     }
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> {

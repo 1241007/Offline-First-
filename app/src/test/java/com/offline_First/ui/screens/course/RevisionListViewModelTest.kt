@@ -89,7 +89,7 @@ class RevisionListViewModelTest {
     @Test
     fun repositoryFailureProducesErrorState() = runBlocking {
         val failingRepo = object : CourseRepository {
-            override suspend fun getCourses(): Result<List<Course>> = Result.success(emptyList())
+            override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> = Result.success(emptyList())
             override suspend fun getFeaturedCourses(): Result<List<Course>> = Result.success(emptyList())
             override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> = Result.success(null)
             override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> = Result.success(Unit)

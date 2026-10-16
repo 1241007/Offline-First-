@@ -2,19 +2,42 @@ package com.offline_First.data.remote
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.offline_First.data.local.CourseProgressStore
 import com.offline_First.data.repository.CourseRepository
-import com.offline_First.domain.model.Course
-import com.offline_First.domain.model.CourseAccent
+import com.offline_First.domain.model.*
+import java.io.File
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
+/**
+ * Course repository backed by EduNova FastAPI backend and Supabase PostgreSQL.
+ *
+ * Requirements:
+ * - Online-only with persistent caching and optional local fallback for offline tests/mode.
+ * - Manages user-specific lesson completions, progress tracking, and certificates via persistent CourseProgressStore.
+ */
 class OnlineCourseRepository(
+    val localFallback: CourseRepository? = null,
+    val progressStore: CourseProgressStore = CourseProgressStore(),
     context: Context? = null
 ) : CourseRepository {
 
     private val prefs: SharedPreferences? = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    init {
+        context?.filesDir?.let {
+            bindStorageFile(File(it, "course_progress.json"))
+        }
+    }
+
+    fun bindStorageFile(file: File) {
+        progressStore.bindStorageFile(file)
+        if (localFallback is com.offline_First.data.local.LocalCourseRepository) {
+            localFallback.bindStorageFile(file)
+        }
+    }
 
     private fun mapAccent(color: String): CourseAccent {
         return when (color.lowercase()) {
@@ -122,41 +145,133 @@ class OnlineCourseRepository(
     }
 
     override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
-        return ChatApiClient.getCourses(featured = null, limit = limit, offset = offset)
-            .map { dtos ->
-                val list = dtos.map { it.toDomain() }
-                if (offset == 0) {
-                    cachedCourses = list
-                    savePersistedCourses(dtos)
-                } else {
-                    cachedCourses = (cachedCourses + list).distinctBy { it.id }
-                }
-                list
+        val remote = runCatching {
+            ChatApiClient.getCourses(featured = null, limit = limit, offset = offset).getOrThrow()
+        }
+        val list = remote.getOrNull()
+        if (remote.isSuccess && list != null) {
+            val domainList = list.map { it.toDomain() }
+            if (offset == 0) {
+                cachedCourses = domainList
+                savePersistedCourses(list)
+            } else {
+                cachedCourses = (cachedCourses + domainList).distinctBy { it.id }
             }
-            .recoverCatching { error ->
-                if (cachedCourses.isNotEmpty()) {
-                    cachedCourses
-                } else {
-                    throw error
-                }
-            }
+            return Result.success(domainList)
+        }
+        if (cachedCourses.isNotEmpty()) {
+            val paged = cachedCourses.drop(offset).let { if (limit != null && limit > 0) it.take(limit) else it }
+            return Result.success(paged)
+        }
+        if (localFallback != null) {
+            return localFallback.getCourses(limit, offset)
+        }
+        return remote.map { dtos -> dtos.map { it.toDomain() } }
     }
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> {
-        return ChatApiClient.getCourses(featured = true)
-            .map { dtos ->
-                val list = dtos.map { it.toDomain() }
-                cachedFeatured = list
-                savePersistedFeatured(dtos)
-                list
+        val remote = runCatching {
+            ChatApiClient.getCourses(featured = true).getOrThrow()
+        }
+        val list = remote.getOrNull()
+        if (remote.isSuccess && list != null) {
+            val domainList = list.map { it.toDomain() }
+            cachedFeatured = domainList
+            savePersistedFeatured(list)
+            return Result.success(domainList)
+        }
+        if (cachedFeatured.isNotEmpty()) {
+            return Result.success(cachedFeatured)
+        }
+        if (localFallback != null) {
+            return localFallback.getFeaturedCourses()
+        }
+        return remote.map { dtos -> dtos.map { it.toDomain() } }
+    }
+
+    override suspend fun getCoursesByCategory(categorySlug: String): Result<List<Course>> {
+        return getCourses().map { courses ->
+            courses.filter {
+                it.category.equals(categorySlug, ignoreCase = true) ||
+                it.id.equals(categorySlug, ignoreCase = true)
             }
-            .recoverCatching { error ->
-                if (cachedFeatured.isNotEmpty()) {
-                    cachedFeatured
-                } else {
-                    throw error
-                }
-            }
+        }
+    }
+
+    override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
+        val remote = runCatching {
+            ChatApiClient.getCourseDetail(courseId).getOrThrow()
+        }
+        val detail = remote.getOrNull()
+        if (remote.isSuccess && detail != null) {
+            return Result.success(detail.toDomain(courseId))
+        }
+        if (localFallback != null) {
+            return localFallback.getCourseDetail(courseId)
+        }
+        if (remote.isSuccess && detail == null) {
+            return Result.failure(NoSuchElementException("Course not found: $courseId"))
+        }
+        return remote.map { it?.toDomain(courseId) }
+    }
+
+    override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> {
+        progressStore.markLessonCompleted(courseId, lessonId, completed)
+        localFallback?.markLessonCompleted(courseId, lessonId, completed)
+        return Result.success(Unit)
+    }
+
+    override suspend fun isLessonCompleted(courseId: String, lessonId: String): Boolean {
+        return progressStore.isLessonCompleted(courseId, lessonId)
+    }
+
+    override suspend fun getCompletedLessonCount(courseId: String, lessonIds: Collection<String>): Int {
+        return progressStore.getCompletedLessonCount(courseId, lessonIds)
+    }
+
+    override suspend fun getCourseProgressPercentage(courseId: String, lessonIds: Collection<String>): Float {
+        return progressStore.getCourseProgressPercentage(courseId, lessonIds)
+    }
+
+    override suspend fun isCourseCompleted(courseId: String, lessonIds: Collection<String>): Boolean {
+        return progressStore.isCourseCompleted(courseId, lessonIds)
+    }
+
+    override suspend fun getCertificate(courseId: String): CourseCertificate? {
+        return progressStore.getCertificate(courseId)
+    }
+
+    override suspend fun getAllCertificates(): List<CourseCertificate> {
+        return progressStore.getAllCertificates()
+    }
+
+    override suspend fun issueCertificate(
+        courseId: String,
+        courseName: String,
+        learnerName: String,
+        totalLessons: Int
+    ): CourseCertificate? {
+        return progressStore.issueCertificate(courseId, courseName, learnerName, totalLessons)
+    }
+
+    override suspend fun addRevisionItem(item: RevisionItem): Result<Unit> {
+        progressStore.addRevisionItem(item)
+        localFallback?.addRevisionItem(item)
+        return Result.success(Unit)
+    }
+
+    override suspend fun removeRevisionItem(courseId: String, lessonId: String): Result<Unit> {
+        progressStore.removeRevisionItem(courseId, lessonId)
+        localFallback?.removeRevisionItem(courseId, lessonId)
+        return Result.success(Unit)
+    }
+
+    override suspend fun isMarkedForRevision(courseId: String, lessonId: String): Boolean {
+        return progressStore.isMarkedForRevision(courseId, lessonId)
+    }
+
+    override suspend fun getRevisionItems(): Result<List<RevisionItem>> {
+        return Result.success(progressStore.getRevisionItems())
     }
 
     companion object {

@@ -84,6 +84,12 @@ class LandingViewModel(
             )
 
             val courseList = courses.getOrNull().orEmpty()
+            val feats = featured.getOrNull().orEmpty()
+            val courseErr = if (courseList.isEmpty() && feats.isEmpty()) {
+                courses.exceptionOrNull() ?: featured.exceptionOrNull()
+            } else {
+                null
+            }
 
             loadedData = LandingUiState(
                 isLoading = false,
@@ -93,7 +99,7 @@ class LandingViewModel(
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
                 studyFocus = studyFocus.getOrNull(),
-                featuredCourses = featured.getOrNull().orEmpty(),
+                featuredCourses = feats,
                 exploreCourses = courseList,
                 hasMoreCourses = courseList.size >= 10,
                 errorMessage = run {
@@ -107,6 +113,32 @@ class LandingViewModel(
                         else -> "Unable to load learning data."
                     }
                 }
+            )
+            publishState()
+        }
+    }
+
+    fun retryCourses() {
+        viewModelScope.launch(coroutineContext) {
+            loadedData = loadedData.copy(isCoursesLoading = true, coursesError = null)
+            publishState()
+
+            val courses = courseRepository.getCourses(limit = 10, offset = 0)
+            val featured = courseRepository.getFeaturedCourses()
+            val explore = courses.getOrNull().orEmpty()
+            val feats = featured.getOrNull().orEmpty()
+            val courseErr = if (explore.isEmpty() && feats.isEmpty()) {
+                courses.exceptionOrNull() ?: featured.exceptionOrNull()
+            } else {
+                null
+            }
+
+            loadedData = loadedData.copy(
+                isCoursesLoading = false,
+                coursesError = courseErr?.let { "Courses require an internet connection." },
+                featuredCourses = feats,
+                exploreCourses = explore,
+                hasMoreCourses = explore.size >= 10
             )
             publishState()
         }

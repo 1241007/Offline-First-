@@ -12,6 +12,16 @@ import java.io.File
 
 class OnlineCourseRepositoryTest {
 
+    @org.junit.Before
+    fun setUp() {
+        ChatApiClient.customBaseUrl = "http://127.0.0.1:59999"
+    }
+
+    @org.junit.After
+    fun tearDown() {
+        ChatApiClient.customBaseUrl = null
+    }
+
     @Test
     fun onlineCourseRepositoryFailsWhenConfiguredWithoutFallback() = runBlocking {
         val repo = OnlineCourseRepository(localFallback = null)

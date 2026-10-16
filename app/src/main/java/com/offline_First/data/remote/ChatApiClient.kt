@@ -99,7 +99,6 @@ object ChatApiClient {
                 Pair(response.code, response.body?.string().orEmpty())
             }
         }
-        throw lastException ?: java.io.IOException("Unable to connect to $path")
     }
 
     private suspend fun post(path: String, bodyJson: String = ""): Pair<Int, String> =
