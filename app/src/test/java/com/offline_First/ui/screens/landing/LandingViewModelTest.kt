@@ -61,6 +61,37 @@ class LandingViewModelTest {
         assertEquals("Rohan", viewModel.uiState.value.greetingName)
     }
 
+    @Test
+    fun landingViewModelRefreshesCourseProgressOnUpdateWithoutLoading() = runBlocking {
+        val courseRepo = com.offline_First.data.local.LocalCourseRepository()
+        val viewModel = LandingViewModel(
+            profileRepository = TestProfileRepository(),
+            courseRepository = courseRepo,
+            learningRepository = BackendNotConfiguredRepositories(),
+            coroutineContext = Dispatchers.Unconfined
+        )
+
+        val initialState = viewModel.uiState.value
+        assertFalse(initialState.isLoading)
+        assertFalse(initialState.isCoursesLoading)
+        assertTrue(initialState.exploreCourses.isNotEmpty())
+
+        val pyBefore = initialState.exploreCourses.first { it.id == "c-py" }
+        assertEquals(0, pyBefore.completedLessons)
+        assertEquals(0f, pyBefore.progress)
+
+        // Simulate completing a lesson in Python course
+        courseRepo.markLessonCompleted("c-py", "les-py-101", true)
+
+        val updatedState = viewModel.uiState.value
+        assertFalse("isLoading must remain false during progress refresh", updatedState.isLoading)
+        assertFalse("isCoursesLoading must remain false during progress refresh", updatedState.isCoursesLoading)
+
+        val pyAfter = updatedState.exploreCourses.first { it.id == "c-py" }
+        assertEquals(1, pyAfter.completedLessons)
+        assertTrue("Course progress must be greater than 0", pyAfter.progress > 0f)
+    }
+
     private class TestProfileRepository : ProfileRepository {
         private val profile = MutableStateFlow<UserProfile?>(null)
 

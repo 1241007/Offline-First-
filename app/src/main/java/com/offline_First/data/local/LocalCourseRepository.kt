@@ -11,11 +11,11 @@ import com.offline_First.domain.model.LessonItem
 import com.offline_First.domain.model.QuizQuestion
 import com.offline_First.domain.model.RevisionItem
 import java.io.File
+import kotlinx.coroutines.flow.Flow
 
 class LocalCourseRepository(
     val progressStore: CourseProgressStore = CourseProgressStore()
 ) : CourseRepository {
-
 
     private val courseDetails: List<CourseDetail> = listOf(
         // 1. C++ Programming
@@ -834,9 +834,25 @@ class LocalCourseRepository(
     private val allCourses: List<Course> =
         courseDetails.map { it.toCourse() }
 
+    init {
+        // Register local courses for identifier normalization
+        courseDetails.forEach { CourseIdNormalizer.registerLocalCourse(it) }
+    }
+
+    private fun Course.withCurrentProgress(): Course {
+        val completed = progressStore.getCompletedLessonCount(id)
+        val prog = if (totalLessons > 0) (completed.toFloat() / totalLessons.toFloat()).coerceIn(0f, 1f) else 0f
+        return copy(completedLessons = completed, progress = prog)
+    }
+
     fun bindStorageFile(file: File) {
         progressStore.bindStorageFile(file)
     }
+
+    override fun observeProgressUpdates(): Flow<Long> = progressStore.progressUpdates
+
+    override suspend fun getCompletedLessonCount(courseId: String): Int =
+        progressStore.getCompletedLessonCount(courseId)
 
     override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
         val list = if (limit != null) {
@@ -846,26 +862,30 @@ class LocalCourseRepository(
         } else {
             allCourses
         }
-        return Result.success(list)
+        return Result.success(list.map { it.withCurrentProgress() })
     }
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> {
         // Feature Python, DSA, and Full Stack by ID
         val featuredIds = setOf("c-py", "c-dsa", "c-fs")
         val featured = allCourses.filter { it.id in featuredIds }
-        return Result.success(featured)
+        return Result.success(featured.map { it.withCurrentProgress() })
     }
 
     override suspend fun getCoursesByCategory(categorySlug: String): Result<List<Course>> {
         val filtered = allCourses.filter {
             it.category.equals(categorySlug, ignoreCase = true) ||
-            it.id.equals(categorySlug, ignoreCase = true)
+            it.id.equals(categorySlug, ignoreCase = true) ||
+            CourseIdNormalizer.isSameCourse(it.id, categorySlug)
         }
-        return Result.success(filtered)
+        return Result.success(filtered.map { it.withCurrentProgress() })
     }
 
     override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
-        val base = courseDetailsMap[courseId] ?: return Result.success(null)
+        val resolvedId = CourseIdNormalizer.resolveToLocalId(courseId) ?: courseId
+        val base = courseDetailsMap[resolvedId]
+            ?: courseDetails.firstOrNull { CourseIdNormalizer.isSameCourse(it.id, courseId) }
+            ?: return Result.success(null)
         val updatedModules = base.modules.map { module ->
             module.copy(
                 lessons = module.lessons.map { lesson ->

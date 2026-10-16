@@ -55,6 +55,47 @@ class LandingViewModel(
     init {
         observeProfileChanges()
         loadInitialData()
+        observeProgressUpdates()
+    }
+
+    private fun observeProgressUpdates() {
+        viewModelScope.launch(coroutineContext) {
+            courseRepository.observeProgressUpdates().collect { version ->
+                if (version > 0L) {
+                    refreshCourseProgress()
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshCourseProgress() {
+        if (loadedData.exploreCourses.isEmpty() && loadedData.featuredCourses.isEmpty()) return
+
+        val updatedExplore = loadedData.exploreCourses.map { course ->
+            val completed = courseRepository.getCompletedLessonCount(course.id)
+            val progress = if (course.totalLessons > 0) {
+                (completed.toFloat() / course.totalLessons.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            course.copy(completedLessons = completed, progress = progress)
+        }
+
+        val updatedFeatured = loadedData.featuredCourses.map { course ->
+            val completed = courseRepository.getCompletedLessonCount(course.id)
+            val progress = if (course.totalLessons > 0) {
+                (completed.toFloat() / course.totalLessons.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            course.copy(completedLessons = completed, progress = progress)
+        }
+
+        loadedData = loadedData.copy(
+            exploreCourses = updatedExplore,
+            featuredCourses = updatedFeatured
+        )
+        publishState()
     }
 
     private fun loadInitialData() {

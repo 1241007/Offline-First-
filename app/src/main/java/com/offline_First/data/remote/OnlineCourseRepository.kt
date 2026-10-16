@@ -2,6 +2,7 @@ package com.offline_First.data.remote
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.offline_First.data.local.CourseIdNormalizer
 import com.offline_First.data.local.CourseProgressStore
 import com.offline_First.data.repository.CourseRepository
 import com.offline_First.domain.model.Course
@@ -14,6 +15,7 @@ import com.offline_First.domain.model.RevisionItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -32,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
 class OnlineCourseRepository(
     val context: Context? = null,
     val localFallback: CourseRepository? = null,
-    val progressStore: CourseProgressStore = CourseProgressStore()
+    val progressStore: CourseProgressStore = (localFallback as? com.offline_First.data.local.LocalCourseRepository)?.progressStore ?: CourseProgressStore()
 ) : CourseRepository {
 
     private val prefs: SharedPreferences? = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -57,6 +59,7 @@ class OnlineCourseRepository(
     }
 
     private fun CourseDto.toDomain(): Course {
+        CourseIdNormalizer.registerRemoteCourse(id, slug, name)
         val completed = progressStore.getCompletedLessonCount(id)
         val prog = if (totalLessons > 0) (completed.toFloat() / totalLessons.toFloat()).coerceIn(0f, 1f) else 0f
         return Course(
@@ -77,6 +80,7 @@ class OnlineCourseRepository(
 
     private fun CourseDetailDto.toDomain(requestedCourseId: String): CourseDetail {
         val domainId = if (id.isNotBlank()) id else requestedCourseId
+        CourseIdNormalizer.registerRemoteCourse(domainId, slug, name)
         return CourseDetail(
             id = domainId,
             name = name,
@@ -127,7 +131,9 @@ class OnlineCourseRepository(
         val sp = prefs ?: return emptyList()
         val raw = sp.getString(KEY_COURSES, null) ?: return emptyList()
         return runCatching {
-            json.decodeFromString<List<CourseDto>>(raw).map { it.toDomain() }
+            val dtos = json.decodeFromString<List<CourseDto>>(raw)
+            dtos.forEach { CourseIdNormalizer.registerRemoteCourse(it.id, it.slug, it.name) }
+            dtos.map { it.toDomain() }
         }.getOrDefault(emptyList())
     }
 
@@ -135,7 +141,9 @@ class OnlineCourseRepository(
         val sp = prefs ?: return emptyList()
         val raw = sp.getString(KEY_FEATURED, null) ?: return emptyList()
         return runCatching {
-            json.decodeFromString<List<CourseDto>>(raw).map { it.toDomain() }
+            val dtos = json.decodeFromString<List<CourseDto>>(raw)
+            dtos.forEach { CourseIdNormalizer.registerRemoteCourse(it.id, it.slug, it.name) }
+            dtos.map { it.toDomain() }
         }.getOrDefault(emptyList())
     }
 
@@ -258,29 +266,37 @@ class OnlineCourseRepository(
     }
 
     override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+
         // 1. Check in-memory cache
-        val cached = detailCache[courseId]
-        if (cached != null) {
-            refreshCourseDetailInBackground(courseId)
-            return Result.success(cached.withCurrentProgress())
+        for (alias in aliases) {
+            val cached = detailCache[alias]
+            if (cached != null) {
+                refreshCourseDetailInBackground(courseId)
+                return Result.success(cached.withCurrentProgress())
+            }
         }
 
         // 2. Check persisted cache
-        val persisted = loadPersistedCourseDetail(courseId)
-        if (persisted != null) {
-            detailCache[courseId] = persisted
-            refreshCourseDetailInBackground(courseId)
-            return Result.success(persisted.withCurrentProgress())
+        for (alias in aliases) {
+            val persisted = loadPersistedCourseDetail(alias)
+            if (persisted != null) {
+                detailCache[courseId] = persisted
+                refreshCourseDetailInBackground(courseId)
+                return Result.success(persisted.withCurrentProgress())
+            }
         }
 
         // 3. Check local fallback immediately if available
         val fallback = localFallback
         if (fallback != null) {
-            val localResult = runCatching { fallback.getCourseDetail(courseId).getOrNull() }.getOrNull()
-            if (localResult != null) {
-                detailCache[courseId] = localResult
-                refreshCourseDetailInBackground(courseId)
-                return Result.success(localResult.withCurrentProgress())
+            for (alias in aliases) {
+                val localResult = runCatching { fallback.getCourseDetail(alias).getOrNull() }.getOrNull()
+                if (localResult != null) {
+                    detailCache[courseId] = localResult
+                    refreshCourseDetailInBackground(courseId)
+                    return Result.success(localResult.withCurrentProgress())
+                }
             }
         }
 
@@ -296,13 +312,40 @@ class OnlineCourseRepository(
             return Result.success(domain.withCurrentProgress())
         }
         if (fallback != null) {
-            return fallback.getCourseDetail(courseId).map { it?.withCurrentProgress() }
+            for (alias in aliases) {
+                val fbResult = fallback.getCourseDetail(alias)
+                if (fbResult.isSuccess && fbResult.getOrNull() != null) {
+                    return fbResult.map { it?.withCurrentProgress() }
+                }
+            }
         }
         return remote.map { it?.toDomain(courseId)?.withCurrentProgress() }
     }
 
+    override fun observeProgressUpdates(): Flow<Long> = progressStore.progressUpdates
+
+    override suspend fun getCompletedLessonCount(courseId: String): Int =
+        progressStore.getCompletedLessonCount(courseId)
+
     override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> {
         progressStore.markLessonCompleted(courseId, lessonId, completed)
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        for (alias in aliases) {
+            val cached = detailCache[alias]
+            if (cached != null) {
+                val updated = cached.copy(
+                    modules = cached.modules.map { m ->
+                        m.copy(
+                            lessons = m.lessons.map { l ->
+                                if (l.id == lessonId) l.copy(isCompleted = completed)
+                                else l.copy(isCompleted = progressStore.isLessonCompleted(alias, l.id))
+                            }
+                        )
+                    }
+                )
+                detailCache[alias] = updated
+            }
+        }
         localFallback?.markLessonCompleted(courseId, lessonId, completed)
         return Result.success(Unit)
     }
