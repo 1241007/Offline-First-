@@ -21,7 +21,7 @@ class CourseService:
     ) -> List[CourseListResponse]:
         """Get courses with optional filtering and pagination"""
         courses = await self.repo.get_all_courses(
-            featured_only=featured or False,
+            featured=featured,
             category_slug=category,
             limit=limit,
             offset=offset

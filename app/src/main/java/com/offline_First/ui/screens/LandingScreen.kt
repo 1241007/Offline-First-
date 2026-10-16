@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.AlertDialog
@@ -1837,6 +1838,9 @@ private fun GeneralHomeContent(
                 }
             }
             uiState.coursesError != null -> {
+                val isNetworkErr = uiState.coursesError.contains("internet", ignoreCase = true) ||
+                    uiState.coursesError.contains("offline", ignoreCase = true) ||
+                    uiState.coursesError.contains("connect", ignoreCase = true)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1853,20 +1857,24 @@ private fun GeneralHomeContent(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CloudOff,
+                            imageVector = if (isNetworkErr) Icons.Default.CloudOff else Icons.Default.Info,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(36.dp)
                         )
                         Text(
-                            text = "Courses require an internet connection.",
+                            text = if (isNetworkErr) "Courses require an internet connection." else "Course Service Error",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Text(
-                            text = "Connect to the internet to explore interactive lessons, syllabus, and resources.",
+                            text = if (isNetworkErr) {
+                                "Connect to the internet to explore interactive lessons, syllabus, and resources."
+                            } else {
+                                uiState.coursesError
+                            },
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

@@ -1067,7 +1067,7 @@ fun RoadmapTopTabs(
     onTabSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val tabs = listOf("Roadmaps", "Lesson Packs", "Project Ideas")
+    val tabs = listOf("My Roadmaps", "Roadmaps", "Lesson Packs", "Project Ideas")
 
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -1076,6 +1076,7 @@ fun RoadmapTopTabs(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically

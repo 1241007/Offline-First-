@@ -54,6 +54,7 @@ async def setup_learner_data(db_session: AsyncSession):
     category = CourseCategory(
         id="cat-1",
         name="Computer Science",
+        slug="computer-science",
         description="Core CS",
         display_order=1,
     )

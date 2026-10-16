@@ -62,6 +62,10 @@ fun RoadmapScreen(
         viewModel.navigateBackInRoadmap()
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.loadMyPersonalizedRoadmaps()
+    }
+
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -252,6 +256,121 @@ fun RoadmapScreen(
                     }
 
                     when (uiState.roadmapMainTab) {
+                        "My Roadmaps" -> {
+                            // Dashboard Overview Card
+                            item(key = "learning-overview-stats") {
+                                Card(
+                                    shape = RoundedCornerShape(22.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(18.dp),
+                                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(roadmapPrimary.copy(alpha = 0.12f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Default.School, contentDescription = null, tint = roadmapPrimary, modifier = Modifier.size(22.dp))
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Learning Dashboard",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = if (totalRoadmaps > 0) "$activeRoadmapsCount active roadmap${if (activeRoadmapsCount == 1) "" else "s"} in progress" else "Start your first personalized learning roadmap",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        if (totalRoadmaps > 0) {
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                StatItem(label = "Active Plans", value = "$activeRoadmapsCount", color = roadmapPrimary)
+                                                StatItem(label = "Completed", value = "$completedRoadmapsCount", color = EduNovaSuccess)
+                                                StatItem(label = "Avg Progress", value = "$overallProgressAvg%", color = EduNovaAccent)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Tabs / Filters
+                            item(key = "dashboard-filter-tabs") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val filterTabs = listOf("All", "In Progress", "Completed")
+                                    filterTabs.forEach { tab ->
+                                        EduNovaFilterChip(
+                                            text = if (tab == "All") "All (${personalizedRoadmaps.size})" else tab,
+                                            selected = uiState.dashboardTab == tab,
+                                            onClick = { viewModel.setDashboardTab(tab) },
+                                            selectedContainerColor = roadmapPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Personalized Roadmaps Section
+                            if (filteredPersonalized.isEmpty()) {
+                                item(key = "empty-personalized-roadmaps") {
+                                    EmptyRoadmapsCard(
+                                        tab = uiState.dashboardTab,
+                                        roadmapPrimary = roadmapPrimary,
+                                        onCreateNew = {
+                                            viewModel.startNewAssessment()
+                                            onBuildRoadmap()
+                                        }
+                                    )
+                                }
+                            } else {
+                                items(
+                                    items = filteredPersonalized,
+                                    key = { "pers_${it.id}" }
+                                ) { roadmap ->
+                                    val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
+                                    val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
+
+                                    PersonalizedRoadmapCard(
+                                        roadmap = roadmap,
+                                        progress = progress,
+                                        nextMilestone = nextMilestone,
+                                        roadmapPrimary = roadmapPrimary,
+                                        onContinueLearning = {
+                                            viewModel.selectPersonalizedRoadmap(roadmap)
+                                            selectedPersonalizedRoadmap = roadmap
+                                        },
+                                        onRename = {
+                                            roadmapToRename = roadmap
+                                            renameDraftTitle = roadmap.title
+                                        },
+                                        onDelete = {
+                                            roadmapToDelete = roadmap
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
                         "Roadmaps" -> {
                             // "Learn with AI" card (matching Screenshot 2)
                             item(key = "learn-with-ai-card") {
@@ -263,12 +382,58 @@ fun RoadmapScreen(
                                 )
                             }
 
+                            // Prominently show user's personalized roadmaps if any exist
+                            if (personalizedRoadmaps.isNotEmpty()) {
+                                item(key = "my-custom-roadmaps-header") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 12.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "My Custom Roadmaps",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        EduNovaBadge("${personalizedRoadmaps.size} Active")
+                                    }
+                                }
+
+                                items(
+                                    items = personalizedRoadmaps,
+                                    key = { "rec_${it.id}" }
+                                ) { roadmap ->
+                                    val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
+                                    val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
+
+                                    PersonalizedRoadmapCard(
+                                        roadmap = roadmap,
+                                        progress = progress,
+                                        nextMilestone = nextMilestone,
+                                        roadmapPrimary = roadmapPrimary,
+                                        onContinueLearning = {
+                                            viewModel.selectPersonalizedRoadmap(roadmap)
+                                            selectedPersonalizedRoadmap = roadmap
+                                        },
+                                        onRename = {
+                                            roadmapToRename = roadmap
+                                            renameDraftTitle = roadmap.title
+                                        },
+                                        onDelete = {
+                                            roadmapToDelete = roadmap
+                                        }
+                                    )
+                                }
+                            }
+
                             // 1. Skill-based Section Header
                             item(key = "skill-based-header") {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 4.dp, bottom = 2.dp),
+                                        .padding(top = 12.dp, bottom = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
@@ -356,52 +521,6 @@ fun RoadmapScreen(
                                     if (pair.size == 1) {
                                         Spacer(modifier = Modifier.weight(1f))
                                     }
-                                }
-                            }
-
-                            // Preserve user's personalized roadmaps if any exist
-                            if (personalizedRoadmaps.isNotEmpty()) {
-                                item(key = "my-custom-roadmaps-header") {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 16.dp, bottom = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "My Custom Roadmaps",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        EduNovaBadge("${personalizedRoadmaps.size} Active")
-                                    }
-                                }
-
-                                items(
-                                    items = personalizedRoadmaps,
-                                    key = { it.id }
-                                ) { roadmap ->
-                                    val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
-                                    val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
-
-                                    PersonalizedRoadmapCard(
-                                        roadmap = roadmap,
-                                        progress = progress,
-                                        nextMilestone = nextMilestone,
-                                        roadmapPrimary = roadmapPrimary,
-                                        onContinueLearning = {
-                                            viewModel.selectPersonalizedRoadmap(roadmap)
-                                            selectedPersonalizedRoadmap = roadmap
-                                        },
-                                        onRename = {
-                                            roadmapToRename = roadmap
-                                            renameDraftTitle = roadmap.title
-                                        },
-                                        onDelete = {
-                                            roadmapToDelete = roadmap
-                                        }
-                                    )
                                 }
                             }
                         }

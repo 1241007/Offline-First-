@@ -94,7 +94,7 @@ class LandingViewModel(
             loadedData = LandingUiState(
                 isLoading = false,
                 isCoursesLoading = false,
-                coursesError = courseErr?.let { "Courses require an internet connection." },
+                coursesError = formatCourseError(courseErr),
                 continueLearning = continueLearning.getOrNull(),
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
@@ -118,6 +118,37 @@ class LandingViewModel(
         }
     }
 
+    private fun formatCourseError(throwable: Throwable?): String? {
+        if (throwable == null) return null
+        val msg = throwable.localizedMessage.orEmpty()
+        return when {
+            throwable is java.net.UnknownHostException ||
+            throwable is java.net.ConnectException ||
+            throwable is java.net.SocketTimeoutException ||
+            msg.contains("not connected", ignoreCase = true) ||
+            msg.contains("network", ignoreCase = true) ||
+            msg.contains("resolve host", ignoreCase = true) ->
+                "Courses require an internet connection."
+
+            msg.contains("HTTP 500", ignoreCase = true) ||
+            msg.contains("INTERNAL_SERVER_ERROR", ignoreCase = true) ||
+            msg.contains("500 Internal", ignoreCase = true) ->
+                "EduNova course servers are temporarily unavailable (HTTP 500). Please try again."
+
+            msg.contains("HTTP 401", ignoreCase = true) || msg.contains("HTTP 403", ignoreCase = true) ->
+                "Authentication required to load courses. Please log in."
+
+            msg.startsWith("HTTP 4") ->
+                "Course catalog is currently unavailable. Please check back later."
+
+            msg.startsWith("HTTP 5") ->
+                "EduNova course service encountered an error. Please try again later."
+
+            msg.isNotBlank() -> msg
+            else -> "Unable to load courses. Please try again."
+        }
+    }
+
     fun retryCourses() {
         viewModelScope.launch(coroutineContext) {
             loadedData = loadedData.copy(isCoursesLoading = true, coursesError = null)
@@ -135,7 +166,7 @@ class LandingViewModel(
 
             loadedData = loadedData.copy(
                 isCoursesLoading = false,
-                coursesError = courseErr?.let { "Courses require an internet connection." },
+                coursesError = formatCourseError(courseErr),
                 featuredCourses = feats,
                 exploreCourses = explore,
                 hasMoreCourses = explore.size >= 10

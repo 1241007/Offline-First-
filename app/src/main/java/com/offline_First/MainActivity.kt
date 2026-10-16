@@ -179,7 +179,8 @@ class MainActivity : ComponentActivity() {
                         onBuildRoadmap = { pushDestination(AppDestination.ROADMAP_BUILDER) }
                     )
                     AppDestination.ROADMAP_BUILDER -> RoadmapBuilderScreen(
-                        onBack = { navigateBack() }
+                        onBack = { navigateBack() },
+                        onStartLearning = { navigateBack() }
                     )
                     AppDestination.MY_LEARNING -> MyLearningScreen(
                         onBack = navigateBack
