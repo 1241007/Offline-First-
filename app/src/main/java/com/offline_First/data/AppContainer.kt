@@ -14,6 +14,8 @@ import com.offline_First.data.remote.ChatApiClient
 import com.offline_First.data.remote.OnlineAIRepository
 import com.offline_First.data.remote.OnlineCourseRepository
 import com.offline_First.data.remote.OnlineRoadmapRepository
+import com.offline_First.data.remote.SupabaseAuthRepository
+import com.offline_First.BuildConfig
 import com.offline_First.data.repository.AIRepository
 import com.offline_First.data.repository.AuthRepository
 import com.offline_First.data.repository.BackendNotConfiguredRepositories
@@ -26,6 +28,10 @@ import com.offline_First.data.repository.RoadmapRepository
 import java.io.File
 
 object AppContainer {
+    val localCourseRepository = LocalCourseRepository()
+    val localLearningRepository = LocalLearningRepository()
+    val localProfileRepository = LocalProfileRepository()
+
     private val defaultRepositories = BackendNotConfiguredRepositories()
     private var aiRepoOverride: com.offline_First.data.repository.AIRepository? = null
     private var authRepoOverride: SupabaseAuthRepository? = null

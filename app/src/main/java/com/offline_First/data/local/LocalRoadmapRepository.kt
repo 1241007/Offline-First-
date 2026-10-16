@@ -1,15 +1,12 @@
 package com.offline_First.data.local
 
 import com.offline_First.data.repository.RoadmapRepository
-<<<<<<< HEAD
 import com.offline_First.domain.model.AssessmentSessionState
 import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapAccentTheme
 import com.offline_First.domain.model.RoadmapOption
-=======
-import com.offline_First.domain.model.*
->>>>>>> origin/master
+import com.offline_First.domain.model.TopicLearningContent
 import kotlinx.coroutines.delay
 
 class LocalRoadmapRepository : RoadmapRepository {
@@ -158,7 +155,10 @@ class LocalRoadmapRepository : RoadmapRepository {
         return categories
     }
 
-    override suspend fun startPersonalizedAssessment(): Result<AssessmentSessionState> =
+    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
+        Result.success(Pair(true, subject.trim()))
+
+    override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> =
         Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
 
     override suspend fun getActiveAssessmentSession(): Result<AssessmentSessionState?> =
@@ -216,6 +216,12 @@ class LocalRoadmapRepository : RoadmapRepository {
 
     override suspend fun syncPendingRoadmaps(): Result<Unit> =
         Result.success(Unit)
+
+    override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> =
+        Result.failure(UnsupportedOperationException("Topic content not available locally"))
+
+    override suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean): Result<PersonalizedRoadmapDetail> =
+        Result.failure(UnsupportedOperationException("Topic completion not available locally"))
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

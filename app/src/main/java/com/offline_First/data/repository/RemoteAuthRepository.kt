@@ -14,6 +14,7 @@ import com.offline_First.data.remote.RegisterRequestDto
 import com.offline_First.data.remote.UserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.Request
@@ -28,6 +29,8 @@ class RemoteAuthRepository(
 ) : AuthRepository {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    override fun observeSession(): Flow<Boolean> = sessionManager.authState.map { it is AuthState.Authenticated }
 
     override suspend fun signIn(contact: String, password: String): Result<Unit> =
         withContext(Dispatchers.IO) {

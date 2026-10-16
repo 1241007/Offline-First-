@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 val profile by profileRepository.observeUserProfile().collectAsState(
                     initial = com.offline_First.data.local.LocalProfileRepository.defaultProfile()
                 )
+                val personalizedRoadmapViewModel: PersonalizedRoadmapViewModel = viewModel()
 
                 // Restore session on startup
                 LaunchedEffect(Unit) {

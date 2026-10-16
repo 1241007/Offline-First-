@@ -26,3 +26,11 @@ internal fun validateLoginEmail(value: String): String? {
         else -> validateEmail(trimmed)
     }
 }
+
+internal fun validateLoginContact(value: String): String? {
+    val trimmed = value.trim()
+    return when {
+        trimmed.isBlank() -> "Please enter your email or mobile number."
+        else -> null
+    }
+}

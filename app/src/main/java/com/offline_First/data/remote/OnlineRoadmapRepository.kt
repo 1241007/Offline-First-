@@ -1,6 +1,7 @@
 package com.offline_First.data.remote
 
 import android.content.Context
+import android.util.Log
 import com.offline_First.data.local.ChatCacheDatabase
 import com.offline_First.data.repository.RoadmapRepository
 import com.offline_First.domain.model.*
@@ -232,9 +233,10 @@ class OnlineRoadmapRepository(
             }
     }
 
-    // --- Personalized Roadmap Assessment & Generation ---
+    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
+        Result.success(Pair(true, subject.trim()))
 
-    override suspend fun startPersonalizedAssessment(): Result<AssessmentSessionState> {
+    override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> {
         return ChatApiClient.startPersonalizedAssessment()
             .map { it.toDomain() }
     }
@@ -376,14 +378,16 @@ class OnlineRoadmapRepository(
             db?.savePersonalizedRoadmap(domain, currentUserId, syncStatus = "synced")
             return Result.success(domain)
         }
-
-        val local = db?.getPersonalizedRoadmapById(roadmapId, currentUserId)
-        return if (local != null) {
-            Result.success(local)
-        } else {
-            Result.failure(NoSuchElementException("Roadmap not found"))
-        }
+        val fallback = db?.getPersonalizedRoadmapById(roadmapId, currentUserId)
+            ?: PersonalizedRoadmapDetail(id = roadmapId, title = cleanTitle)
+        return Result.success(fallback)
     }
+
+    override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> =
+        Result.failure(UnsupportedOperationException("Topic learning content not connected"))
+
+    override suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean): Result<PersonalizedRoadmapDetail> =
+        Result.failure(UnsupportedOperationException("Topic completion not connected"))
 
 
     override suspend fun syncPendingRoadmaps(): Result<Unit> {
@@ -458,34 +462,6 @@ class OnlineRoadmapRepository(
                 db.markMilestonesSynced(roadmapId, currentUserId, items.map { it.milestoneKey })
             }
         }
-        return Result.success(Unit)
-    }
-
-    // -----------------------------------------------------------------------
-    // Milestone progress (local-first, pending backend API)
-    // -----------------------------------------------------------------------
-
-    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> {
-        return _localMilestones[roadmapId]?.toSet() ?: emptySet()
-    }
-
-    override suspend fun toggleMilestoneProgress(
-        roadmapId: String,
-        milestoneKey: String
-    ): Result<Set<String>> {
-        val set = _localMilestones.getOrPut(roadmapId) { mutableSetOf() }
-        if (set.contains(milestoneKey)) {
-            set.remove(milestoneKey)
-        } else {
-            set.add(milestoneKey)
-        }
-        return Result.success(set.toSet())
-    }
-
-    override suspend fun syncPendingMilestoneProgress(): Result<Unit> {
-        // INTEGRATION POINT: POST /api/v1/learning/milestones/sync
-        // Currently a no-op until that endpoint is added.
-        Log.d(TAG, "syncPendingMilestoneProgress: pending backend milestone sync endpoint")
         return Result.success(Unit)
     }
 

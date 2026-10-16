@@ -550,9 +550,6 @@ fun RoadmapScreen(
                                 }
                             }
                         }
-                    }
-                }
-            }
 
                         "Lesson Packs" -> {
                             item(key = "lesson-packs-header") {

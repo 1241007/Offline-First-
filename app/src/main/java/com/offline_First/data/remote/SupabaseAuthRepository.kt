@@ -18,6 +18,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -40,9 +41,18 @@ class SupabaseAuthRepository(
 
     override fun observeSession(): Flow<Boolean> = authenticated.asStateFlow()
 
-    override suspend fun restoreSession(): Result<Unit> = try {
+    override fun observeAuthState(): Flow<com.offline_First.data.AuthState> =
+        authenticated.map { if (it) com.offline_First.data.AuthState.Authenticated("supabase_user", "user@example.com", "User") else com.offline_First.data.AuthState.Unauthenticated }
+
+    override suspend fun fetchMe(): Result<UserDto> = Result.failure(UnsupportedOperationException())
+
+    override suspend fun restoreSession(): Result<Boolean> = try {
         withContext(Dispatchers.IO) {
-            val refreshToken = tokenStore.read() ?: return@withContext
+            val refreshToken = tokenStore.read()
+            if (refreshToken == null) {
+                authenticated.value = false
+                return@withContext Result.success(false)
+            }
             authenticated.value = true
             try {
                 val response = post(
@@ -50,17 +60,18 @@ class SupabaseAuthRepository(
                     body = buildJsonObject { put("refresh_token", refreshToken) }
                 )
                 storeSession(response, requireAccessToken = true)
+                Result.success(true)
             } catch (error: SupabaseAuthException) {
                 if (error.statusCode in 400..403) {
                     accessToken = null
                     authenticated.value = false
                     tokenStore.clear()
+                    Result.success(false)
                 } else {
                     throw error
                 }
             }
         }
-        Result.success(Unit)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -106,7 +117,7 @@ class SupabaseAuthRepository(
             )
         }
 
-    override suspend fun signOut(): Result<Unit> {
+    override suspend fun logout(refreshToken: String?): Result<Unit> {
         var remoteFailure: Exception? = null
         var cleanupFailure: Exception? = null
         try {

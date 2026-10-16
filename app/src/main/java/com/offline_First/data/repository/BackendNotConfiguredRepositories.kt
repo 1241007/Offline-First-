@@ -12,6 +12,7 @@ import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.LearningCourse
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RevisionItem
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.StudyFocusItem
@@ -39,8 +40,6 @@ class BackendNotConfiguredRepositories :
     private val authSession = MutableStateFlow(false)
 
     override fun observeSession(): Flow<Boolean> = authSession.asStateFlow()
-
-    override suspend fun restoreSession(): Result<Unit> = Result.success(Unit)
 
     override fun observeConnectionMode(): Flow<ConnectionMode> = connectionMode.asStateFlow()
 
@@ -206,74 +205,6 @@ class BackendNotConfiguredRepositories :
 
     override suspend fun getCategories(): List<String> = emptyList()
 
-    override suspend fun startPersonalizedAssessment(): Result<com.offline_First.domain.model.AssessmentSessionState> =
-        unavailable("Personalized roadmap assessment")
-
-    override suspend fun getActiveAssessmentSession(): Result<com.offline_First.domain.model.AssessmentSessionState?> =
-        unavailable("Active assessment session")
-
-    override suspend fun getAssessmentSession(sessionId: String): Result<com.offline_First.domain.model.AssessmentSessionState> =
-        unavailable("Assessment session")
-
-    override suspend fun submitAssessmentAnswer(
-        sessionId: String,
-        answer: String,
-        quizSelectedIndex: Int?
-    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
-        unavailable("Assessment message")
-
-    override suspend fun correctProfileField(
-        sessionId: String,
-        field: String,
-        value: String
-    ): Result<com.offline_First.domain.model.AssessmentSessionState> =
-        unavailable("Profile field correction")
-
-    override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
-        unavailable("Personalized roadmap generation")
-
-    override suspend fun getMyPersonalizedRoadmaps(
-        limit: Int?,
-        offset: Int
-    ): Result<List<com.offline_First.domain.model.PersonalizedRoadmapDetail>> =
-        unavailable("User personalized roadmaps")
-
-    override fun getMyPersonalizedRoadmapsCached(): List<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
-        emptyList()
-
-    override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
-        unavailable("Personalized roadmap detail")
-
-    override suspend fun savePersonalizedRoadmap(roadmap: com.offline_First.domain.model.PersonalizedRoadmapDetail): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
-        unavailable("Save personalized roadmap")
-
-    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
-        unavailable("Delete personalized roadmap")
-
-    override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<com.offline_First.domain.model.PersonalizedRoadmapDetail> =
-        unavailable("Rename personalized roadmap")
-
-    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
-
-
-    override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
-        unavailable("Milestone sync")
-
-    override suspend fun syncPendingMilestoneProgress(): Result<Unit> = Result.success(Unit)
-
-    override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
-
-    override suspend fun generatePersonalizedRoadmap(
-        goal: String,
-        level: String,
-        studyTime: String,
-        interest: String
-    ): Result<GeneratedRoadmapPreview> = unavailable("Personalized roadmap (legacy)")
-
-    // -----------------------------------------------------------------------
-    // RoadmapRepository — diagnostic assessment
-    // -----------------------------------------------------------------------
-
     override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
         unavailable("Subject validation")
 
@@ -297,10 +228,6 @@ class BackendNotConfiguredRepositories :
         field: String,
         value: String
     ): Result<AssessmentSessionState> = unavailable("Assessment profile correction")
-
-    // -----------------------------------------------------------------------
-    // RoadmapRepository — personalized roadmap generation & persistence
-    // -----------------------------------------------------------------------
 
     override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail> =
         unavailable("Personalized roadmap generation")
@@ -326,6 +253,13 @@ class BackendNotConfiguredRepositories :
         newTitle: String
     ): Result<PersonalizedRoadmapDetail> = unavailable("Rename personalized roadmap")
 
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
+
+    override suspend fun toggleMilestoneProgress(roadmapId: String, milestoneKey: String): Result<Set<String>> =
+        unavailable("Milestone sync")
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> = Result.success(Unit)
+
     override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
 
     override suspend fun getTopicLearningContent(
@@ -339,6 +273,13 @@ class BackendNotConfiguredRepositories :
         topicId: String,
         quizPassed: Boolean
     ): Result<PersonalizedRoadmapDetail> = unavailable("Topic completion")
+
+    override suspend fun generatePersonalizedRoadmap(
+        goal: String,
+        level: String,
+        studyTime: String,
+        interest: String
+    ): Result<GeneratedRoadmapPreview> = unavailable("Personalized roadmap (legacy)")
 
     // -----------------------------------------------------------------------
     // Internal helper

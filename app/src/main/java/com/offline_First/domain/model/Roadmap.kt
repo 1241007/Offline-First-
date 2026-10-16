@@ -45,8 +45,8 @@ data class AssessmentMessage(
 )
 
 data class AssessmentSessionState(
-    val id: String,
-    val state: String,
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val state: String = "in_progress",
     val currentStepId: String? = null,
     val completedSteps: List<String> = emptyList(),
     val goal: String? = null,
@@ -59,7 +59,26 @@ data class AssessmentSessionState(
     val completenessPercentage: Int = 0,
     val summary: Map<String, Any?>? = null,
     val roadmapId: String? = null,
-    val messages: List<AssessmentMessage> = emptyList()
+    val messages: List<AssessmentMessage> = emptyList(),
+
+    // Extra fields for adaptive assessment
+    val sessionId: String = id,
+    val domain: String = "Python",
+    val phase: AssessmentPhase = AssessmentPhase.PROFILE_COLLECTION,
+    val profileGoal: String = "",
+    val profileLevel: String = "",
+    val profileStudyHoursPerWeek: Int = 0,
+    val profileTimelineWeeks: Int? = null,
+    val currentQuestion: AssessmentQuestion? = null,
+    val questionNumber: Int = 0,
+    val totalQuestions: Int = 0,
+    val masteryMap: Map<String, TopicMasteryState> = emptyMap(),
+    val isComplete: Boolean = false,
+    val generatedRoadmapId: String? = null,
+    val lastAnswerCorrect: Boolean? = null,
+    val lastAnswerExplanation: String = "",
+    val correctionPrompt: CorrectionPrompt? = null,
+    val errorMessage: String? = null
 )
 
 data class PersonalizedTask(
@@ -120,14 +139,14 @@ data class AssessmentSummary(
 )
 
 data class PersonalizedRoadmapDetail(
-    val id: String,
-    val title: String,
-    val goal: String,
-    val category: String,
-    val level: String,
-    val duration: String,
-    val stages: Int,
-    val icon: String,
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String = "My Personalized Roadmap",
+    val goal: String = "",
+    val category: String = "",
+    val level: String = "",
+    val duration: String = "",
+    val stages: Int = 0,
+    val icon: String = "",
     val accentTheme: RoadmapAccentTheme = RoadmapAccentTheme.PRIMARY,
     val weeklyHours: Double = 0.0,
     val assessmentSummary: AssessmentSummary = AssessmentSummary(),
@@ -137,8 +156,49 @@ data class PersonalizedRoadmapDetail(
     val capstoneProject: String = "",
     val nextAction: String = "",
     val completedMilestones: List<String> = emptyList(),
-    val createdAt: String? = null
-)
+    val createdAt: String? = null,
+
+    // Extra fields for topic-based model
+    val domain: String = "Python",
+    val studyHoursPerWeek: Int = 0,
+    val estimatedWeeks: Int = 0,
+    val topics: List<PersonalizedRoadmapTopic> = emptyList(),
+    val edges: List<PersonalizedRoadmapEdge> = emptyList(),
+    val assessmentSessionId: String = "",
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+
+    // Derived progress
+    val completedTopicIds: Set<String> = emptySet(),
+    val inProgressTopicIds: Set<String> = emptySet()
+) {
+    val totalTopics: Int get() = if (topics.isNotEmpty()) topics.size else phases.sumOf { it.milestones.size }
+    val completedCount: Int get() = if (completedTopicIds.isNotEmpty()) completedTopicIds.size else completedMilestones.size
+    val progressPercentage: Int get() =
+        if (totalTopics == 0) 0
+        else ((completedCount.toFloat() / totalTopics.toFloat()) * 100).toInt().coerceIn(0, 100)
+
+    val recommendedNextTopic: PersonalizedRoadmapTopic?
+        get() = topics
+            .filter { it.status == PersonalizedTopicStatus.UNLOCKED }
+            .maxByOrNull { it.priorityScore }
+
+    fun withRecomputedStatuses(): PersonalizedRoadmapDetail {
+        val updatedTopics = topics.map { topic ->
+            when {
+                completedTopicIds.contains(topic.id) ->
+                    topic.copy(status = PersonalizedTopicStatus.COMPLETED)
+                inProgressTopicIds.contains(topic.id) ->
+                    topic.copy(status = PersonalizedTopicStatus.IN_PROGRESS)
+                topic.prerequisiteTopicIds.all { prereqId ->
+                    completedTopicIds.contains(prereqId)
+                } -> topic.copy(status = PersonalizedTopicStatus.UNLOCKED)
+                else -> topic.copy(status = PersonalizedTopicStatus.LOCKED)
+            }
+        }
+        return copy(topics = updatedTopics)
+    }
+}
 
 // Legacy preview for backward compatibility
 data class GeneratedRoadmapPreview(

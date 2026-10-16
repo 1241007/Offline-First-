@@ -13,7 +13,6 @@ data class RegistrationInput(
 
 interface AuthRepository {
     fun observeSession(): Flow<Boolean>
-    suspend fun restoreSession(): Result<Unit>
     suspend fun signIn(contact: String, password: String): Result<Unit>
     suspend fun register(input: RegistrationInput): Result<Unit>
     suspend fun requestPasswordReset(contact: String): Result<Unit>

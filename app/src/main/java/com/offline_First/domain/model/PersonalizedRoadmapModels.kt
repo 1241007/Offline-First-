@@ -53,41 +53,7 @@ data class TopicMasteryState(
     val correctCount: Int = 0                      // How many were answered correctly
 )
 
-/**
- * The complete state of an in-progress or completed assessment session.
- * This is what AssessmentViewModel drives the UI from.
- */
-data class AssessmentSessionState(
-    val sessionId: String = UUID.randomUUID().toString(),
-    val domain: String = "Python",                 // e.g. "Python", "WebDev"
-    val phase: AssessmentPhase = AssessmentPhase.PROFILE_COLLECTION,
-    val profileGoal: String = "",                  // Learner's stated goal
-    val profileLevel: String = "",                 // Learner's self-reported level
-    val profileStudyHoursPerWeek: Int = 0,
-    val profileTimelineWeeks: Int? = null,         // Optional target timeline
-
-    // Current question being displayed (null when waiting or complete)
-    val currentQuestion: AssessmentQuestion? = null,
-    val questionNumber: Int = 0,                   // 1-based display counter
-    val totalQuestions: Int = 0,                   // 0 = not yet determined (adaptive)
-
-    // Per-topic mastery evidence collected so far
-    val masteryMap: Map<String, TopicMasteryState> = emptyMap(),
-
-    // Overall session progress
-    val isComplete: Boolean = false,
-    val generatedRoadmapId: String? = null,        // Set after roadmap generation
-
-    // Feedback on most recent answer
-    val lastAnswerCorrect: Boolean? = null,
-    val lastAnswerExplanation: String = "",
-
-    // Non-null when the backend wants the learner to confirm/correct a profile field
-    val correctionPrompt: CorrectionPrompt? = null,
-
-    // Error from the last operation, if any
-    val errorMessage: String? = null
-)
+// Note: AssessmentSessionState and PersonalizedRoadmapDetail are defined in Roadmap.kt to avoid duplicate definitions across models.
 
 /**
  * Phases of the assessment flow.
@@ -152,56 +118,7 @@ data class PersonalizedRoadmapEdge(
     val toTopicId: String
 )
 
-/**
- * The complete persisted personalized roadmap for one learner.
- */
-data class PersonalizedRoadmapDetail(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String = "My Python Roadmap",
-    val domain: String = "Python",
-    val goal: String = "",
-    val level: String = "",
-    val studyHoursPerWeek: Int = 0,
-    val estimatedWeeks: Int = 0,
-    val topics: List<PersonalizedRoadmapTopic> = emptyList(),
-    val edges: List<PersonalizedRoadmapEdge> = emptyList(),
-    val assessmentSessionId: String = "",
-    val createdAtMillis: Long = System.currentTimeMillis(),
-    val updatedAtMillis: Long = System.currentTimeMillis(),
-
-    // Derived progress (computed locally for fast UI updates)
-    val completedTopicIds: Set<String> = emptySet(),
-    val inProgressTopicIds: Set<String> = emptySet()
-) {
-    val totalTopics: Int get() = topics.size
-    val completedCount: Int get() = completedTopicIds.size
-    val progressPercentage: Int get() =
-        if (totalTopics == 0) 0
-        else ((completedCount.toFloat() / totalTopics.toFloat()) * 100).toInt().coerceIn(0, 100)
-
-    /** Next recommended topic: highest-priority UNLOCKED topic not yet started. */
-    val recommendedNextTopic: PersonalizedRoadmapTopic?
-        get() = topics
-            .filter { it.status == PersonalizedTopicStatus.UNLOCKED }
-            .maxByOrNull { it.priorityScore }
-
-    /** Re-derive locked/unlocked status based on completed IDs (for offline-first updates). */
-    fun withRecomputedStatuses(): PersonalizedRoadmapDetail {
-        val updatedTopics = topics.map { topic ->
-            when {
-                completedTopicIds.contains(topic.id) ->
-                    topic.copy(status = PersonalizedTopicStatus.COMPLETED)
-                inProgressTopicIds.contains(topic.id) ->
-                    topic.copy(status = PersonalizedTopicStatus.IN_PROGRESS)
-                topic.prerequisiteTopicIds.all { prereqId ->
-                    completedTopicIds.contains(prereqId)
-                } -> topic.copy(status = PersonalizedTopicStatus.UNLOCKED)
-                else -> topic.copy(status = PersonalizedTopicStatus.LOCKED)
-            }
-        }
-        return copy(topics = updatedTopics)
-    }
-}
+// PersonalizedRoadmapDetail is defined in Roadmap.kt
 
 data class TopicLearningResource(
     val title: String,
