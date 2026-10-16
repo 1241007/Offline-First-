@@ -1,5 +1,6 @@
 package com.offline_First.data.repository
 
+import com.offline_First.domain.model.AssessmentSessionState
 import com.offline_First.domain.model.ChatMessage
 import com.offline_First.domain.model.ChatSession
 import com.offline_First.domain.model.ConnectionMode
@@ -10,6 +11,7 @@ import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.LearningCourse
 import com.offline_First.domain.model.OfflineAIDownloadProgress
 import com.offline_First.domain.model.OfflineAIStatus
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.StudyFocusItem
 import com.offline_First.domain.model.Subject
@@ -111,8 +113,7 @@ class BackendNotConfiguredRepositories :
     override suspend fun getUpcomingExams(): Result<List<UpcomingExam>> =
         unavailable("Upcoming exams")
 
-    override suspend fun getStudyFocus(): Result<StudyFocusItem?> =
-        unavailable("Study plan")
+    override suspend fun getStudyFocus(): Result<StudyFocusItem?> = unavailable("Study plan")
 
     override suspend fun getUserProfile(): Result<UserProfile?> = Result.success(null)
 
@@ -121,16 +122,107 @@ class BackendNotConfiguredRepositories :
 
     override fun observeUserProfile(): Flow<UserProfile?> = flowOf(null)
 
-    override suspend fun getRoadmaps(): Result<List<RoadmapOption>> = unavailable("Roadmaps")
+    // -----------------------------------------------------------------------
+    // RoadmapRepository — static roadmaps
+    // -----------------------------------------------------------------------
+
+    override suspend fun getRoadmaps(
+        limit: Int?,
+        offset: Int,
+        category: String?
+    ): Result<List<RoadmapOption>> = unavailable("Roadmaps")
 
     override suspend fun getCategories(): List<String> = emptyList()
+
+    override suspend fun getCompletedMilestones(roadmapId: String): Set<String> = emptySet()
+
+    override suspend fun toggleMilestoneProgress(
+        roadmapId: String,
+        milestoneKey: String
+    ): Result<Set<String>> = unavailable("Milestone progress")
+
+    override suspend fun syncPendingMilestoneProgress(): Result<Unit> = Result.success(Unit)
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,
         level: String,
         studyTime: String,
         interest: String
-    ): Result<GeneratedRoadmapPreview> = unavailable("Personalized roadmap")
+    ): Result<GeneratedRoadmapPreview> = unavailable("Personalized roadmap (legacy)")
+
+    // -----------------------------------------------------------------------
+    // RoadmapRepository — diagnostic assessment
+    // -----------------------------------------------------------------------
+
+    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
+        unavailable("Subject validation")
+
+    override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> =
+        unavailable("Personalized assessment")
+
+    override suspend fun getActiveAssessmentSession(): Result<AssessmentSessionState?> =
+        Result.success(null)
+
+    override suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionState> =
+        unavailable("Assessment session")
+
+    override suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int?
+    ): Result<AssessmentSessionState> = unavailable("Assessment answer submission")
+
+    override suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionState> = unavailable("Assessment profile correction")
+
+    // -----------------------------------------------------------------------
+    // RoadmapRepository — personalized roadmap generation & persistence
+    // -----------------------------------------------------------------------
+
+    override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap generation")
+
+    override suspend fun getMyPersonalizedRoadmaps(
+        limit: Int?,
+        offset: Int
+    ): Result<List<PersonalizedRoadmapDetail>> = unavailable("My personalized roadmaps")
+
+    override fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail> = emptyList()
+
+    override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail> =
+        unavailable("Personalized roadmap detail")
+
+    override suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail> =
+        unavailable("Save personalized roadmap")
+
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
+        unavailable("Delete personalized roadmap")
+
+    override suspend fun renamePersonalizedRoadmap(
+        roadmapId: String,
+        newTitle: String
+    ): Result<PersonalizedRoadmapDetail> = unavailable("Rename personalized roadmap")
+
+    override suspend fun syncPendingRoadmaps(): Result<Unit> = Result.success(Unit)
+
+    override suspend fun getTopicLearningContent(
+        roadmapId: String,
+        topicId: String
+    ): Result<com.offline_First.domain.model.TopicLearningContent> =
+        unavailable("Topic learning content")
+
+    override suspend fun completeTopic(
+        roadmapId: String,
+        topicId: String,
+        quizPassed: Boolean
+    ): Result<PersonalizedRoadmapDetail> = unavailable("Topic completion")
+
+    // -----------------------------------------------------------------------
+    // Internal helper
+    // -----------------------------------------------------------------------
 
     private fun <T> unavailable(feature: String): Result<T> =
         Result.failure(BackendNotConfiguredException(feature))

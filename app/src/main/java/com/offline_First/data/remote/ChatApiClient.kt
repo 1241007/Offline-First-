@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
 
 private val json = Json {
     ignoreUnknownKeys = true
@@ -19,8 +20,8 @@ private val json = Json {
 
 object ChatApiClient {
 
-    private const val MAX_RETRIES = 5
-    private const val RETRY_DELAY_MS = 5000L
+    private const val MAX_RETRIES = 2
+    private const val RETRY_DELAY_MS = 1000L
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(AppDns)
@@ -32,8 +33,24 @@ object ChatApiClient {
         .retryOnConnectionFailure(true)
         .build()
 
-    private fun buildUrl(path: String): String =
-        "${ChatApiConfig.BASE_URL}${ChatApiConfig.API_PREFIX}$path"
+    private fun isEmulator(): Boolean {
+        val fp = android.os.Build.FINGERPRINT
+        val model = android.os.Build.MODEL
+        val brand = android.os.Build.BRAND
+        val device = android.os.Build.DEVICE
+        val product = android.os.Build.PRODUCT
+        return fp.startsWith("generic") || fp.startsWith("unknown")
+                || model.contains("google_sdk") || model.contains("Emulator")
+                || model.contains("Android SDK built for x86")
+                || android.os.Build.MANUFACTURER.contains("Genymotion")
+                || brand.startsWith("generic") || device.startsWith("generic")
+                || product == "google_sdk" || product.contains("sdk_gphone")
+    }
+
+    private fun buildUrl(path: String): String {
+        val base = ChatApiConfig.BASE_URL
+        return "$base${ChatApiConfig.API_PREFIX}$path"
+    }
 
     /**
      * Retries the block up to MAX_RETRIES times on transient network errors
@@ -175,4 +192,187 @@ object ChatApiClient {
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<String>>(body)
     }
+
+    // --- Assessment API ---
+
+    suspend fun validateSubject(subject: String): Result<ValidateSubjectResponseDto> = runCatching {
+        val reqBody = json.encodeToString(ValidateSubjectRequestDto(subject))
+        val (code, body) = post("/assessment/validate-subject", reqBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<ValidateSubjectResponseDto>(body)
+    }
+
+    suspend fun startAssessment(domain: String = "Python"): Result<AssessmentSessionDto> = runCatching {
+        val encodedDomain = java.net.URLEncoder.encode(domain, "UTF-8")
+        val (code, body) = post("/assessment/start?domain=$encodedDomain")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionDto>(body)
+    }
+
+    suspend fun getActiveAssessmentSession(): Result<AssessmentSessionDto?> = runCatching {
+        val (code, body) = get("/assessment/active")
+        if (code == 404) return@runCatching null
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionDto>(body)
+    }
+
+    suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionDto> = runCatching {
+        val (code, body) = get("/assessment/$sessionId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionDto>(body)
+    }
+
+    suspend fun submitAssessmentAnswer(
+        sessionId: String,
+        answer: String,
+        quizSelectedIndex: Int?
+    ): Result<AssessmentSessionDto> = runCatching {
+        val reqBody = json.encodeToString(SubmitAnswerRequestDto(answer, quizSelectedIndex))
+        val (code, body) = post("/assessment/$sessionId/answer", reqBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionDto>(body)
+    }
+
+    suspend fun correctProfileField(
+        sessionId: String,
+        field: String,
+        value: String
+    ): Result<AssessmentSessionDto> = runCatching {
+        val reqBody = json.encodeToString(CorrectProfileFieldRequestDto(field, value))
+        val (code, body) = post("/assessment/$sessionId/correct", reqBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<AssessmentSessionDto>(body)
+    }
+
+    // --- Personalized Roadmap API ---
+
+    suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetailDto> = runCatching {
+        val (code, body) = post("/assessment/$sessionId/generate-roadmap")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailDto>(body)
+    }
+
+    suspend fun getMyPersonalizedRoadmaps(
+        limit: Int?,
+        offset: Int
+    ): Result<List<PersonalizedRoadmapDetailDto>> = runCatching {
+        val params = buildString {
+            append("?offset=$offset")
+            if (limit != null) append("&limit=$limit")
+        }
+        val (code, body) = get("/personalized-roadmaps$params")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<PersonalizedRoadmapDetailDto>>(body)
+    }
+
+    suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetailDto> = runCatching {
+        val (code, body) = get("/personalized-roadmaps/$roadmapId")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailDto>(body)
+    }
+
+    suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContentDto> = runCatching {
+        val (code, body) = get("/personalized-roadmaps/$roadmapId/topics/$topicId/content")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<TopicLearningContentDto>(body)
+    }
+
+    suspend fun completeTopic(
+        roadmapId: String,
+        topicId: String,
+        quizPassed: Boolean = true
+    ): Result<CompleteTopicResponseDto> = runCatching {
+        val reqBody = json.encodeToString(CompleteTopicRequestDto(quizPassed = quizPassed))
+        val (code, body) = post("/personalized-roadmaps/$roadmapId/topics/$topicId/complete", reqBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<CompleteTopicResponseDto>(body)
+    }
+
+    suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetailDto> = runCatching {
+        val reqBody = json.encodeToString(roadmap.toDto())
+        val (code, body) = post("/personalized-roadmaps", reqBody)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<PersonalizedRoadmapDetailDto>(body)
+    }
+
+    suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> = runCatching {
+        val url = buildUrl("/personalized-roadmaps/$roadmapId")
+        android.util.Log.d("ChatApiClient", "DELETE request: $url")
+        retryOnNetworkError {
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .delete()
+                .addHeader("Accept", "application/json")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code !in 200..299) error("HTTP ${response.code}")
+            }
+        }
+    }
+
+    suspend fun renamePersonalizedRoadmap(
+        roadmapId: String,
+        newTitle: String
+    ): Result<PersonalizedRoadmapDetailDto> = runCatching {
+        val reqBody = json.encodeToString(RenameRoadmapRequestDto(newTitle))
+        val url = buildUrl("/personalized-roadmaps/$roadmapId/rename")
+        android.util.Log.d("ChatApiClient", "PATCH request: $url")
+        retryOnNetworkError {
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val requestBody = reqBody.toRequestBody(mediaType)
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .patch(requestBody)
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "application/json")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                val code = response.code
+                val body = response.body?.string().orEmpty()
+                if (code !in 200..299) error("HTTP $code: $body")
+                json.decodeFromString<PersonalizedRoadmapDetailDto>(body)
+            }
+        }
+    }
 }
+
+// Converts domain object to DTO for PUT/POST payloads
+private fun PersonalizedRoadmapDetail.toDto() = PersonalizedRoadmapDetailDto(
+    id = id,
+    title = title,
+    domain = domain,
+    goal = goal,
+    level = level,
+    studyHoursPerWeek = studyHoursPerWeek,
+    estimatedWeeks = estimatedWeeks,
+    topics = topics.map { topic ->
+        PersonalizedRoadmapTopicDto(
+            id = topic.id,
+            topicTag = topic.topicTag,
+            title = topic.title,
+            shortDescription = topic.shortDescription,
+            estimatedMinutes = topic.estimatedMinutes,
+            prerequisiteTopicIds = topic.prerequisiteTopicIds,
+            status = when (topic.status) {
+                com.offline_First.domain.model.PersonalizedTopicStatus.UNLOCKED -> "unlocked"
+                com.offline_First.domain.model.PersonalizedTopicStatus.IN_PROGRESS -> "in_progress"
+                com.offline_First.domain.model.PersonalizedTopicStatus.COMPLETED -> "completed"
+                com.offline_First.domain.model.PersonalizedTopicStatus.SKIPPED -> "skipped"
+                else -> "locked"
+            },
+            masteryLevel = when (topic.masteryLevel) {
+                com.offline_First.domain.model.TopicMasteryLevel.WEAK -> "weak"
+                com.offline_First.domain.model.TopicMasteryLevel.ADEQUATE -> "adequate"
+                com.offline_First.domain.model.TopicMasteryLevel.STRONG -> "strong"
+                else -> "unknown"
+            },
+            priorityScore = topic.priorityScore,
+            accelerated = topic.accelerated,
+            explanation = topic.explanation
+        )
+    },
+    edges = edges.map { PersonalizedRoadmapEdgeDto(it.fromTopicId, it.toTopicId) },
+    assessmentSessionId = assessmentSessionId,
+    completedTopicIds = completedTopicIds.toList(),
+    inProgressTopicIds = inProgressTopicIds.toList()
+)

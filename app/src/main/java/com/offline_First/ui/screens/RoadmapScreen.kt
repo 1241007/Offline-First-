@@ -72,6 +72,26 @@ import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSuccess
 import com.offline_First.ui.utils.IconResolver
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.ImeAction
+import com.offline_First.domain.model.PersonalizedRoadmapDetail
+import com.offline_First.ui.screens.roadmap.PersonalizedRoadmapViewModel
+
 private fun RoadmapAccentTheme.toColor(): Color = when (this) {
     RoadmapAccentTheme.PRIMARY -> EduNovaPrimary
     RoadmapAccentTheme.SECONDARY -> EduNovaSecondary
@@ -84,11 +104,24 @@ private fun RoadmapAccentTheme.toColor(): Color = when (this) {
 fun RoadmapScreen(
     onBack: () -> Unit = {},
     onBuildRoadmap: () -> Unit = {},
-    viewModel: RoadmapViewModel = viewModel()
+    onOpenPersonalizedRoadmap: () -> Unit = {},
+    onOpenSavedRoadmap: (PersonalizedRoadmapDetail) -> Unit = {},
+    onStartAssessmentForCourse: (String) -> Unit = {},
+    viewModel: RoadmapViewModel = viewModel(),
+    personalizedViewModel: PersonalizedRoadmapViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val personalizedState by personalizedViewModel.uiState.collectAsState()
+    val savedRoadmaps = personalizedState.savedRoadmaps
     val roadmapPrimary = MaterialTheme.colorScheme.primary
     val snackbarHostState = remember { SnackbarHostState() }
+
+    var whatToBuildInput by rememberSaveable { mutableStateOf("") }
+    var roadmapToDelete by remember { mutableStateOf<PersonalizedRoadmapDetail?>(null) }
+
+    LaunchedEffect(Unit) {
+        personalizedViewModel.loadSavedRoadmaps()
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -178,64 +211,285 @@ fun RoadmapScreen(
                 }
             }
 
-            item(key = "chat-then-build-card") {
+            // ---------------------------------------------------------------
+            // Interactive Hero Card: "Welcome to Personalized AI"
+            // ---------------------------------------------------------------
+            item(key = "personalized-ai-hero-card") {
                 Card(
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(containerColor = roadmapPrimary.copy(alpha = 0.08f)),
-                    border = BorderStroke(1.dp, roadmapPrimary.copy(alpha = 0.15f)),
+                    border = BorderStroke(1.5.dp, roadmapPrimary.copy(alpha = 0.25f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Title row with icon
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(46.dp)
                                     .background(roadmapPrimary, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "✦",
-                                    color = Color.White,
-                                    fontSize = 20.sp
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "AI",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Chat then Build",
+                                    text = "Welcome to Personalized AI",
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Tell EduNova about your goals, current level, and available study time.",
+                                    text = "Tell us what you want to build or learn. We will architect a personalized, step-by-step roadmap.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            EduNovaBadge("Your goal")
-                            EduNovaBadge("Current level")
-                            EduNovaBadge("Study time")
-                            EduNovaBadge("Interests")
+                        // Interactive search / course input
+                        OutlinedTextField(
+                            value = whatToBuildInput,
+                            onValueChange = { whatToBuildInput = it },
+                            placeholder = {
+                                Text(
+                                    text = "What do you want to build? (e.g. Python, React, AI...)",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = roadmapPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                if (whatToBuildInput.trim().isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            val query = whatToBuildInput.trim()
+                                            if (query.isNotEmpty()) {
+                                                onStartAssessmentForCourse(query)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = "Start",
+                                            tint = roadmapPrimary
+                                        )
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    val query = whatToBuildInput.trim()
+                                    if (query.isNotEmpty()) {
+                                        onStartAssessmentForCourse(query)
+                                    }
+                                }
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = roadmapPrimary,
+                                unfocusedBorderColor = roadmapPrimary.copy(alpha = 0.3f),
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Interactive "Suggested for you" chips
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Suggested for you (tap to start):",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val suggestions = listOf(
+                                    "Python & AI Agents",
+                                    "Full-Stack Web App",
+                                    "Android App (Kotlin)",
+                                    "Java & Spring Boot",
+                                    "React & Next.js",
+                                    "Data Science & ML",
+                                    "DSA & Algorithms"
+                                )
+                                suggestions.forEach { suggestion ->
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(roadmapPrimary.copy(alpha = 0.12f))
+                                            .clickable {
+                                                whatToBuildInput = suggestion
+                                                onStartAssessmentForCourse(suggestion)
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = suggestion,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = roadmapPrimary
+                                        )
+                                    }
+                                }
+                            }
                         }
 
-                        Button(
-                            onClick = onBuildRoadmap,
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
-                            modifier = Modifier.fillMaxWidth()
+                        // CTA Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text("Chat & Build")
+                            Button(
+                                onClick = onBuildRoadmap,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
+                                modifier = Modifier.weight(1.2f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Psychology,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Take Assessment", fontSize = 13.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (savedRoadmaps.isNotEmpty()) {
+                                        onOpenSavedRoadmap(savedRoadmaps.first())
+                                    } else {
+                                        onOpenPersonalizedRoadmap()
+                                    }
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Layers,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (savedRoadmaps.isNotEmpty()) "My Path (${savedRoadmaps.size})" else "My Path",
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
+                }
+            }
+
+            // ---------------------------------------------------------------
+            // Section: "My Generated Roadmaps" (Persistent Stored Roadmaps)
+            // ---------------------------------------------------------------
+            item(key = "my-saved-roadmaps-header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bookmarks,
+                            contentDescription = null,
+                            tint = roadmapPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = "My Generated Roadmaps",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (savedRoadmaps.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(roadmapPrimary.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "${savedRoadmaps.size} Saved",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = roadmapPrimary
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (savedRoadmaps.isEmpty()) {
+                item(key = "empty-saved-roadmaps") {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = roadmapPrimary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = "No personalized roadmaps generated yet",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Take a quick 2-minute diagnostic assessment above and your custom learning paths will be permanently saved here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(
+                    items = savedRoadmaps,
+                    key = { "saved-roadmap-${it.id}" }
+                ) { roadmap ->
+                    SavedRoadmapItemCard(
+                        roadmap = roadmap,
+                        roadmapPrimary = roadmapPrimary,
+                        onOpen = { onOpenSavedRoadmap(roadmap) },
+                        onDelete = { roadmapToDelete = roadmap }
+                    )
                 }
             }
 
@@ -540,8 +794,201 @@ fun RoadmapScreen(
         RoadmapDetailDialog(
             roadmap = roadmap,
             roadmapPrimary = roadmapPrimary,
-            onDismiss = { selectedRoadmap = null }
+            onDismiss = { selectedRoadmap = null },
+            onStartAssessment = { courseTitle ->
+                selectedRoadmap = null
+                onStartAssessmentForCourse(courseTitle)
+            }
         )
+    }
+
+    roadmapToDelete?.let { roadmap ->
+        AlertDialog(
+            onDismissRequest = { roadmapToDelete = null },
+            title = {
+                Text(
+                    text = "Delete Roadmap?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Are you sure you want to remove \"${roadmap.title}\"? This action cannot be undone.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        personalizedViewModel.deleteRoadmap(roadmap.id)
+                        roadmapToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { roadmapToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SavedRoadmapItemCard(
+    roadmap: PersonalizedRoadmapDetail,
+    roadmapPrimary: Color,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: Domain badge, level, and delete icon
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(roadmapPrimary.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = roadmap.domain.uppercase(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = roadmapPrimary
+                        )
+                    }
+                    if (roadmap.level.isNotBlank()) {
+                        Text(
+                            text = "•  ${roadmap.level}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Delete Roadmap",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Title
+            Text(
+                text = roadmap.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Goal
+            if (roadmap.goal.isNotBlank()) {
+                Text(
+                    text = roadmap.goal,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Progress bar and topic count
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${roadmap.completedCount} of ${roadmap.totalTopics} topics completed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${roadmap.progressPercentage}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = roadmapPrimary
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { roadmap.progressPercentage / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = roadmapPrimary,
+                    trackColor = roadmapPrimary.copy(alpha = 0.15f)
+                )
+            }
+
+            // Recommended next topic (if any)
+            roadmap.recommendedNextTopic?.let { nextTopic ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Next: ${nextTopic.title}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Continue Learning CTA Button
+            Button(
+                onClick = onOpen,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Continue Learning", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }
 
@@ -815,7 +1262,8 @@ private fun StandardRoadmapCard(
 private fun RoadmapDetailDialog(
     roadmap: RoadmapOption,
     roadmapPrimary: Color,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onStartAssessment: (String) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -869,10 +1317,12 @@ private fun RoadmapDetailDialog(
         },
         confirmButton = {
             Button(
-                onClick = onDismiss,
+                onClick = {
+                    onStartAssessment(roadmap.title)
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary)
             ) {
-                Text("Start Roadmap")
+                Text("Start Diagnostic Assessment")
             }
         },
         dismissButton = {

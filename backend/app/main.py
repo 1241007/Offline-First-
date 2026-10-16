@@ -6,6 +6,8 @@ from app.api.routes.courses import router as courses_router
 from app.api.routes.roadmaps import router as roadmaps_router
 from app.api.routes.learning import router as learning_router
 from app.api.routes.profile import router as profile_router
+from app.api.routes.assessment import router as assessment_router
+from app.api.routes.personalized_roadmaps import router as personalized_roadmaps_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -60,3 +62,5 @@ app.include_router(courses_router)
 app.include_router(roadmaps_router)
 app.include_router(learning_router)
 app.include_router(profile_router)
+app.include_router(assessment_router)
+app.include_router(personalized_roadmaps_router)

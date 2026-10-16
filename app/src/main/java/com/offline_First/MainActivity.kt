@@ -23,6 +23,11 @@ import com.offline_First.ui.screens.MyLearningScreen
 import com.offline_First.ui.screens.ProfileScreen
 import com.offline_First.ui.screens.RoadmapBuilderScreen
 import com.offline_First.ui.screens.RoadmapScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offline_First.ui.screens.roadmap.PersonalizedAssessmentScreen
+import com.offline_First.ui.screens.roadmap.PersonalizedRoadmapScreen
+import com.offline_First.ui.screens.roadmap.PersonalizedRoadmapViewModel
+import com.offline_First.ui.screens.roadmap.PersonalizedTopicDetailScreen
 import com.offline_First.ui.screens.SettingsScreen
 import com.offline_First.ui.screens.auth.ForgotPasswordScreen
 import com.offline_First.ui.screens.auth.LoginScreen
@@ -48,6 +53,7 @@ class MainActivity : ComponentActivity() {
                 val isLoggedIn by authRepository.observeSession().collectAsState(initial = false)
                 val profileRepository = remember { AppContainer.profileRepository }
                 val profile by profileRepository.observeUserProfile().collectAsState(initial = null)
+                val personalizedRoadmapViewModel: PersonalizedRoadmapViewModel = viewModel()
 
                 LaunchedEffect(authRepository) {
                     authRepository.restoreSession().onFailure { error ->
@@ -120,10 +126,33 @@ class MainActivity : ComponentActivity() {
                     )
                     AppDestination.ROADMAP -> RoadmapScreen(
                         onBack = navigateBack,
-                        onBuildRoadmap = { pushDestination(AppDestination.ROADMAP_BUILDER) }
+                        onBuildRoadmap = { pushDestination(AppDestination.ROADMAP_BUILDER) },
+                        onOpenPersonalizedRoadmap = { pushDestination(AppDestination.PERSONALIZED_ROADMAP) },
+                        onOpenSavedRoadmap = { roadmap ->
+                            personalizedRoadmapViewModel.openRoadmap(roadmap)
+                            pushDestination(AppDestination.PERSONALIZED_ROADMAP)
+                        },
+                        onStartAssessmentForCourse = { courseName ->
+                            personalizedRoadmapViewModel.updateCourseInput(courseName)
+                            personalizedRoadmapViewModel.validateAndStartAssessment(courseName)
+                            pushDestination(AppDestination.ROADMAP_BUILDER)
+                        },
+                        personalizedViewModel = personalizedRoadmapViewModel
                     )
-                    AppDestination.ROADMAP_BUILDER -> RoadmapBuilderScreen(
-                        onBack = { navigateBack() }
+                    AppDestination.ROADMAP_BUILDER -> PersonalizedAssessmentScreen(
+                        onBack = { navigateBack() },
+                        onRoadmapReady = { pushDestination(AppDestination.PERSONALIZED_ROADMAP) },
+                        viewModel = personalizedRoadmapViewModel
+                    )
+                    AppDestination.PERSONALIZED_ROADMAP -> PersonalizedRoadmapScreen(
+                        onBack = { navigateBack() },
+                        onRetakeAssessment = { pushDestination(AppDestination.ROADMAP_BUILDER) },
+                        onOpenTopicDetail = { pushDestination(AppDestination.TOPIC_DETAIL) },
+                        viewModel = personalizedRoadmapViewModel
+                    )
+                    AppDestination.TOPIC_DETAIL -> PersonalizedTopicDetailScreen(
+                        onBack = { navigateBack() },
+                        viewModel = personalizedRoadmapViewModel
                     )
                     AppDestination.MY_LEARNING -> MyLearningScreen(
                         onBack = navigateBack

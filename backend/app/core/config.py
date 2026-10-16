@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +18,12 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
     allow_dev_user_id: bool = False  # DEVELOPMENT ONLY: Allow user_id query parameter
+    openrouter_api_key: Optional[str] = None
+    openrouter_model: str = "openrouter/free"
+
+    @property
+    def clean_openrouter_api_key(self) -> Optional[str]:
+        return self.openrouter_api_key.strip() if self.openrouter_api_key else None
 
     model_config = SettingsConfigDict(
         env_file=str(_ROOT_ENV),
