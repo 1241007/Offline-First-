@@ -45,6 +45,8 @@ object AppContainer {
     private var _learningRepository: LearningRepository? = null
     private var _courseRepository: CourseRepository? = null
     private var _roadmapRepository: RoadmapRepository? = null
+    private var _networkMonitor: com.offline_First.data.sync.NetworkMonitor? = null
+    private var _syncManager: com.offline_First.data.sync.EduNovaSyncManager? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -58,11 +60,13 @@ object AppContainer {
             publicClient = { authApiClient.okHttpClient }
         )
         ChatApiClient.initialize(authenticatedApiClient.okHttpClient)
+        val networkMonitor = com.offline_First.data.sync.ConnectivityNetworkMonitor(appContext)
         val remoteAuthRepo = RemoteAuthRepository(
             authApiClient = authApiClient,
             authenticatedApiClient = authenticatedApiClient,
             sessionManager = sessionManager,
-            tokenStorage = tokenStorage
+            tokenStorage = tokenStorage,
+            isOnlineProvider = { networkMonitor.isOnline.value }
         )
         val remoteProfileRepo = com.offline_First.data.remote.RemoteProfileRepository(
             context = appContext,
@@ -74,7 +78,15 @@ object AppContainer {
         )
         val onlineCourseRepo = OnlineCourseRepository(
             context = appContext,
-            localFallback = localCourseRepository
+            localFallback = localCourseRepository,
+            userIdProvider = {
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId
+                    ?: tokenStorage.getUserIdentity()?.userId
+                    ?: "default_user"
+            },
+            isOnlineProvider = {
+                networkMonitor.isOnline.value
+            }
         )
         val storageFile = File(appContext.filesDir, "edunova_course_storage.json")
         onlineCourseRepo.bindStorageFile(storageFile)
@@ -83,8 +95,22 @@ object AppContainer {
         val onlineRoadmapRepo = OnlineRoadmapRepository(
             context = appContext,
             userIdProvider = {
-                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId
+                    ?: tokenStorage.getUserIdentity()?.userId
+                    ?: "default_user"
+            },
+            isOnlineProvider = {
+                networkMonitor.isOnline.value
             }
+        )
+
+        val syncManager = com.offline_First.data.sync.EduNovaSyncManager(
+            context = appContext,
+            networkMonitor = networkMonitor,
+            sessionManager = sessionManager,
+            cacheDb = onlineCourseRepo.cacheDb,
+            onlineCourseRepository = onlineCourseRepo,
+            onlineRoadmapRepository = onlineRoadmapRepo
         )
 
         _tokenStorage = tokenStorage
@@ -96,13 +122,17 @@ object AppContainer {
         _learningRepository = remoteLearningRepo
         _courseRepository = onlineCourseRepo
         _roadmapRepository = onlineRoadmapRepo
+        _networkMonitor = networkMonitor
+        _syncManager = syncManager
 
         val localRepository = LocalAIRepository(appContext)
         val onlineRepository = OnlineAIRepository(
             context = appContext,
             delegate = localRepository,
             userIdProvider = {
-                (sessionManager.authState.value as? AuthState.Authenticated)?.userId ?: "default_user"
+                (sessionManager.authState.value as? AuthState.Authenticated)?.userId
+                    ?: tokenStorage.getUserIdentity()?.userId
+                    ?: "default_user"
             }
         )
         aiRepoOverride = ModeAwareAIRepository(localRepository, onlineRepository)
@@ -147,4 +177,10 @@ object AppContainer {
         get() = _roadmapRepository ?: OnlineRoadmapRepository()
     val onlineRoadmapRepository: OnlineRoadmapRepository
         get() = (_roadmapRepository as? OnlineRoadmapRepository) ?: OnlineRoadmapRepository()
+
+    val networkMonitor: com.offline_First.data.sync.NetworkMonitor?
+        get() = _networkMonitor
+
+    val syncManager: com.offline_First.data.sync.EduNovaSyncManager?
+        get() = _syncManager
 }

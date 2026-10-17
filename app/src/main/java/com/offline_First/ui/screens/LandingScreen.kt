@@ -1,5 +1,6 @@
 package com.offline_First.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -127,13 +128,8 @@ import com.offline_First.ui.utils.IconResolver
 import com.offline_First.ui.theme.EduNovaPrimaryContainer
 import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSurface
+import com.offline_First.ui.screens.course.GeneralHomeContent
 import kotlinx.coroutines.launch
-
-private fun CourseAccent.toColor(): Color = when (this) {
-    CourseAccent.PRIMARY -> EduNovaPrimary
-    CourseAccent.SECONDARY -> EduNovaSecondary
-    CourseAccent.ACCENT -> EduNovaAccent
-}
 
 @Composable
 private fun EduNovaBrandName() {
@@ -157,6 +153,7 @@ private fun EduNovaBrandName() {
 
 @Composable
 fun LandingScreen(
+    onHome: () -> Unit = {},
     onLogin: () -> Unit = {},
     isLoggedIn: Boolean = false,
     onAskAI: () -> Unit = {},
@@ -165,6 +162,7 @@ fun LandingScreen(
     onOpenProfile: () -> Unit = {},
     onOpenMyLearning: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenCourses: () -> Unit = {},
     onLanguageSelected: (String) -> Unit = {},
     onLogout: () -> Unit = {},
     onCourseClick: (String) -> Unit = {},
@@ -179,6 +177,10 @@ fun LandingScreen(
     val isSchoolMode = uiState.educationMode == EducationMode.SCHOOL
     var selectedSubjectForDetails by remember { mutableStateOf<Subject?>(null) }
     var initialSubjectTab by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = selectedSubjectForDetails != null) {
+        selectedSubjectForDetails = null
+    }
 
     val showMessage: (String) -> Unit = { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -331,8 +333,12 @@ fun LandingScreen(
 
             // EduNova Persistent Bottom Navigation Bar
             EduNovaBottomNavigation(
-                selectedItem = if (selectedSubjectForDetails != null) {
-                    if (initialSubjectTab == 2) EduNovaBottomNavItem.PRACTICE else EduNovaBottomNavItem.SUBJECTS
+                selectedItem = if (isSchoolMode) {
+                    if (selectedSubjectForDetails != null && initialSubjectTab == 2) {
+                        EduNovaBottomNavItem.PRACTICE
+                    } else {
+                        EduNovaBottomNavItem.SUBJECTS
+                    }
                 } else {
                     EduNovaBottomNavItem.HOME
                 },
@@ -341,17 +347,17 @@ fun LandingScreen(
                     when (item) {
                         EduNovaBottomNavItem.HOME -> {
                             selectedSubjectForDetails = null
-                            scope.launch { scrollState.animateScrollTo(0) }
+                            onHome()
                         }
                         EduNovaBottomNavItem.SUBJECTS -> {
-                            selectedSubjectForDetails = uiState.subjects.firstOrNull()
-                            initialSubjectTab = 0
+                            selectedSubjectForDetails = null
+                            scope.launch { scrollState.animateScrollTo(0) }
                         }
                         EduNovaBottomNavItem.PRACTICE -> {
-                            selectedSubjectForDetails = uiState.subjects.firstOrNull()
-                            initialSubjectTab = 2
+                            selectedSubjectForDetails = null
+                            onRoadmap()
                         }
-                        EduNovaBottomNavItem.COURSES -> onOpenMyLearning()
+                        EduNovaBottomNavItem.COURSES -> onOpenCourses()
                         EduNovaBottomNavItem.ROADMAP -> onRoadmap()
                         EduNovaBottomNavItem.CHAT -> onAskAI()
                         EduNovaBottomNavItem.TOOLS -> onOpenAITools()
@@ -391,32 +397,6 @@ private fun SchoolTopBar(
             BrandMark()
             Spacer(Modifier.width(8.dp))
             EduNovaBrandName()
-            Spacer(Modifier.width(8.dp))
-            Surface(
-                onClick = onToggleMode,
-                shape = RoundedCornerShape(12.dp),
-                color = EduNovaPrimary.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.35f))
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.School,
-                        contentDescription = null,
-                        tint = EduNovaPrimary,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "School",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = EduNovaPrimary
-                    )
-                }
-            }
         }
 
         Row(
@@ -1800,167 +1780,6 @@ private fun SchoolSubjectDetailScreen(
     }
 }
 
-/**
- * General Mode (College & Beyond):
- * Preserves the approved Top Courses carousel, single Explore Courses grid,
- * Start Learning button, and Help & Support section.
- */
-@Composable
-private fun GeneralHomeContent(
-    uiState: LandingUiState,
-    onCourseClick: (Course) -> Unit,
-    onRetryCourses: () -> Unit = {},
-    onStartLearning: () -> Unit,
-    onSupportAction: (String) -> Unit
-) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    Column {
-        when {
-            uiState.isCoursesLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CircularProgressIndicator(color = primaryColor, modifier = Modifier.size(36.dp))
-                        Text(
-                            text = "Loading courses...",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            uiState.coursesError != null -> {
-                val isNetworkErr = uiState.coursesError.contains("internet", ignoreCase = true) ||
-                    uiState.coursesError.contains("offline", ignoreCase = true) ||
-                    uiState.coursesError.contains("connect", ignoreCase = true)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isNetworkErr) Icons.Default.CloudOff else Icons.Default.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Text(
-                            text = if (isNetworkErr) "Courses require an internet connection." else "Course Service Error",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Text(
-                            text = if (isNetworkErr) {
-                                "Connect to the internet to explore interactive lessons, syllabus, and resources."
-                            } else {
-                                uiState.coursesError
-                            },
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            lineHeight = 18.sp
-                        )
-                        Button(
-                            onClick = onRetryCourses,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Retry", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
-            !uiState.isCoursesLoading && uiState.coursesError == null && uiState.exploreCourses.isEmpty() -> {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, EduNovaBorder)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MenuBook,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Text(
-                            text = "No courses available",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Check back soon for new courses and learning paths.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                }
-            }
-            else -> {
-                if (uiState.featuredCourses.isNotEmpty()) {
-                    FeaturedCourseSection(
-                        featured = uiState.featuredCourses,
-                        onCourseClick = onCourseClick
-                    )
-                }
-
-                CourseCatalogue(
-                    courses = uiState.exploreCourses,
-                    onCourseClick = onCourseClick
-                )
-
-                Button(
-                    onClick = onStartLearning,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 22.dp)
-                        .semantics { contentDescription = "Start learning" },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                ) {
-                    Text("Start Learning", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        SupportSection(onSupportAction = onSupportAction)
-    }
-}
 
 @Composable
 private fun TopBar(
@@ -1988,32 +1807,6 @@ private fun TopBar(
             BrandMark()
             Spacer(Modifier.width(9.dp))
             EduNovaBrandName()
-            Spacer(Modifier.width(8.dp))
-            Surface(
-                onClick = onToggleMode,
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFF1F5F9),
-                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.School,
-                        contentDescription = null,
-                        tint = Color(0xFF475569),
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "General",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF475569)
-                    )
-                }
-            }
             Spacer(Modifier.weight(1f))
             Surface(
                 onClick = onSearch,
@@ -2148,396 +1941,5 @@ private fun BrandMark() {
         contentAlignment = Alignment.Center
     ) {
         Text("E", color = Color.White, fontWeight = FontWeight.Black, fontSize = 19.sp)
-    }
-}
-
-@Composable
-private fun FeaturedCourseSection(
-    featured: List<Course>,
-    onCourseClick: (Course) -> Unit
-) {
-    var selectedIndex by remember { mutableIntStateOf(0) }
-    val course = featured.getOrElse(selectedIndex) { featured.first() }
-    val courseColor = course.accent.toColor()
-    val ink = MaterialTheme.colorScheme.onBackground
-    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    Column(
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text("Top Courses", color = ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        Card(
-            onClick = { onCourseClick(course) },
-
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, EduNovaBorder),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(EduNovaPrimaryContainer, MaterialTheme.colorScheme.surface)
-                        )
-                    )
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        "FEATURED COURSE",
-                        color = courseColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
-                    Text(
-                        course.name,
-                        color = ink,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        course.description,
-                        color = mutedInk,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-                    Text(
-                        "Start Learning  →",
-                        color = primaryColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                CourseIcon(course, large = true)
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("‹", color = mutedInk, fontSize = 26.sp, modifier = Modifier.clickable {
-                selectedIndex = (selectedIndex - 1 + featured.size) % featured.size
-            })
-            Spacer(Modifier.width(12.dp))
-            featured.indices.forEach { index ->
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(if (index == selectedIndex) 9.dp else 7.dp)
-                        .clip(CircleShape)
-                        .background(if (index == selectedIndex) primaryColor else EduNovaBorder)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Text("›", color = mutedInk, fontSize = 26.sp, modifier = Modifier.clickable {
-                selectedIndex = (selectedIndex + 1) % featured.size
-            })
-        }
-    }
-}
-
-@Composable
-private fun CourseCatalogue(
-    courses: List<Course>,
-    onCourseClick: (Course) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val ink = MaterialTheme.colorScheme.onBackground
-    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
-    val chunkedCourses = remember(courses) { courses.chunked(2) }
-
-    Column(
-        modifier = modifier.padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("Explore Courses", color = ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        Text("Build skills that move you forward.", color = mutedInk, fontSize = 13.sp)
-        chunkedCourses.forEach { rowCourses ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                rowCourses.forEach { course ->
-                    CourseCard(course, Modifier.weight(1f)) { onCourseClick(course) }
-                }
-                if (rowCourses.size == 1) {
-                    Spacer(Modifier.weight(1f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CourseCard(course: Course, modifier: Modifier, onClick: () -> Unit) {
-    val ink = MaterialTheme.colorScheme.onBackground
-    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    Card(
-        onClick = onClick,
-        modifier = modifier.height(180.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, EduNovaBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CourseIcon(course)
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                    ) {
-                        Text(
-                            text = course.level.replaceFirstChar { it.uppercase() },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = mutedInk,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-                Text(
-                    text = course.name,
-                    color = ink,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = course.description,
-                    color = mutedInk,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (course.totalLessons > 0 && course.completedLessons > 0) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (course.progress >= 1f) "Completed" else "${course.completedLessons}/${course.totalLessons} lessons",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (course.progress >= 1f) EduNovaSecondary else primaryColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "${(course.progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = mutedInk,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    LinearProgressIndicator(
-                        progress = { course.progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = if (course.progress >= 1f) EduNovaSecondary else primaryColor,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (course.totalLessons > 0) "${course.totalLessons} lessons" else "View course",
-                            color = primaryColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = primaryColor,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CourseIcon(course: Course, large: Boolean = false) {
-    val courseColor = course.accent.toColor()
-    Box(
-        modifier = Modifier
-            .size(if (large) 70.dp else 38.dp)
-            .clip(RoundedCornerShape(if (large) 20.dp else 10.dp))
-            .background(EduNovaPrimaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = IconResolver.resolve(course.icon),
-            contentDescription = "${course.name} course",
-            tint = courseColor,
-            modifier = Modifier.size(if (large) 34.dp else 20.dp)
-        )
-    }
-}
-
-@Composable
-private fun SupportSection(onSupportAction: (String) -> Unit) {
-    val ink = MaterialTheme.colorScheme.onBackground
-    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
-
-    Column(
-        modifier = Modifier.padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text("Help & Support", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Need a hand? We're here to help.", color = mutedInk, fontSize = 14.sp)
-        Spacer(Modifier.height(2.dp))
-        SupportRow(
-            icon = SupportIcon.Help,
-            title = "Help Center",
-            description = "Find answers to common learning questions.",
-            onClick = { onSupportAction("Help resources are being prepared.") }
-        )
-        SupportRow(
-            icon = SupportIcon.Contact,
-            title = "Contact Support",
-            description = "Need help? Get in touch with our support team.",
-            onClick = { onSupportAction("Support contact will be available soon.") }
-        )
-        SupportRow(
-            icon = SupportIcon.About,
-            title = "About EduNova",
-            description = "Learn more about EduNova and its learning experience.",
-            onClick = { onSupportAction("More about EduNova will be available soon.") }
-        )
-    }
-}
-
-@Composable
-private fun SupportRow(
-    icon: SupportIcon,
-    title: String,
-    description: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "Open $title" },
-        shape = RoundedCornerShape(15.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, EduNovaBorder)
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(icon.containerColor),
-                contentAlignment = Alignment.Center
-            ) {
-                SupportIcon(icon)
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(title, color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
-            }
-            ChevronRight()
-        }
-    }
-}
-
-private enum class SupportIcon(val containerColor: Color) {
-    Help(EduNovaPrimaryContainer),
-    Contact(EduNovaSurface),
-    About(EduNovaSurface)
-}
-
-@Composable
-private fun SupportIcon(icon: SupportIcon) {
-    Canvas(Modifier.size(22.dp)) {
-        val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        when (icon) {
-            SupportIcon.Help -> {
-                val questionMark = Path().apply {
-                    moveTo(size.width * .3f, size.height * .36f)
-                    cubicTo(
-                        size.width * .32f, size.height * .12f,
-                        size.width * .7f, size.height * .12f,
-                        size.width * .72f, size.height * .36f
-                    )
-                    cubicTo(
-                        size.width * .73f, size.height * .56f,
-                        size.width * .52f, size.height * .58f,
-                        size.width * .5f, size.height * .75f
-                    )
-                }
-                drawPath(questionMark, EduNovaPrimary, style = stroke)
-                drawCircle(EduNovaPrimary, 1.2.dp.toPx(), center.copy(y = size.height * .9f))
-            }
-            SupportIcon.Contact -> {
-                drawRoundRect(
-                    color = EduNovaAccent,
-                    topLeft = androidx.compose.ui.geometry.Offset(size.width * .12f, size.height * .24f),
-                    size = androidx.compose.ui.geometry.Size(size.width * .76f, size.height * .52f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    style = stroke
-                )
-                drawLine(EduNovaAccent, androidx.compose.ui.geometry.Offset(size.width * .16f, size.height * .3f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .56f), stroke.width)
-                drawLine(EduNovaAccent, androidx.compose.ui.geometry.Offset(size.width * .84f, size.height * .3f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .56f), stroke.width)
-            }
-            SupportIcon.About -> {
-                drawCircle(EduNovaBorder, size.minDimension * .36f, style = stroke)
-                drawCircle(EduNovaBorder, 1.2.dp.toPx(), center.copy(y = size.height * .36f))
-                drawLine(EduNovaBorder, center.copy(y = size.height * .49f), center.copy(y = size.height * .7f), stroke.width)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChevronRight() {
-    Canvas(Modifier.size(20.dp)) {
-        drawLine(EduNovaBorder, androidx.compose.ui.geometry.Offset(size.width * .38f, size.height * .2f), androidx.compose.ui.geometry.Offset(size.width * .66f, size.height * .5f), 2.dp.toPx(), StrokeCap.Round)
-        drawLine(EduNovaBorder, androidx.compose.ui.geometry.Offset(size.width * .66f, size.height * .5f), androidx.compose.ui.geometry.Offset(size.width * .38f, size.height * .8f), 2.dp.toPx(), StrokeCap.Round)
     }
 }

@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Roadmap, RoadmapItem
+from app.models import Roadmap, RoadmapItem, UserSavedRoadmap
 
 
 class RoadmapRepository:
@@ -209,4 +209,49 @@ class RoadmapRepository:
 
         await self.db.flush()
         return await self.get_roadmap_by_id_and_user(roadmap_id, user_id)
+
+    async def get_saved_roadmaps_for_user(self, user_id: str) -> List[UserSavedRoadmap]:
+        """Get all saved roadmaps for a user"""
+        query = (
+            select(UserSavedRoadmap)
+            .where(UserSavedRoadmap.user_id == user_id)
+            .options(selectinload(UserSavedRoadmap.roadmap).selectinload(Roadmap.items))
+            .order_by(UserSavedRoadmap.created_at.desc())
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_saved_roadmap(self, user_id: str, roadmap_id: str) -> Optional[UserSavedRoadmap]:
+        """Check if a specific roadmap is saved by user"""
+        query = select(UserSavedRoadmap).where(
+            UserSavedRoadmap.user_id == user_id,
+            UserSavedRoadmap.roadmap_id == roadmap_id,
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def save_roadmap(self, user_id: str, roadmap: Roadmap) -> UserSavedRoadmap:
+        """Save a roadmap for user idempotently"""
+        existing = await self.get_saved_roadmap(user_id, roadmap.id)
+        if existing:
+            return existing
+        saved = UserSavedRoadmap(
+            user_id=user_id,
+            roadmap_id=roadmap.id,
+            roadmap_type="system" if roadmap.is_system else "personalized",
+        )
+        self.db.add(saved)
+        await self.db.commit()
+        await self.db.refresh(saved)
+        return saved
+
+    async def unsave_roadmap(self, user_id: str, roadmap_id: str) -> bool:
+        """Unsave a roadmap for user idempotently"""
+        existing = await self.get_saved_roadmap(user_id, roadmap_id)
+        if existing:
+            await self.db.delete(existing)
+            await self.db.commit()
+            return True
+        return False
+
 

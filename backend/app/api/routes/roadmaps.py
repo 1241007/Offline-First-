@@ -7,7 +7,12 @@ from app.core.database import get_db
 from app.core.deps import get_current_user_id
 from app.services.roadmap_service import RoadmapService
 from app.services.personalized_roadmap_service import PersonalizedRoadmapService
-from app.schemas.roadmap import RoadmapListResponse, RoadmapDetailResponse
+from app.schemas.roadmap import (
+    RoadmapListResponse,
+    RoadmapDetailResponse,
+    SavedRoadmapActionResponse,
+    SavedRoadmapResponse,
+)
 from app.schemas.personalized_roadmap import (
     AssessmentSessionResponse,
     SubmitAssessmentAnswerRequest,
@@ -335,10 +340,51 @@ async def rename_personalized_roadmap(
     return updated
 
 
+# --- Saved Roadmaps ---
+
+@router.get("/roadmaps/saved", response_model=List[SavedRoadmapResponse])
+async def get_saved_roadmaps(
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all saved roadmaps for the authenticated user.
+    """
+    service = RoadmapService(db)
+    return await service.get_saved_roadmaps(user_id=current_user_id)
+
+
+@router.post("/roadmaps/{roadmap_id}/save", response_model=SavedRoadmapResponse)
+async def save_roadmap(
+    roadmap_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Save a roadmap for offline access (idempotent).
+    Enforces authorization for personalized roadmaps.
+    """
+    service = RoadmapService(db)
+    return await service.save_roadmap(user_id=current_user_id, roadmap_id=roadmap_id)
+
+
+@router.delete("/roadmaps/{roadmap_id}/save", response_model=SavedRoadmapActionResponse)
+async def unsave_roadmap(
+    roadmap_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Unsave a roadmap for the authenticated user (idempotent).
+    """
+    service = RoadmapService(db)
+    return await service.unsave_roadmap(user_id=current_user_id, roadmap_id=roadmap_id)
+
 
 # --- General Roadmap Detail (System & User) ---
 
 @router.get("/roadmaps/{roadmap_id}", response_model=RoadmapDetailResponse)
+
 async def get_roadmap_detail(
     roadmap_id: str,
     db: AsyncSession = Depends(get_db)

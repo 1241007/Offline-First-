@@ -954,4 +954,14 @@ class LocalCourseRepository(
     override suspend fun getRevisionItems(): Result<List<RevisionItem>> {
         return Result.success(progressStore.getRevisionItems())
     }
+
+    override suspend fun isCourseSaved(userId: String, courseId: String): Boolean =
+        courseDetails.any { it.id == courseId }
+
+    override suspend fun isCourseOfflineReady(userId: String, courseId: String): Boolean =
+        courseDetails.any { it.id == courseId }
+
+    override suspend fun getSavedCourses(userId: String): Result<List<Course>> = getCourses()
+
+    override suspend fun getOfflineCourseDetail(courseId: String): Result<CourseDetail?> = getCourseDetail(courseId)
 }

@@ -13,6 +13,7 @@ from alembic import context
 # Ensure backend root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.config import settings
 from app.core.database import Base
 import app.models  # Registers all models on Base.metadata
 from sqlalchemy.ext.compiler import compiles
@@ -30,9 +31,20 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def get_url() -> str:
+    url = config.get_main_option("sqlalchemy.url")
+    if not url or url.strip() == "":
+        url = os.environ.get("DATABASE_URL") or settings.async_database_url
+    if url.startswith("sqlite://") and "+aiosqlite" not in url:
+        url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.async_database_url,
+        url=get_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -56,7 +68,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     connectable = create_async_engine(
-        settings.async_database_url,
+        get_url(),
         poolclass=pool.NullPool,
     )
 

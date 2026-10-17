@@ -24,8 +24,13 @@ def upgrade() -> None:
     op.execute(
         sa.text("UPDATE course_categories SET slug = LOWER(REPLACE(name, ' ', '-')) WHERE slug IS NULL")
     )
-    op.alter_column('course_categories', 'slug', nullable=False)
-    op.create_unique_constraint('uq_course_categories_slug', 'course_categories', ['slug'])
+    if op.get_bind().dialect.name != "sqlite":
+        op.alter_column('course_categories', 'slug', nullable=False)
+        op.create_unique_constraint('uq_course_categories_slug', 'course_categories', ['slug'])
+    else:
+        with op.batch_alter_table('course_categories') as batch_op:
+            batch_op.alter_column('slug', nullable=False)
+            batch_op.create_unique_constraint('uq_course_categories_slug', ['slug'])
 
     # 2. Add prerequisites to courses (defaulting to empty JSON array)
     op.add_column(

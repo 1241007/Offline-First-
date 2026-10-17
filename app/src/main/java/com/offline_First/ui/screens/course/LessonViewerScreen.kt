@@ -355,27 +355,33 @@ fun LessonViewerScreen(
                                         .padding(18.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(
                                             text = "Reading & Documentation",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onBackground
                                         )
-                                        lesson.resourceProvider?.let { provider ->
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             EduNovaBadge(
-                                                text = provider,
+                                                text = "Requires Internet",
                                                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                contentColor = MaterialTheme.colorScheme.primary
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                            lesson.resourceProvider?.let { provider ->
+                                                EduNovaBadge(
+                                                    text = provider,
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                    contentColor = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                         }
                                     }
                                     Text(
-                                        text = "Explore full, curated lesson materials from ${lesson.resourceProvider ?: "the official provider"}. External content will open safely in your web browser.",
+                                        text = "Explore full, curated lesson materials from ${lesson.resourceProvider ?: "the official provider"}. External content will open safely in your web browser (requires active internet access).",
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         lineHeight = 18.sp
@@ -388,7 +394,7 @@ fun LessonViewerScreen(
                                                 launchResult.onFailure { err ->
                                                     scope.launch {
                                                         snackbarHostState.showSnackbar(
-                                                            err.localizedMessage ?: "Failed to open resource link."
+                                                             err.localizedMessage ?: "Failed to open resource link."
                                                         )
                                                     }
                                                 }
@@ -409,7 +415,9 @@ fun LessonViewerScreen(
                                             Text(
                                                 "Open Reading Resource",
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
+                                                fontSize = 14.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
                                     } else {
@@ -458,26 +466,32 @@ fun LessonViewerScreen(
                                             .padding(18.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(
                                                 text = "Video Lesson / Tutorial",
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 16.sp,
                                                 color = MaterialTheme.colorScheme.onBackground
                                             )
-                                            EduNovaBadge(
-                                                text = lesson.videoProvider ?: "YouTube",
-                                                icon = Icons.Default.PlayCircleOutline,
-                                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
-                                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                EduNovaBadge(
+                                                    text = "Requires Internet",
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                EduNovaBadge(
+                                                    text = lesson.videoProvider ?: "YouTube",
+                                                    icon = Icons.Default.PlayCircleOutline,
+                                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                                )
+                                            }
                                         }
                                         Text(
-                                            text = "Watch the companion video lesson from ${lesson.videoProvider ?: "YouTube"}. Opens safely in your YouTube app or web browser.",
+                                            text = "Watch the companion video lesson from ${lesson.videoProvider ?: "YouTube"}. Opens safely in your YouTube app or web browser (requires active internet access).",
                                             fontSize = 13.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             lineHeight = 18.sp
@@ -512,7 +526,9 @@ fun LessonViewerScreen(
                                             Text(
                                                 "Watch Video Lesson",
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
+                                                fontSize = 14.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
                                     }

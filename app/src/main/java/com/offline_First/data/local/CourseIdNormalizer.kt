@@ -34,6 +34,18 @@ object CourseIdNormalizer {
         registerPair("c-devops", "devops")
         registerPair("c-sde", "sde-system-design-and-architecture")
         registerPair("c-sde", "sde")
+        registerPair("c-js", "javascript-essentials")
+        registerPair("c-js", "javascript")
+        registerPair("c-js", "js")
+        registerPair("c-java", "java-programming")
+        registerPair("c-java", "java")
+        registerPair("c-ds", "data-science-python")
+        registerPair("c-ds", "data-science")
+        registerPair("c-ml-fund", "machine-learning-fundamentals")
+        registerPair("c-dl", "deep-learning-neural-networks")
+        registerPair("c-dl", "deep-learning")
+        registerPair("c-android", "android-development-kotlin")
+        registerPair("c-android", "android")
     }
 
     /**
@@ -123,12 +135,35 @@ object CourseIdNormalizer {
      */
     fun getAllAliases(id: String): Set<String> {
         val trimmed = id.trim()
-        val cluster = aliasClusters[trimmed]
-        return if (cluster != null) {
-            cluster.toSet()
-        } else {
-            setOf(trimmed)
+        val result = mutableSetOf(trimmed)
+        val slug = toSlug(trimmed)
+        if (slug.isNotBlank()) {
+            result.add(slug)
+            result.add(slug.replace("-", " "))
         }
+        val withSpaces = trimmed.replace("-", " ")
+        if (withSpaces.isNotBlank()) {
+            result.add(withSpaces)
+        }
+        val cluster = aliasClusters[trimmed]
+        if (cluster != null) {
+            result.addAll(cluster)
+        }
+        if (slug.isNotBlank()) {
+            val slugCluster = aliasClusters[slug]
+            if (slugCluster != null) {
+                result.addAll(slugCluster)
+            }
+        }
+        val extras = mutableSetOf<String>()
+        for (item in result) {
+            val s = toSlug(item)
+            if (s.isNotBlank()) extras.add(s)
+            val sp = item.replace("-", " ")
+            if (sp.isNotBlank()) extras.add(sp)
+        }
+        result.addAll(extras)
+        return result
     }
 
     /**
@@ -168,5 +203,17 @@ object CourseIdNormalizer {
         registerPair("c-devops", "devops")
         registerPair("c-sde", "sde-system-design-and-architecture")
         registerPair("c-sde", "sde")
+        registerPair("c-js", "javascript-essentials")
+        registerPair("c-js", "javascript")
+        registerPair("c-js", "js")
+        registerPair("c-java", "java-programming")
+        registerPair("c-java", "java")
+        registerPair("c-ds", "data-science-python")
+        registerPair("c-ds", "data-science")
+        registerPair("c-ml-fund", "machine-learning-fundamentals")
+        registerPair("c-dl", "deep-learning-neural-networks")
+        registerPair("c-dl", "deep-learning")
+        registerPair("c-android", "android-development-kotlin")
+        registerPair("c-android", "android")
     }
 }

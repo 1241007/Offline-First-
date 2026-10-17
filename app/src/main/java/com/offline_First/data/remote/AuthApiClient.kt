@@ -10,6 +10,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+open class ApiException(val statusCode: Int, message: String, cause: Throwable? = null) : IOException(message, cause)
+class AuthenticationException(statusCode: Int, message: String, cause: Throwable? = null) : ApiException(statusCode, message, cause)
+
 class AuthApiClient(
     private val baseUrl: String = ChatApiConfig.BASE_URL
 ) {
@@ -30,14 +33,22 @@ class AuthApiClient(
         .build()
 
     private fun parseError(responseBody: String?, statusCode: Int): Exception {
-        if (!responseBody.isNullOrBlank()) {
+        val errorMessage = if (!responseBody.isNullOrBlank()) {
             try {
                 val err = json.decodeFromString(ApiErrorDto.serializer(), responseBody)
-                return IOException("${err.code}: ${err.message}")
+                "${err.code}: ${err.message}"
             } catch (_: Exception) {
+                "HTTP error $statusCode"
             }
+        } else {
+            "HTTP error $statusCode"
         }
-        return IOException("HTTP error $statusCode")
+
+        return if (statusCode == 401 || statusCode == 403) {
+            AuthenticationException(statusCode, errorMessage)
+        } else {
+            ApiException(statusCode, errorMessage)
+        }
     }
 
     suspend fun register(dto: RegisterRequestDto): Result<AuthTokensResponseDto> =
