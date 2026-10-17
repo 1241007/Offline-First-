@@ -61,3 +61,33 @@ data class CourseDetailDto(
     val prerequisites: List<String> = emptyList(),
     val modules: List<ModuleDto> = emptyList()
 )
+
+@Serializable
+data class SavedCourseActionResponseDto(
+    val success: Boolean = true,
+    val message: String = "",
+    @SerialName("courseId") val courseId: String,
+    @SerialName("isSaved") val isSaved: Boolean = true
+)
+
+@Serializable
+data class SavedCourseResponseDto(
+    val id: String,
+    @SerialName("userId") val userId: String,
+    @SerialName("courseId") val courseId: String,
+    @SerialName("savedAt") val savedAt: String,
+    val name: String,
+    val slug: String? = null,
+    val description: String = "",
+    val icon: String = "",
+    @SerialName("accentColor") val accentColor: String = "primary",
+    val category: String = "",
+    @SerialName("categorySlug") val categorySlug: String? = null,
+    val level: String = "Beginner",
+    @SerialName("durationHours") val durationHours: Int? = null,
+    @SerialName("isFeatured") val isFeatured: Boolean = false,
+    @SerialName("totalLessons") val totalLessons: Int = 0,
+    @SerialName("modulesCount") val modulesCount: Int = 0,
+    val course: CourseDto? = null
+)
+

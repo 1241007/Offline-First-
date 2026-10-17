@@ -299,6 +299,9 @@ fun EduNovaBadge(
             }
             Text(
                 text = text,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.Bold,
                     color = contentColor,

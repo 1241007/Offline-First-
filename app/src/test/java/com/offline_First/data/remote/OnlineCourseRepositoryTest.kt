@@ -2,13 +2,18 @@ package com.offline_First.data.remote
 
 import com.offline_First.data.AppContainer
 import com.offline_First.data.local.CourseProgressStore
+import com.offline_First.data.local.InMemoryChatCacheDatabase
+import com.offline_First.domain.model.CourseAccent
+import com.offline_First.domain.model.CourseDetail
+import com.offline_First.domain.model.CourseModule
+import com.offline_First.domain.model.LessonItem
 import com.offline_First.domain.model.RevisionItem
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -25,39 +30,174 @@ class OnlineCourseRepositoryTest {
         ChatApiClient.customBaseUrl = null
     }
 
-    @Test
-    fun onlineCourseRepositoryFailsWhenConfiguredWithoutFallback() = runBlocking {
-        val repo = OnlineCourseRepository(localFallback = null)
-
-        // In unit test environment without fallback, unreachable remote fails
-        val coursesResult = repo.getCourses()
-        assertTrue("Expected failure when offline/unreachable and no fallback", coursesResult.isFailure)
-
-        val featuredResult = repo.getFeaturedCourses()
-        assertTrue("Expected failure when offline/unreachable and no fallback", featuredResult.isFailure)
-
-        val categoryResult = repo.getCoursesByCategory("cpp")
-        assertTrue("Expected failure when offline/unreachable and no fallback", categoryResult.isFailure)
-
-        val detailResult = repo.getCourseDetail("c-cpp")
-        assertTrue("Expected failure when offline/unreachable and no fallback", detailResult.isFailure)
+    private fun createSampleCourseDetail(
+        courseId: String,
+        name: String,
+        lessonCount: Int = 2
+    ): CourseDetail {
+        val moduleId = "mod-$courseId-1"
+        val lessons = (1..lessonCount).map { i ->
+            LessonItem(
+                id = "les-$courseId-$i",
+                moduleId = moduleId,
+                courseId = courseId,
+                title = "Lesson $i for $name",
+                contentType = "article",
+                durationMinutes = 10,
+                displayOrder = i,
+                description = "Description for lesson $i",
+                resourceUrl = "https://example.com/res$i",
+                resourceProvider = "Documentation"
+            )
+        }
+        val module = CourseModule(
+            id = moduleId,
+            courseId = courseId,
+            title = "Module 1",
+            displayOrder = 1,
+            lessons = lessons
+        )
+        return CourseDetail(
+            id = courseId,
+            name = name,
+            description = "Test description for $name",
+            icon = "code",
+            accent = CourseAccent.PRIMARY,
+            category = "programming",
+            level = "Beginner",
+            durationHours = 2,
+            modules = listOf(module)
+        )
     }
 
     @Test
-    fun onlineCourseRepositoryGracefullyFallsBackToLocalCoursesWhenRemoteFails() = runBlocking {
-        val repo = OnlineCourseRepository(localFallback = com.offline_First.data.local.LocalCourseRepository())
+    fun offlineCatalogReturnsOnlySavedOfflineReadyCoursesForCurrentUser() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        var currentOnline = false
+        var activeUser = "userA"
 
-        val coursesResult = repo.getCourses()
-        assertTrue(coursesResult.isSuccess)
-        assertEquals(7, coursesResult.getOrThrow().size)
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { currentOnline },
+            userIdProvider = { activeUser }
+        )
 
-        val featuredResult = repo.getFeaturedCourses()
-        assertTrue(featuredResult.isSuccess)
-        assertTrue(featuredResult.getOrThrow().isNotEmpty())
+        val courseA1 = createSampleCourseDetail("course-a1", "User A Completed Course", 2)
+        val courseA2 = createSampleCourseDetail("course-a2", "User A Incomplete Course", 2)
+        val courseB1 = createSampleCourseDetail("course-b1", "User B Completed Course", 2)
 
-        val detailResult = repo.getCourseDetail("c-cpp")
-        assertTrue(detailResult.isSuccess)
-        assertEquals("C++ Programming", detailResult.getOrThrow()?.name)
+        // User A - course 1: completed & offline ready
+        testDb.saveCourseForOffline("userA", courseA1, downloadStatus = "completed", syncStatus = "synced")
+
+        // User A - course 2: still downloading, not offline ready
+        testDb.saveCourseForOffline("userA", courseA2, downloadStatus = "downloading", syncStatus = "pending_sync")
+
+        // User A - course 3: failed download
+        testDb.recordFailedDownload("userA", "course-a3", "synced")
+
+        // User B - course 1: completed
+        testDb.saveCourseForOffline("userB", courseB1, downloadStatus = "completed", syncStatus = "synced")
+
+        // When offline, getCourses must strictly return ONLY User A's completed, offline-ready course
+        val result = repo.getCourses().getOrThrow()
+        assertEquals(1, result.size)
+        assertEquals("course-a1", result[0].id)
+        assertEquals("User A Completed Course", result[0].name)
+
+        // Featured offline should also only return User A's completed course
+        val featured = repo.getFeaturedCourses().getOrThrow()
+        assertEquals(1, featured.size)
+        assertEquals("course-a1", featured[0].id)
+    }
+
+    @Test
+    fun offlineUnsavedCourseCannotBeOpened() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { false },
+            userIdProvider = { "userA" }
+        )
+
+        val unsavedResult = repo.getCourseDetail("unsaved-course-123")
+        assertTrue("Opening unsaved course offline must fail", unsavedResult.isFailure)
+        val errorMsg = unsavedResult.exceptionOrNull()?.message ?: ""
+        assertEquals("This course isn't available offline. Connect to the internet and save it first.", errorMsg)
+    }
+
+    @Test
+    fun offlineSavedCourseOpensWithCachedLessons() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { false },
+            userIdProvider = { "userA" }
+        )
+
+        val courseA1 = createSampleCourseDetail("course-a1", "Saved Android Course", 3)
+        testDb.saveCourseForOffline("userA", courseA1, downloadStatus = "completed", syncStatus = "synced")
+
+        val result = repo.getCourseDetail("course-a1")
+        assertTrue("Opening saved offline-ready course must succeed", result.isSuccess)
+        val detail = result.getOrThrow()
+        assertNotNull(detail)
+        assertEquals("course-a1", detail?.id)
+        assertEquals("Saved Android Course", detail?.name)
+        assertEquals(1, detail?.modules?.size)
+        assertEquals(3, detail?.modules?.first()?.lessons?.size)
+    }
+
+    @Test
+    fun offlineEmptyStateReturnsEmptyList() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { false },
+            userIdProvider = { "newUserWithoutCourses" }
+        )
+
+        val result = repo.getCourses().getOrThrow()
+        assertTrue("Offline catalog with no saved courses must be empty", result.isEmpty())
+
+        val featured = repo.getFeaturedCourses().getOrThrow()
+        assertTrue("Offline featured courses with no saved courses must be empty", featured.isEmpty())
+    }
+
+    @Test
+    fun userIsolationUserACannotSeeUserBCourses() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        var currentUser = "userA"
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { false },
+            userIdProvider = { currentUser }
+        )
+
+        val courseA = createSampleCourseDetail("course-a", "Course A", 1)
+        val courseB = createSampleCourseDetail("course-b", "Course B", 1)
+
+        testDb.saveCourseForOffline("userA", courseA, downloadStatus = "completed", syncStatus = "synced")
+        testDb.saveCourseForOffline("userB", courseB, downloadStatus = "completed", syncStatus = "synced")
+
+        // User A context
+        currentUser = "userA"
+        val userACourses = repo.getCourses().getOrThrow()
+        assertEquals(1, userACourses.size)
+        assertEquals("course-a", userACourses[0].id)
+
+        // User A cannot open User B's course
+        val aOpeningB = repo.getCourseDetail("course-b")
+        assertTrue("User A opening User B course must fail offline", aOpeningB.isFailure)
+
+        // Switch to User B context
+        currentUser = "userB"
+        val userBCourses = repo.getCourses().getOrThrow()
+        assertEquals(1, userBCourses.size)
+        assertEquals("course-b", userBCourses[0].id)
+
+        // User B cannot open User A's course
+        val bOpeningA = repo.getCourseDetail("course-a")
+        assertTrue("User B opening User A course must fail offline", bOpeningA.isFailure)
     }
 
     @Test
@@ -113,45 +253,90 @@ class OnlineCourseRepositoryTest {
     }
 
     @Test
-    fun onlineCourseRepositoryResolvesCppBySlugAndUuidViaFallback() = runBlocking {
-        val repo = OnlineCourseRepository(localFallback = com.offline_First.data.local.LocalCourseRepository())
-        
-        val detailBySlug = repo.getCourseDetail("cpp-programming").getOrThrow()
-        assertNotNull(detailBySlug)
-        assertEquals("C++ Programming", detailBySlug?.name)
+    fun onlineCourseRepositorySavesAndUnsavesCourseWithFallbackDetail() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        val repo = OnlineCourseRepository(
+            localFallback = com.offline_First.data.local.LocalCourseRepository(),
+            cacheDb = testDb,
+            userIdProvider = { "user-test" }
+        )
 
-        val backendUuid = "d7a46974-51e0-47b8-b80c-07f9c8f61530"
-        com.offline_First.data.local.CourseIdNormalizer.registerRemoteCourse(backendUuid, "cpp-programming", "C++ Programming")
+        assertFalse(repo.isCourseSaved("user-test", "c-cpp"))
+        assertFalse(repo.isCourseOfflineReady("user-test", "c-cpp"))
 
-        val detailByUuid = repo.getCourseDetail(backendUuid).getOrThrow()
-        assertNotNull(detailByUuid)
-        assertEquals("C++ Programming", detailByUuid?.name)
+        // Save course: fetches detail via fallback and persists to cacheDb
+        val saveResult = repo.saveCourse("c-cpp")
+        assertTrue(saveResult.isSuccess)
+        assertTrue(repo.isCourseSaved("user-test", "c-cpp"))
+        assertTrue(repo.isCourseOfflineReady("user-test", "c-cpp"))
+
+        // Unsave course
+        val unsaveResult = repo.unsaveCourse("c-cpp")
+        assertTrue(unsaveResult.isSuccess)
+        assertFalse(repo.isCourseSaved("user-test", "c-cpp"))
     }
 
     @Test
-    fun onlineCourseRepositoryInvalidatesAndUpdatesCacheOnCompletion() = runBlocking {
-        val tempFile = File.createTempFile("test_online_cache", ".json")
-        try {
-            val progressStore = CourseProgressStore(tempFile)
-            val repo = OnlineCourseRepository(
-                localFallback = com.offline_First.data.local.LocalCourseRepository(progressStore),
-                progressStore = progressStore
-            )
+    fun offlineSavedCourseOpensBySlugAndAlias() = runBlocking {
+        val testDb = InMemoryChatCacheDatabase()
+        var isOnline = false
+        val repo = OnlineCourseRepository(
+            cacheDb = testDb,
+            isOnlineProvider = { isOnline },
+            userIdProvider = { "user-offline-1" }
+        )
 
-            val detail1 = repo.getCourseDetail("c-cpp").getOrThrow()
-            assertNotNull(detail1)
-            val lesson1 = detail1!!.modules.first().lessons.first()
-            assertFalse(lesson1.isCompleted)
+        // Simulate backend UUID for JavaScript Essentials
+        val remoteCourseUuid = "uuid-js-essentials-456"
+        val jsCourseDetail = createSampleCourseDetail(
+            courseId = remoteCourseUuid,
+            name = "JavaScript Essentials",
+            lessonCount = 15
+        )
 
-            repo.markLessonCompleted("c-cpp", lesson1.id, true)
+        // Save course offline under remoteCourseUuid
+        testDb.saveCourseForOffline("user-offline-1", jsCourseDetail, downloadStatus = "completed", syncStatus = "synced")
+        com.offline_First.data.local.CourseIdNormalizer.registerRemoteCourse(
+            remoteCourseUuid,
+            "javascript-essentials",
+            "JavaScript Essentials"
+        )
 
-            // Cache should immediately reflect completion
-            val detail2 = repo.getCourseDetail("c-cpp").getOrThrow()
-            assertNotNull(detail2)
-            val updatedLesson1 = detail2!!.modules.first().lessons.first()
-            assertTrue(updatedLesson1.isCompleted)
-        } finally {
-            tempFile.delete()
-        }
+        // 1. Verify getSavedCourses includes the course
+        val savedList = repo.getSavedCourses("user-offline-1").getOrThrow()
+        assertEquals(1, savedList.size)
+        assertEquals(remoteCourseUuid, savedList[0].id)
+        assertEquals("JavaScript Essentials", savedList[0].name)
+        assertEquals(15, savedList[0].totalLessons)
+
+        // 2. Verify isCourseSaved and isCourseOfflineReady work with UUID
+        assertTrue(repo.isCourseSaved(remoteCourseUuid))
+        assertTrue(repo.isCourseOfflineReady(remoteCourseUuid))
+
+        // 3. Verify isCourseSaved and isCourseOfflineReady work with slug
+        assertTrue(repo.isCourseSaved("javascript-essentials"))
+        assertTrue(repo.isCourseOfflineReady("javascript-essentials"))
+
+        // 4. Verify isCourseSaved and isCourseOfflineReady work with c-js alias
+        assertTrue(repo.isCourseSaved("c-js"))
+        assertTrue(repo.isCourseOfflineReady("c-js"))
+
+        // 5. Verify getCourseDetail returns full details offline when called with UUID
+        val detailByUuid = repo.getCourseDetail(remoteCourseUuid).getOrThrow()
+        assertNotNull(detailByUuid)
+        assertEquals("JavaScript Essentials", detailByUuid?.name)
+        assertEquals(15, detailByUuid?.totalLessonsCount)
+
+        // 6. Verify getCourseDetail returns full details offline when called with slug!
+        val detailBySlug = repo.getCourseDetail("javascript-essentials").getOrThrow()
+        assertNotNull(detailBySlug)
+        assertEquals("JavaScript Essentials", detailBySlug?.name)
+        assertEquals(15, detailBySlug?.totalLessonsCount)
+
+        // 7. Verify getCourseDetail returns full details offline when called with c-js!
+        val detailByAlias = repo.getCourseDetail("c-js").getOrThrow()
+        assertNotNull(detailByAlias)
+        assertEquals("JavaScript Essentials", detailByAlias?.name)
+        assertEquals(15, detailByAlias?.totalLessonsCount)
     }
 }

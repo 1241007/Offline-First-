@@ -425,7 +425,8 @@ fun CoursesContent(
                 }
             }
             uiState.coursesError != null -> {
-                val isNetworkErr = uiState.coursesError.contains("internet", ignoreCase = true) ||
+                val isNetworkErr = uiState.isOffline ||
+                    uiState.coursesError.contains("internet", ignoreCase = true) ||
                     uiState.coursesError.contains("offline", ignoreCase = true) ||
                     uiState.coursesError.contains("connect", ignoreCase = true)
                 Card(
@@ -450,7 +451,7 @@ fun CoursesContent(
                             modifier = Modifier.size(36.dp)
                         )
                         Text(
-                            text = if (isNetworkErr) "Courses require an internet connection." else "Course Service Error",
+                            text = if (isNetworkErr) "No courses saved for offline learning" else "Course Service Error",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -458,7 +459,7 @@ fun CoursesContent(
                         )
                         Text(
                             text = if (isNetworkErr) {
-                                "Connect to the internet to explore interactive lessons, syllabus, and resources."
+                                "Connect to the internet and save a course to access it offline."
                             } else {
                                 uiState.coursesError
                             },
@@ -497,22 +498,28 @@ fun CoursesContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            imageVector = if (uiState.isOffline) Icons.Default.CloudOff else Icons.AutoMirrored.Filled.MenuBook,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (uiState.isOffline) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(36.dp)
                         )
                         Text(
-                            text = "No courses available",
+                            text = if (uiState.isOffline) "No courses saved for offline learning" else "No courses available",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Text(
-                            text = "Check back soon for new courses and learning paths.",
+                            text = if (uiState.isOffline) {
+                                "Connect to the internet and save a course to access it offline."
+                            } else {
+                                "Check back soon for new courses and learning paths."
+                            },
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            lineHeight = 18.sp
                         )
                     }
                 }
@@ -733,7 +740,9 @@ fun CourseCard(course: Course, modifier: Modifier, onClick: () -> Unit) {
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = mutedInk,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

@@ -12,7 +12,8 @@ sealed class AuthState {
     data class Authenticated(
         val userId: String,
         val email: String,
-        val fullName: String
+        val fullName: String,
+        val isOffline: Boolean = false
     ) : AuthState()
     object Refreshing : AuthState()
     object SessionExpired : AuthState()
@@ -32,20 +33,37 @@ class SessionManager(
         fullName: String
     ) {
         tokenStorage.saveTokens(accessToken, refreshToken)
+        tokenStorage.saveUserIdentity(userId, email, fullName)
         _authState.value = AuthState.Authenticated(
             userId = userId,
             email = email,
-            fullName = fullName
+            fullName = fullName,
+            isOffline = false
+        )
+    }
+
+    fun onRestoreOfflineSession(
+        userId: String,
+        email: String,
+        fullName: String
+    ) {
+        _authState.value = AuthState.Authenticated(
+            userId = userId,
+            email = email,
+            fullName = fullName,
+            isOffline = true
         )
     }
 
     suspend fun logout(refreshToken: String? = null) {
         tokenStorage.clearTokens()
+        tokenStorage.clearUserIdentity()
         _authState.value = AuthState.Unauthenticated
     }
 
     fun onSessionExpired() {
         tokenStorage.clearTokens()
+        tokenStorage.clearUserIdentity()
         _authState.value = AuthState.SessionExpired
     }
 
@@ -53,12 +71,13 @@ class SessionManager(
         tokenStorage.saveTokens(newAccessToken, newRefreshToken)
         val current = _authState.value
         if (current is AuthState.Authenticated) {
-            _authState.value = current
+            _authState.value = current.copy(isOffline = false)
         }
     }
 
     fun setUnauthenticated() {
         tokenStorage.clearTokens()
+        tokenStorage.clearUserIdentity()
         _authState.value = AuthState.Unauthenticated
     }
 

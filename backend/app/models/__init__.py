@@ -1,7 +1,7 @@
 from .conversation import Conversation
 from .message import Message
-from .course import CourseCategory, Course, CourseModule, Lesson
-from .roadmap import Roadmap, RoadmapItem
+from .course import CourseCategory, Course, CourseModule, Lesson, UserSavedCourse
+from .roadmap import Roadmap, RoadmapItem, UserSavedRoadmap
 from .roadmap_assessment import RoadmapAssessmentSession
 from .progress import UserCourseProgress, UserLessonProgress, UserRevisionItem
 from .profile import UserProfile
@@ -16,8 +16,10 @@ __all__ = [
     "Course",
     "CourseModule",
     "Lesson",
+    "UserSavedCourse",
     "Roadmap",
     "RoadmapItem",
+    "UserSavedRoadmap",
     "RoadmapAssessmentSession",
     "UserCourseProgress",
     "UserLessonProgress",
@@ -30,4 +32,5 @@ __all__ = [
     "SyllabusDocument",
     "SyllabusChunk",
 ]
+
 

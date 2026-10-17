@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -57,6 +58,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -179,6 +181,10 @@ fun CourseDetailScreen(
                     is UiState.Success -> state.data.name
                     else -> "Course Overview"
                 },
+                isSaved = uiState.isSaved,
+                isOfflineReady = uiState.isOfflineReady,
+                isSaving = uiState.isSaving,
+                onToggleSave = { viewModel.toggleSaveCourse() },
                 onOpenRevisionList = onOpenRevisionList
             )
         }
@@ -240,6 +246,10 @@ fun CourseDetailScreen(
 private fun CourseDetailTopBar(
     onBack: () -> Unit,
     title: String,
+    isSaved: Boolean = false,
+    isOfflineReady: Boolean = false,
+    isSaving: Boolean = false,
+    onToggleSave: () -> Unit = {},
     onOpenRevisionList: (() -> Unit)? = null
 ) {
     Surface(
@@ -266,12 +276,34 @@ private fun CourseDetailTopBar(
                 fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = onToggleSave, enabled = !isSaving) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (isSaved) {
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = if (isOfflineReady) "Course saved and offline-ready" else "Course saved",
+                        tint = if (isOfflineReady) EduNovaSuccess else MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.BookmarkBorder,
+                        contentDescription = "Save course for offline access",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             if (onOpenRevisionList != null) {
                 IconButton(onClick = onOpenRevisionList) {
                     Icon(
-                        imageVector = Icons.Default.Bookmark,
+                        imageVector = Icons.Default.MenuBook,
                         contentDescription = "Revision List",
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -1126,6 +1158,22 @@ private fun LessonRow(
                             text = "•  Quiz included",
                             fontSize = 11.sp,
                             color = EduNovaSuccess,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    if (lesson.contentType.equals("video", ignoreCase = true) || !lesson.videoUrl.isNullOrBlank()) {
+                        Text(
+                            text = "•  Video (Requires Internet)",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else if (!lesson.resourceUrl.isNullOrBlank()) {
+                        Text(
+                            text = "•  External Link (Requires Internet)",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
                         )
                     }

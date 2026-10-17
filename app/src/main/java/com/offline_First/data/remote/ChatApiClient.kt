@@ -443,6 +443,33 @@ object ChatApiClient {
         json.decodeFromString<CourseDetailDto>(body)
     }
 
+    suspend fun getSavedCourses(): Result<List<SavedCourseResponseDto>> = runCatching {
+        val (code, body) = get("/courses/saved")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<SavedCourseResponseDto>>(body)
+    }
+
+    suspend fun saveCourse(courseId: String): Result<SavedCourseActionResponseDto> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(courseId, "UTF-8")
+        val (code, body) = post("/courses/$encodedId/save", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SavedCourseActionResponseDto>(body)
+    }
+
+    suspend fun unsaveCourse(courseId: String): Result<SavedCourseActionResponseDto> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(courseId, "UTF-8")
+        val (code, body) = delete("/courses/$encodedId/save")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SavedCourseActionResponseDto>(body)
+    }
+
+    suspend fun completeLesson(lessonId: String): Result<Boolean> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(lessonId, "UTF-8")
+        val (code, body) = post("/learning/lessons/$encodedId/complete", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        true
+    }
+
     // --- Roadmaps API ---
 
     suspend fun getRoadmaps(
@@ -470,6 +497,26 @@ object ChatApiClient {
         val (code, body) = get("/roadmaps/categories")
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<List<String>>(body)
+    }
+
+    suspend fun getSavedRoadmaps(): Result<List<SavedRoadmapResponseDto>> = runCatching {
+        val (code, body) = get("/roadmaps/saved")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<List<SavedRoadmapResponseDto>>(body)
+    }
+
+    suspend fun saveRoadmap(roadmapId: String): Result<SavedRoadmapActionResponseDto> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(roadmapId, "UTF-8")
+        val (code, body) = post("/roadmaps/$encodedId/save", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SavedRoadmapActionResponseDto>(body)
+    }
+
+    suspend fun unsaveRoadmap(roadmapId: String): Result<SavedRoadmapActionResponseDto> = runCatching {
+        val encodedId = java.net.URLEncoder.encode(roadmapId, "UTF-8")
+        val (code, body) = delete("/roadmaps/$encodedId/save")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SavedRoadmapActionResponseDto>(body)
     }
 
     // --- Personalized Roadmap Assessment & Generation API ---

@@ -225,3 +225,30 @@ data class SavePersonalizedRoadmapRequestDto(
 data class RenamePersonalizedRoadmapRequestDto(
     val title: String
 )
+
+@Serializable
+data class SavedRoadmapActionResponseDto(
+    val success: Boolean = true,
+    val message: String = "",
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("isSaved") val isSaved: Boolean = true
+)
+
+@Serializable
+data class SavedRoadmapResponseDto(
+    val id: String,
+    @SerialName("userId") val userId: String,
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("roadmapType") val roadmapType: String = "system",
+    @SerialName("savedAt") val savedAt: String,
+    val title: String,
+    val category: String = "",
+    val description: String = "",
+    val skills: List<String> = emptyList(),
+    val level: String = "Beginner",
+    val duration: String = "",
+    val stages: Int = 0,
+    val icon: String = "",
+    @SerialName("accentTheme") val accentTheme: String = "primary"
+)
+

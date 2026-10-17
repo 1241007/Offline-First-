@@ -424,5 +424,131 @@ class OnlineRoadmapRepositoryTest {
         assertEquals(2, session.currentQuestion!!.difficultyLevel)
         assertEquals("Assesses knowledge of Python execution model", session.currentQuestion!!.explanation)
     }
+
+    @Test
+    fun saveRoadmap_sendsPostRequest_andReturnsSuccess() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""
+                    {
+                        "success": true,
+                        "message": "Roadmap saved successfully",
+                        "roadmapId": "sys-1",
+                        "isSaved": true
+                    }
+                """.trimIndent())
+        )
+
+        val result = repository.saveRoadmap("sys-1")
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow())
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/roadmaps/sys-1/save", request.path)
+    }
+
+    @Test
+    fun unsaveRoadmap_sendsDeleteRequest_andReturnsSuccess() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""
+                    {
+                        "success": true,
+                        "message": "Roadmap unsaved successfully",
+                        "roadmapId": "sys-1",
+                        "isSaved": false
+                    }
+                """.trimIndent())
+        )
+
+        val result = repository.unsaveRoadmap("sys-1")
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow())
+
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/api/v1/roadmaps/sys-1/save", request.path)
+    }
+
+    @Test
+    fun getSavedRoadmaps_fetchesSuccessfullyFromServer() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""
+                    [
+                        {
+                            "id": "saved-1",
+                            "userId": "test-user-123",
+                            "roadmapId": "sys-1",
+                            "roadmapType": "system",
+                            "savedAt": "2026-10-17T03:00:00Z",
+                            "title": "Saved Android Developer",
+                            "category": "Mobile",
+                            "description": "Master Android",
+                            "skills": ["Kotlin"],
+                            "level": "Intermediate",
+                            "duration": "10 weeks",
+                            "stages": 4,
+                            "icon": "phone",
+                            "accentTheme": "primary"
+                        }
+                    ]
+                """.trimIndent())
+        )
+
+        val result = repository.getSavedRoadmaps()
+        assertTrue(result.isSuccess)
+        val savedList = result.getOrThrow()
+        assertEquals(1, savedList.size)
+        assertEquals("sys-1", savedList[0].id)
+        assertEquals("Saved Android Developer", savedList[0].title)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/roadmaps/saved", request.path)
+    }
+
+    @Test
+    fun getRoadmaps_offline_doesNotCallNetwork() = runBlocking {
+        val offlineRepo = OnlineRoadmapRepository(
+            context = null,
+            userIdProvider = { "test-user-123" },
+            isOnlineProvider = { false }
+        )
+
+        val result = offlineRepo.getRoadmaps()
+        assertTrue(result.isSuccess)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun getSavedRoadmaps_offline_doesNotCallNetwork() = runBlocking {
+        val offlineRepo = OnlineRoadmapRepository(
+            context = null,
+            userIdProvider = { "test-user-123" },
+            isOnlineProvider = { false }
+        )
+
+        val result = offlineRepo.getSavedRoadmaps()
+        assertTrue(result.isSuccess)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun saveRoadmap_offline_succeedsWithoutCallingNetwork() = runBlocking {
+        val offlineRepo = OnlineRoadmapRepository(
+            context = null,
+            userIdProvider = { "test-user-123" },
+            isOnlineProvider = { false }
+        )
+
+        val result = offlineRepo.saveRoadmap("python-developer")
+        assertTrue(result.isSuccess)
+        assertEquals(0, server.requestCount)
+    }
 }
 

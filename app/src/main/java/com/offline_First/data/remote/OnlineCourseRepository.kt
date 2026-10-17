@@ -2,6 +2,7 @@ package com.offline_First.data.remote
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.offline_First.data.local.ChatCacheDatabase
 import com.offline_First.data.local.CourseIdNormalizer
 import com.offline_First.data.local.CourseProgressStore
 import com.offline_First.data.repository.CourseRepository
@@ -34,8 +35,18 @@ import java.util.concurrent.ConcurrentHashMap
 class OnlineCourseRepository(
     val context: Context? = null,
     val localFallback: CourseRepository? = null,
-    val progressStore: CourseProgressStore = (localFallback as? com.offline_First.data.local.LocalCourseRepository)?.progressStore ?: CourseProgressStore()
+    val progressStore: CourseProgressStore = (localFallback as? com.offline_First.data.local.LocalCourseRepository)?.progressStore ?: CourseProgressStore(),
+    val cacheDb: ChatCacheDatabase? = context?.let { ChatCacheDatabase(it.applicationContext) },
+    private val userIdProvider: () -> String = { "default_user" },
+    private val isOnlineProvider: () -> Boolean = { true }
 ) : CourseRepository {
+
+    val isOnline: Boolean
+        get() = isOnlineProvider()
+
+    private val currentUserId: String
+        get() = userIdProvider().ifBlank { "default_user" }
+
 
     private val prefs: SharedPreferences? = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -162,6 +173,11 @@ class OnlineCourseRepository(
     }
 
     override suspend fun getCourses(limit: Int?, offset: Int): Result<List<Course>> {
+        val uId = currentUserId
+        if (!isOnline) {
+            val offlineCourses = cacheDb?.getSavedCourses(uId).orEmpty()
+            return Result.success(if (offset == 0) offlineCourses else emptyList())
+        }
         return ChatApiClient.getCourses(featured = null, limit = limit, offset = offset)
             .map { dtos ->
                 val list = dtos.map { it.toDomain() }
@@ -174,17 +190,19 @@ class OnlineCourseRepository(
                 list
             }
             .recoverCatching { error ->
-                if (cachedCourses.isNotEmpty()) {
-                    cachedCourses
-                } else if (localFallback != null) {
-                    localFallback.getCourses(limit, offset).getOrThrow()
-                } else {
-                    throw error
-                }
+                // When network drops / unreachable: never display online catalogue or sample courses!
+                // Show ONLY the current user's locally saved, offline-ready courses.
+                val offlineCourses = cacheDb?.getSavedCourses(uId).orEmpty()
+                if (offset == 0) offlineCourses else emptyList()
             }
     }
 
     override suspend fun getFeaturedCourses(): Result<List<Course>> {
+        val uId = currentUserId
+        if (!isOnline) {
+            val offlineFeatured = cacheDb?.getSavedCourses(uId).orEmpty()
+            return Result.success(offlineFeatured)
+        }
         return ChatApiClient.getCourses(featured = true)
             .map { dtos ->
                 val list = dtos.map { it.toDomain() }
@@ -193,17 +211,19 @@ class OnlineCourseRepository(
                 list
             }
             .recoverCatching { error ->
-                if (cachedFeatured.isNotEmpty()) {
-                    cachedFeatured
-                } else if (localFallback != null) {
-                    localFallback.getFeaturedCourses().getOrThrow()
-                } else {
-                    throw error
-                }
+                val offlineFeatured = cacheDb?.getSavedCourses(uId).orEmpty()
+                offlineFeatured
             }
     }
 
     override suspend fun getCoursesByCategory(categorySlug: String): Result<List<Course>> {
+        val uId = currentUserId
+        if (!isOnline) {
+            val offlineCourses = cacheDb?.getSavedCourses(uId).orEmpty().filter {
+                it.category.equals(categorySlug, ignoreCase = true)
+            }
+            return Result.success(offlineCourses)
+        }
         val remote = runCatching {
             ChatApiClient.getCourses(category = categorySlug).getOrThrow()
         }
@@ -211,10 +231,10 @@ class OnlineCourseRepository(
         if (remote.isSuccess && list != null) {
             return Result.success(list.map { it.toDomain() })
         }
-        if (localFallback != null) {
-            return localFallback.getCoursesByCategory(categorySlug)
+        val offlineCourses = cacheDb?.getSavedCourses(uId).orEmpty().filter {
+            it.category.equals(categorySlug, ignoreCase = true)
         }
-        return remote.map { dtos -> dtos.map { it.toDomain() } }
+        return Result.success(offlineCourses)
     }
 
     private fun CourseDetail.withCurrentProgress(): CourseDetail {
@@ -267,7 +287,30 @@ class OnlineCourseRepository(
 
     override suspend fun getCourseDetail(courseId: String): Result<CourseDetail?> {
         val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        val uId = currentUserId
 
+        if (!isOnline) {
+            // Strictly offline: only allow if user explicitly saved it and it is offline-ready!
+            val isReady = aliases.any { cacheDb?.isCourseOfflineReady(uId, it) == true }
+            if (!isReady) {
+                return Result.failure(IllegalStateException("This course isn't available offline. Connect to the internet and save it first."))
+            }
+            for (alias in aliases) {
+                val offlineDetail = cacheDb?.getOfflineCourseDetail(alias, uId)
+                if (offlineDetail != null) {
+                    return Result.success(offlineDetail.withCurrentProgress())
+                }
+            }
+            for (alias in aliases) {
+                val fallbackDetail = localFallback?.getCourseDetail(alias)?.getOrNull()
+                if (fallbackDetail != null) {
+                    return Result.success(fallbackDetail.withCurrentProgress())
+                }
+            }
+            return Result.failure(IllegalStateException("This course isn't available offline. Connect to the internet and save it first."))
+        }
+
+        // When ONLINE:
         // 1. Check in-memory cache
         for (alias in aliases) {
             val cached = detailCache[alias]
@@ -287,20 +330,7 @@ class OnlineCourseRepository(
             }
         }
 
-        // 3. Check local fallback immediately if available
-        val fallback = localFallback
-        if (fallback != null) {
-            for (alias in aliases) {
-                val localResult = runCatching { fallback.getCourseDetail(alias).getOrNull() }.getOrNull()
-                if (localResult != null) {
-                    detailCache[courseId] = localResult
-                    refreshCourseDetailInBackground(courseId)
-                    return Result.success(localResult.withCurrentProgress())
-                }
-            }
-        }
-
-        // 4. If neither cache nor local fallback has it, fetch remotely
+        // 3. Fetch remotely
         val remote = runCatching {
             ChatApiClient.getCourseDetail(courseId).getOrThrow()
         }
@@ -311,15 +341,27 @@ class OnlineCourseRepository(
             savePersistedCourseDetail(courseId, detail)
             return Result.success(domain.withCurrentProgress())
         }
-        if (fallback != null) {
+
+        // 4. Remote call failed (e.g. network dropped):
+        // Fall back to SQLite IF AND ONLY IF course is explicitly saved and offline-ready for current user
+        val isReady = aliases.any { cacheDb?.isCourseOfflineReady(uId, it) == true }
+        if (isReady) {
             for (alias in aliases) {
-                val fbResult = fallback.getCourseDetail(alias)
-                if (fbResult.isSuccess && fbResult.getOrNull() != null) {
-                    return fbResult.map { it?.withCurrentProgress() }
+                val offlineDetail = cacheDb?.getOfflineCourseDetail(alias, uId)
+                if (offlineDetail != null) {
+                    return Result.success(offlineDetail.withCurrentProgress())
+                }
+            }
+            for (alias in aliases) {
+                val fallbackDetail = localFallback?.getCourseDetail(alias)?.getOrNull()
+                if (fallbackDetail != null) {
+                    return Result.success(fallbackDetail.withCurrentProgress())
                 }
             }
         }
-        return remote.map { it?.toDomain(courseId)?.withCurrentProgress() }
+
+        // Unsaved course and remote unreachable:
+        return Result.failure(IllegalStateException("This course isn't available offline. Connect to the internet and save it first."))
     }
 
     override fun observeProgressUpdates(): Flow<Long> = progressStore.progressUpdates
@@ -329,6 +371,16 @@ class OnlineCourseRepository(
 
     override suspend fun markLessonCompleted(courseId: String, lessonId: String, completed: Boolean): Result<Unit> {
         progressStore.markLessonCompleted(courseId, lessonId, completed)
+        val uId = currentUserId
+        cacheDb?.recordUserLessonProgress(uId, courseId, lessonId, completed, syncStatus = "pending_sync")
+        if (completed) {
+            runCatching {
+                val res = ChatApiClient.completeLesson(lessonId)
+                if (res.isSuccess) {
+                    cacheDb?.markUserLessonProgressSynced(uId, courseId, lessonId)
+                }
+            }
+        }
         val aliases = CourseIdNormalizer.getAllAliases(courseId)
         for (alias in aliases) {
             val cached = detailCache[alias]
@@ -401,6 +453,138 @@ class OnlineCourseRepository(
 
     override suspend fun getRevisionItems(): Result<List<RevisionItem>> {
         return Result.success(progressStore.getRevisionItems())
+    }
+
+    // Offline persistence operations
+    override suspend fun saveCourse(courseId: String): Result<Boolean> {
+        val uId = currentUserId
+        // 1. Send save request to remote API if online
+        val remoteResult = if (isOnline) ChatApiClient.saveCourse(courseId) else Result.success(SavedCourseActionResponseDto(courseId = courseId))
+
+        // 2. Fetch full course detail to cache metadata, modules, and lessons locally
+        val detailResult = getCourseDetail(courseId)
+        val detail = detailResult.getOrNull() ?: localFallback?.getCourseDetail(courseId)?.getOrNull()
+        if (detail != null && cacheDb != null && detail.modules.isNotEmpty()) {
+            CourseIdNormalizer.registerPair(courseId, detail.id)
+            val isReady = cacheDb.saveCourseForOffline(
+                userId = uId,
+                detail = detail,
+                downloadStatus = "completed",
+                syncStatus = if (remoteResult.isSuccess && isOnline) "synced" else "pending_sync"
+            )
+            return Result.success(isReady)
+        } else if (cacheDb != null) {
+            // Downloading/caching detail failed: do NOT mark offline-ready!
+            cacheDb.recordFailedDownload(
+                userId = uId,
+                courseId = courseId,
+                syncStatus = if (remoteResult.isSuccess && isOnline) "synced" else "pending_sync"
+            )
+            return Result.success(false)
+        }
+
+        return Result.success(false)
+    }
+
+    override suspend fun unsaveCourse(courseId: String): Result<Boolean> {
+        val uId = currentUserId
+        val remoteResult = ChatApiClient.unsaveCourse(courseId)
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        if (remoteResult.isSuccess) {
+            for (alias in aliases) {
+                cacheDb?.deleteSavedCourse(uId, alias)
+                cacheDb?.unsaveCourse(uId, alias)
+            }
+        } else {
+            for (alias in aliases) {
+                cacheDb?.queueUnsaveCourse(uId, alias)
+            }
+        }
+        return Result.success(true)
+    }
+
+    override suspend fun isCourseSaved(courseId: String): Boolean {
+        return isCourseSaved(currentUserId, courseId)
+    }
+
+    override suspend fun isCourseOfflineReady(courseId: String): Boolean {
+        return isCourseOfflineReady(currentUserId, courseId)
+    }
+
+    override suspend fun getSavedCourses(): Result<List<Course>> {
+        val uId = currentUserId
+        // 1. Try remote fetch only if online
+        if (isOnline) {
+            val remoteResult = ChatApiClient.getSavedCourses()
+            if (remoteResult.isSuccess) {
+            val dtoList = remoteResult.getOrThrow()
+            val domainList = dtoList.map { savedDto ->
+                val courseDto = savedDto.course ?: CourseDto(
+                    id = savedDto.courseId,
+                    name = savedDto.name,
+                    description = savedDto.description,
+                    icon = savedDto.icon,
+                    accentColor = savedDto.accentColor,
+                    category = savedDto.category,
+                    categorySlug = savedDto.categorySlug,
+                    slug = savedDto.slug,
+                    level = savedDto.level,
+                    durationHours = savedDto.durationHours,
+                    isFeatured = savedDto.isFeatured,
+                    totalLessons = savedDto.totalLessons,
+                    modulesCount = savedDto.modulesCount
+                )
+                courseDto.toDomain()
+            }
+                return Result.success(domainList)
+            }
+        }
+
+        // 2. Offline fallback: load strictly user-saved courses from local SQLite
+        val offlineCourses = cacheDb?.getSavedCourses(uId) ?: emptyList()
+        return Result.success(offlineCourses)
+    }
+
+    override suspend fun saveCourseForOffline(userId: String, course: CourseDetail): Result<Unit> {
+        val db = cacheDb ?: return Result.failure(IllegalStateException("Local SQLite database not available"))
+        val success = db.saveCourseForOffline(userId, course)
+        return if (success) Result.success(Unit) else Result.failure(IllegalStateException("Failed to persist course locally"))
+    }
+
+    override suspend fun unsaveCourse(userId: String, courseId: String): Result<Unit> {
+        val db = cacheDb ?: return Result.failure(IllegalStateException("Local SQLite database not available"))
+        db.unsaveCourse(userId, courseId)
+        return Result.success(Unit)
+    }
+
+    override suspend fun isCourseSaved(userId: String, courseId: String): Boolean {
+        val targetUser = userId.ifBlank { currentUserId }
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        return aliases.any { cacheDb?.isCourseSaved(targetUser, it) == true }
+    }
+
+    override suspend fun isCourseOfflineReady(userId: String, courseId: String): Boolean {
+        val targetUser = userId.ifBlank { currentUserId }
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        return aliases.any { cacheDb?.isCourseOfflineReady(targetUser, it) == true }
+    }
+
+    override suspend fun getSavedCourses(userId: String): Result<List<Course>> {
+        val targetUser = userId.ifBlank { currentUserId }
+        val db = cacheDb ?: return Result.success(emptyList())
+        return Result.success(db.getSavedCourses(targetUser))
+    }
+
+    override suspend fun getOfflineCourseDetail(courseId: String): Result<CourseDetail?> {
+        val db = cacheDb ?: return Result.success(null)
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        for (alias in aliases) {
+            val detail = db.getOfflineCourseDetail(alias, currentUserId)
+            if (detail != null) {
+                return Result.success(detail.withCurrentProgress())
+            }
+        }
+        return Result.success(null)
     }
 
     companion object {

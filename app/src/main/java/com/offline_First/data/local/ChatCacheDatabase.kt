@@ -23,13 +23,46 @@ import com.offline_First.data.remote.PersonalizedMilestoneDto
 import com.offline_First.data.remote.WeeklyScheduleItemDto
 import com.offline_First.data.remote.AssessmentSummaryDto
 import com.offline_First.data.remote.SkillGapItemDto
+import com.offline_First.domain.model.Course
+import com.offline_First.domain.model.CourseAccent
+import com.offline_First.domain.model.CourseDetail
+import com.offline_First.domain.model.CourseModule
+import com.offline_First.domain.model.LessonItem
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 
 private const val DB_NAME = "edunova_chat_cache.db"
-private const val DB_VERSION = 3
+private const val DB_VERSION = 5
 
+data class LocalSavedCourse(
+    val userId: String,
+    val courseId: String,
+    val savedAt: Long,
+    val downloadStatus: String = "completed",
+    val isOfflineReady: Boolean = false,
+    val syncStatus: String = "synced"
+)
+
+data class LocalSavedRoadmap(
+    val userId: String,
+    val roadmapId: String,
+    val roadmapType: String = "system",
+    val savedAt: Long,
+    val downloadStatus: String = "completed",
+    val isOfflineReady: Boolean = true,
+    val syncStatus: String = "synced"
+)
+
+
+data class LocalLessonProgressRecord(
+    val userId: String,
+    val courseId: String,
+    val lessonId: String,
+    val isCompleted: Boolean,
+    val completionTimestamp: Long,
+    val syncStatus: String = "synced"
+)
 
 data class PendingMilestoneSync(
     val roadmapId: String,
@@ -39,7 +72,12 @@ data class PendingMilestoneSync(
     val updatedAt: Long
 )
 
-class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+open class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+
+    companion object {
+        const val DATABASE_VERSION = DB_VERSION
+        const val DATABASE_NAME = DB_NAME
+    }
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -151,12 +189,113 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
             )
         """.trimIndent())
 
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_saved_courses (
+                user_id TEXT NOT NULL,
+                course_id TEXT NOT NULL,
+                saved_at INTEGER NOT NULL,
+                download_status TEXT NOT NULL DEFAULT 'completed',
+                is_offline_ready INTEGER NOT NULL DEFAULT 0,
+                sync_status TEXT NOT NULL DEFAULT 'synced',
+                PRIMARY KEY (user_id, course_id)
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_course_details (
+                course_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                icon TEXT NOT NULL DEFAULT '',
+                accent TEXT NOT NULL DEFAULT 'primary',
+                category TEXT NOT NULL DEFAULT '',
+                level TEXT NOT NULL DEFAULT '',
+                duration_hours INTEGER DEFAULT NULL,
+                total_lessons INTEGER NOT NULL DEFAULT 0,
+                modules_count INTEGER NOT NULL DEFAULT 0,
+                prerequisites_json TEXT NOT NULL DEFAULT '[]',
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_course_modules (
+                module_id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_lessons (
+                lesson_id TEXT PRIMARY KEY,
+                module_id TEXT NOT NULL,
+                course_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                content_type TEXT NOT NULL DEFAULT 'article',
+                duration_minutes INTEGER DEFAULT 0,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                resource_url TEXT DEFAULT NULL,
+                resource_provider TEXT DEFAULT NULL,
+                video_url TEXT DEFAULT NULL,
+                video_provider TEXT DEFAULT NULL,
+                content_body TEXT NOT NULL DEFAULT ''
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_user_course_progress (
+                user_id TEXT NOT NULL,
+                course_id TEXT NOT NULL,
+                completion_percentage REAL NOT NULL DEFAULT 0.0,
+                status TEXT NOT NULL DEFAULT 'in_progress',
+                last_accessed INTEGER NOT NULL DEFAULT 0,
+                sync_status TEXT NOT NULL DEFAULT 'synced',
+                PRIMARY KEY (user_id, course_id)
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_user_lesson_progress (
+                user_id TEXT NOT NULL,
+                course_id TEXT NOT NULL,
+                lesson_id TEXT NOT NULL,
+                is_completed INTEGER NOT NULL DEFAULT 0,
+                completion_timestamp INTEGER NOT NULL DEFAULT 0,
+                sync_status TEXT NOT NULL DEFAULT 'synced',
+                PRIMARY KEY (user_id, lesson_id)
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS local_saved_roadmaps (
+                user_id TEXT NOT NULL,
+                roadmap_id TEXT NOT NULL,
+                roadmap_type TEXT NOT NULL DEFAULT 'system',
+                saved_at INTEGER NOT NULL,
+                download_status TEXT NOT NULL DEFAULT 'completed',
+                is_offline_ready INTEGER NOT NULL DEFAULT 1,
+                sync_status TEXT NOT NULL DEFAULT 'synced',
+                PRIMARY KEY (user_id, roadmap_id)
+            )
+        """.trimIndent())
+
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_conv_user ON local_conversations(user_id, is_archived, updated_at DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON local_messages(user_id, conversation_id, created_at ASC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_user ON local_memories(user_id, active)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sys_roadmaps_user_cat ON local_system_roadmaps(user_id, category, updated_at DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_pers_roadmaps_user ON local_personalized_roadmaps(user_id, updated_at DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_milestone_sync ON local_milestone_progress(user_id, sync_status)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_saved_courses_user ON local_saved_courses(user_id, is_offline_ready)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_saved_roadmaps_user ON local_saved_roadmaps(user_id, is_offline_ready)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_modules_course ON local_course_modules(course_id, display_order)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_lessons_module ON local_lessons(module_id, display_order)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_lessons_course ON local_lessons(course_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_user_lesson_progress ON local_user_lesson_progress(user_id, course_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -274,6 +413,112 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_pers_roadmaps_user ON local_personalized_roadmaps(user_id, updated_at DESC)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_milestone_sync ON local_milestone_progress(user_id, sync_status)")
         }
+
+        if (oldVersion < 4) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_saved_courses (
+                    user_id TEXT NOT NULL,
+                    course_id TEXT NOT NULL,
+                    saved_at INTEGER NOT NULL,
+                    download_status TEXT NOT NULL DEFAULT 'completed',
+                    is_offline_ready INTEGER NOT NULL DEFAULT 0,
+                    sync_status TEXT NOT NULL DEFAULT 'synced',
+                    PRIMARY KEY (user_id, course_id)
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_course_details (
+                    course_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    slug TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    icon TEXT NOT NULL DEFAULT '',
+                    accent TEXT NOT NULL DEFAULT 'primary',
+                    category TEXT NOT NULL DEFAULT '',
+                    level TEXT NOT NULL DEFAULT '',
+                    duration_hours INTEGER DEFAULT NULL,
+                    total_lessons INTEGER NOT NULL DEFAULT 0,
+                    modules_count INTEGER NOT NULL DEFAULT 0,
+                    prerequisites_json TEXT NOT NULL DEFAULT '[]',
+                    updated_at INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_course_modules (
+                    module_id TEXT PRIMARY KEY,
+                    course_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    display_order INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_lessons (
+                    lesson_id TEXT PRIMARY KEY,
+                    module_id TEXT NOT NULL,
+                    course_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    content_type TEXT NOT NULL DEFAULT 'article',
+                    duration_minutes INTEGER DEFAULT 0,
+                    display_order INTEGER NOT NULL DEFAULT 0,
+                    resource_url TEXT DEFAULT NULL,
+                    resource_provider TEXT DEFAULT NULL,
+                    video_url TEXT DEFAULT NULL,
+                    video_provider TEXT DEFAULT NULL,
+                    content_body TEXT NOT NULL DEFAULT ''
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_user_course_progress (
+                    user_id TEXT NOT NULL,
+                    course_id TEXT NOT NULL,
+                    completion_percentage REAL NOT NULL DEFAULT 0.0,
+                    status TEXT NOT NULL DEFAULT 'in_progress',
+                    last_accessed INTEGER NOT NULL DEFAULT 0,
+                    sync_status TEXT NOT NULL DEFAULT 'synced',
+                    PRIMARY KEY (user_id, course_id)
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_user_lesson_progress (
+                    user_id TEXT NOT NULL,
+                    course_id TEXT NOT NULL,
+                    lesson_id TEXT NOT NULL,
+                    is_completed INTEGER NOT NULL DEFAULT 0,
+                    completion_timestamp INTEGER NOT NULL DEFAULT 0,
+                    sync_status TEXT NOT NULL DEFAULT 'synced',
+                    PRIMARY KEY (user_id, lesson_id)
+                )
+            """.trimIndent())
+
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_saved_courses_user ON local_saved_courses(user_id, is_offline_ready)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_modules_course ON local_course_modules(course_id, display_order)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lessons_module ON local_lessons(module_id, display_order)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lessons_course ON local_lessons(course_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_user_lesson_progress ON local_user_lesson_progress(user_id, course_id)")
+        }
+
+        if (oldVersion < 5) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS local_saved_roadmaps (
+                    user_id TEXT NOT NULL,
+                    roadmap_id TEXT NOT NULL,
+                    roadmap_type TEXT NOT NULL DEFAULT 'system',
+                    saved_at INTEGER NOT NULL,
+                    download_status TEXT NOT NULL DEFAULT 'completed',
+                    is_offline_ready INTEGER NOT NULL DEFAULT 1,
+                    sync_status TEXT NOT NULL DEFAULT 'synced',
+                    PRIMARY KEY (user_id, roadmap_id)
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_saved_roadmaps_user ON local_saved_roadmaps(user_id, is_offline_ready)")
+        }
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -284,6 +529,13 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        runCatching {
+            db.execSQL("UPDATE local_course_details SET slug = LOWER(REPLACE(name, ' ', '-')) WHERE slug IS NULL OR slug = course_id OR slug = ''")
+        }
     }
 
     // --- Conversation operations (Strictly scoped by user_id) ---
@@ -654,7 +906,7 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
 
     // --- System Roadmaps & Categories ---
 
-    fun upsertSystemRoadmaps(roadmaps: List<RoadmapOption>, userId: String) {
+    open fun upsertSystemRoadmaps(roadmaps: List<RoadmapOption>, userId: String) {
         if (roadmaps.isEmpty()) return
         val db = writableDatabase
         val now = System.currentTimeMillis()
@@ -685,7 +937,7 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         }
     }
 
-    fun getSystemRoadmaps(userId: String, category: String? = null): List<RoadmapOption> {
+    open fun getSystemRoadmaps(userId: String, category: String? = null): List<RoadmapOption> {
         val result = mutableListOf<RoadmapOption>()
         val sql = if (category != null) {
             "SELECT id, title, category, description, skills_json, level, duration, stages, icon, accent_theme, is_personalized FROM local_system_roadmaps WHERE (user_id = ? OR user_id = 'default_user') AND LOWER(category) = LOWER(?) ORDER BY updated_at DESC"
@@ -913,7 +1165,7 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         return result.distinctBy { it.id }
     }
 
-    fun getPersonalizedRoadmapById(roadmapId: String, userId: String): PersonalizedRoadmapDetail? {
+    open fun getPersonalizedRoadmapById(roadmapId: String, userId: String): PersonalizedRoadmapDetail? {
         val cursor = readableDatabase.rawQuery(
             """
             SELECT id, title, goal, category, level, duration, stages, icon, accent_theme, 
@@ -1217,6 +1469,827 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
                 "success", "green" -> RoadmapAccentTheme.SUCCESS
                 else -> RoadmapAccentTheme.PRIMARY
             }
+        }
+    }
+
+    // --- Saved Courses & Offline Content ---
+
+    open fun saveCourseForOffline(
+        userId: String,
+        detail: CourseDetail,
+        downloadStatus: String = "completed",
+        syncStatus: String = "synced"
+    ): Boolean {
+        if (detail.id.isBlank() || detail.modules.isEmpty()) return false
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            // 1. Persist Course Detail Metadata
+            val canonicalSlug = CourseIdNormalizer.toSlug(detail.name).ifBlank { detail.id }
+            val courseValues = ContentValues().apply {
+                put("course_id", detail.id)
+                put("name", detail.name)
+                put("slug", canonicalSlug)
+                put("description", detail.description)
+                put("icon", detail.icon)
+                put("accent", detail.accent.name.lowercase())
+                put("category", detail.category)
+                put("level", detail.level)
+                if (detail.durationHours != null) {
+                    put("duration_hours", detail.durationHours)
+                } else {
+                    putNull("duration_hours")
+                }
+                put("total_lessons", detail.totalLessonsCount)
+                put("modules_count", detail.modules.size)
+                put("prerequisites_json", json.encodeToString(detail.prerequisites))
+                put("updated_at", now)
+            }
+            db.insertWithOnConflict("local_course_details", null, courseValues, SQLiteDatabase.CONFLICT_REPLACE)
+            CourseIdNormalizer.registerRemoteCourse(detail.id, canonicalSlug, detail.name)
+
+            var persistedLessonsCount = 0
+            // 2. Persist Modules and Lessons
+            for (module in detail.modules) {
+                val modValues = ContentValues().apply {
+                    put("module_id", module.id)
+                    put("course_id", detail.id)
+                    put("title", module.title)
+                    put("description", module.description.orEmpty())
+                    put("display_order", module.displayOrder)
+                }
+                db.insertWithOnConflict("local_course_modules", null, modValues, SQLiteDatabase.CONFLICT_REPLACE)
+
+                for (lesson in module.lessons) {
+                    val lessonValues = ContentValues().apply {
+                        put("lesson_id", lesson.id)
+                        put("module_id", module.id)
+                        put("course_id", detail.id)
+                        put("title", lesson.title)
+                        put("description", lesson.description.orEmpty())
+                        put("content_type", lesson.contentType)
+                        if (lesson.durationMinutes != null) {
+                            put("duration_minutes", lesson.durationMinutes)
+                        } else {
+                            putNull("duration_minutes")
+                        }
+                        put("display_order", lesson.displayOrder)
+                        put("resource_url", lesson.resourceUrl)
+                        put("resource_provider", lesson.resourceProvider)
+                        put("video_url", lesson.videoUrl)
+                        put("video_provider", lesson.videoProvider)
+                        put("content_body", lesson.description.orEmpty())
+                    }
+                    db.insertWithOnConflict("local_lessons", null, lessonValues, SQLiteDatabase.CONFLICT_REPLACE)
+                    persistedLessonsCount++
+                }
+            }
+
+            // Only mark offline-ready if all modules and lessons are persisted and downloadStatus is completed
+            val isOfflineReady = (persistedLessonsCount == detail.totalLessonsCount && persistedLessonsCount > 0 && downloadStatus == "completed")
+
+            val savedCourseValues = ContentValues().apply {
+                put("user_id", userId)
+                put("course_id", detail.id)
+                put("saved_at", now)
+                put("download_status", downloadStatus)
+                put("is_offline_ready", if (isOfflineReady) 1 else 0)
+                put("sync_status", syncStatus)
+            }
+            db.insertWithOnConflict("local_saved_courses", null, savedCourseValues, SQLiteDatabase.CONFLICT_REPLACE)
+
+            db.setTransactionSuccessful()
+            return isOfflineReady
+        } catch (_: Exception) {
+            return false
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    open fun unsaveCourse(userId: String, courseId: String): Boolean {
+        val rows = writableDatabase.delete(
+            "local_saved_courses",
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND (course_id = ? OR course_id IN (SELECT course_id FROM local_course_details WHERE slug = ? OR course_id = ? OR LOWER(name) = LOWER(?) OR LOWER(REPLACE(name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-')) OR LOWER(REPLACE(slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))))",
+            arrayOf(userId, userId, courseId, courseId, courseId, courseId, courseId, courseId)
+        )
+        return rows > 0
+    }
+
+    open fun queueUnsaveCourse(userId: String, courseId: String): Boolean {
+        val values = ContentValues().apply {
+            put("sync_status", "pending_unsave")
+            put("is_offline_ready", 0)
+        }
+        val rows = writableDatabase.update(
+            "local_saved_courses",
+            values,
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND (course_id = ? OR course_id IN (SELECT course_id FROM local_course_details WHERE slug = ? OR course_id = ? OR LOWER(name) = LOWER(?) OR LOWER(REPLACE(name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-')) OR LOWER(REPLACE(slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))))",
+            arrayOf(userId, userId, courseId, courseId, courseId, courseId, courseId, courseId)
+        )
+        return rows > 0
+    }
+
+    open fun markSavedCourseSynced(userId: String, courseId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "synced") }
+        return writableDatabase.update("local_saved_courses", values, "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND course_id = ?", arrayOf(userId, userId, courseId)) > 0
+    }
+
+    open fun markSavedCourseFailed(userId: String, courseId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "failed") }
+        return writableDatabase.update("local_saved_courses", values, "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND course_id = ?", arrayOf(userId, userId, courseId)) > 0
+    }
+
+    open fun deleteSavedCourse(userId: String, courseId: String, onlyIfPendingUnsave: Boolean = false): Boolean {
+        val whereClause = if (onlyIfPendingUnsave) {
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND sync_status = 'pending_unsave' AND (course_id = ? OR course_id IN (SELECT course_id FROM local_course_details WHERE slug = ? OR course_id = ? OR LOWER(name) = LOWER(?) OR LOWER(REPLACE(name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-')) OR LOWER(REPLACE(slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))))"
+        } else {
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND (course_id = ? OR course_id IN (SELECT course_id FROM local_course_details WHERE slug = ? OR course_id = ? OR LOWER(name) = LOWER(?) OR LOWER(REPLACE(name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-')) OR LOWER(REPLACE(slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))))"
+        }
+        return writableDatabase.delete("local_saved_courses", whereClause, arrayOf(userId, userId, courseId, courseId, courseId, courseId, courseId, courseId)) > 0
+    }
+
+    open fun getPendingUnsavedCourses(userId: String): List<LocalSavedCourse> {
+        val result = mutableListOf<LocalSavedCourse>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT user_id, course_id, saved_at, download_status, is_offline_ready, sync_status FROM local_saved_courses WHERE user_id = ? AND sync_status = 'pending_unsave'",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    LocalSavedCourse(
+                        userId = it.getString(0),
+                        courseId = it.getString(1),
+                        savedAt = it.getLong(2),
+                        downloadStatus = it.getString(3),
+                        isOfflineReady = it.getInt(4) == 1,
+                        syncStatus = it.getString(5)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun isCourseSaved(userId: String, courseId: String): Boolean {
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT 1 FROM local_saved_courses sc
+            LEFT JOIN local_course_details cd ON sc.course_id = cd.course_id
+            WHERE (sc.user_id = ? OR ? = 'default_user' OR sc.user_id = 'default_user')
+              AND (
+                  sc.course_id = ? 
+                  OR cd.course_id = ? 
+                  OR cd.slug = ? 
+                  OR LOWER(cd.name) = LOWER(?)
+                  OR LOWER(REPLACE(cd.name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+                  OR LOWER(REPLACE(cd.slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+              )
+              AND sc.sync_status != 'pending_unsave'
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(userId, userId, courseId, courseId, courseId, courseId, courseId, courseId)
+        )
+        return cursor.use { it.moveToFirst() }
+    }
+
+    open fun recordFailedDownload(userId: String, courseId: String, syncStatus: String = "pending_sync"): Boolean {
+        val values = ContentValues().apply {
+            put("user_id", userId)
+            put("course_id", courseId)
+            put("saved_at", System.currentTimeMillis())
+            put("download_status", "failed")
+            put("is_offline_ready", 0)
+            put("sync_status", syncStatus)
+        }
+        val rows = writableDatabase.insertWithOnConflict(
+            "local_saved_courses",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE
+        )
+        return rows != -1L
+    }
+
+    open fun isCourseOfflineReady(userId: String, courseId: String): Boolean {
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT 1 FROM local_saved_courses sc
+            JOIN local_course_details cd ON sc.course_id = cd.course_id
+            WHERE (sc.user_id = ? OR ? = 'default_user' OR sc.user_id = 'default_user')
+              AND (
+                  sc.course_id = ? 
+                  OR cd.course_id = ? 
+                  OR cd.slug = ? 
+                  OR LOWER(cd.name) = LOWER(?)
+                  OR LOWER(REPLACE(cd.name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+                  OR LOWER(REPLACE(cd.slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+              )
+              AND sc.is_offline_ready = 1 
+              AND sc.download_status = 'completed'
+              AND sc.sync_status != 'pending_unsave'
+              AND (
+                  cd.total_lessons = 0 
+                  OR (SELECT COUNT(*) FROM local_lessons l WHERE l.course_id = sc.course_id OR l.course_id = cd.course_id) >= cd.total_lessons
+                  OR (SELECT COUNT(*) FROM local_lessons l WHERE l.course_id = sc.course_id OR l.course_id = cd.course_id) > 0
+              )
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(userId, userId, courseId, courseId, courseId, courseId, courseId, courseId)
+        )
+        return cursor.use { it.moveToFirst() }
+    }
+
+    open fun getSavedCourses(userId: String): List<Course> {
+        val result = mutableListOf<Course>()
+        val sql = """
+            SELECT cd.course_id, cd.name, cd.description, cd.icon, cd.accent, cd.category, cd.level,
+                   cd.duration_hours, cd.total_lessons, cd.modules_count, cd.slug
+            FROM local_saved_courses sc
+            JOIN local_course_details cd ON sc.course_id = cd.course_id
+            WHERE (sc.user_id = ? OR ? = 'default_user' OR sc.user_id = 'default_user')
+              AND sc.is_offline_ready = 1 
+              AND sc.download_status = 'completed'
+              AND sc.sync_status != 'pending_unsave'
+              AND (
+                  cd.total_lessons = 0 
+                  OR (SELECT COUNT(*) FROM local_lessons l WHERE l.course_id = sc.course_id OR l.course_id = cd.course_id) >= cd.total_lessons
+                  OR (SELECT COUNT(*) FROM local_lessons l WHERE l.course_id = sc.course_id OR l.course_id = cd.course_id) > 0
+              )
+            ORDER BY sc.saved_at DESC
+        """.trimIndent()
+
+        val cursor = readableDatabase.rawQuery(sql, arrayOf(userId, userId))
+        cursor.use {
+            while (it.moveToNext()) {
+                val cId = it.getString(0)
+                val name = it.getString(1)
+                val desc = it.getString(2)
+                val icon = it.getString(3)
+                val accent = mapCourseAccent(it.getString(4) ?: "primary")
+                val category = it.getString(5) ?: ""
+                val level = it.getString(6) ?: "Beginner"
+                val duration = if (it.isNull(7)) null else it.getInt(7)
+                val totalLessons = it.getInt(8)
+                val modulesCount = it.getInt(9)
+                val slug = if (it.isNull(10)) null else it.getString(10)
+
+                CourseIdNormalizer.registerRemoteCourse(cId, slug, name)
+
+                val completedCount = getUserCompletedLessonCount(userId, cId)
+                val prog = if (totalLessons > 0) (completedCount.toFloat() / totalLessons.toFloat()).coerceIn(0f, 1f) else 0f
+
+                result.add(
+                    Course(
+                        id = cId,
+                        name = name,
+                        description = desc,
+                        icon = icon,
+                        accent = accent,
+                        category = category,
+                        level = level,
+                        durationHours = duration,
+                        totalLessons = totalLessons,
+                        modulesCount = modulesCount,
+                        completedLessons = completedCount,
+                        progress = prog
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun getOfflineCourseDetail(courseId: String, userId: String? = null): CourseDetail? {
+        val aliases = CourseIdNormalizer.getAllAliases(courseId)
+        if (userId != null) {
+            val anyReady = aliases.any { isCourseOfflineReady(userId, it) }
+            if (!anyReady) {
+                return null
+            }
+        }
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT course_id, name, description, icon, accent, category, level, duration_hours, prerequisites_json 
+            FROM local_course_details 
+            WHERE course_id = ? 
+               OR slug = ? 
+               OR LOWER(name) = LOWER(?)
+               OR LOWER(REPLACE(name, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+               OR LOWER(REPLACE(slug, ' ', '-')) = LOWER(REPLACE(?, ' ', '-'))
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(courseId, courseId, courseId, courseId, courseId)
+        )
+        val meta = cursor.use {
+            if (!it.moveToFirst()) return null
+            val resolvedId = it.getString(0)
+            val prereqJson = it.getString(8) ?: "[]"
+            val prereqs = runCatching { json.decodeFromString<List<String>>(prereqJson) }.getOrDefault(emptyList())
+            CourseDetail(
+                id = resolvedId,
+                name = it.getString(1),
+                description = it.getString(2),
+                icon = it.getString(3),
+                accent = mapCourseAccent(it.getString(4) ?: "primary"),
+                category = it.getString(5) ?: "",
+                level = it.getString(6) ?: "Beginner",
+                durationHours = if (it.isNull(7)) null else it.getInt(7),
+                prerequisites = prereqs,
+                modules = emptyList()
+            )
+        } ?: return null
+
+        val resolvedCourseId = meta.id
+
+        val completedLessonIds = if (userId != null) {
+            getUserCompletedLessonIds(userId, resolvedCourseId)
+        } else {
+            emptySet()
+        }
+
+        // Fetch modules
+        val modulesList = mutableListOf<CourseModule>()
+        val modCursor = readableDatabase.rawQuery(
+            "SELECT module_id, title, description, display_order FROM local_course_modules WHERE course_id = ? ORDER BY display_order ASC",
+            arrayOf(resolvedCourseId)
+        )
+        val moduleTuples = mutableListOf<Triple<String, String, String>>()
+        modCursor.use {
+            while (it.moveToNext()) {
+                moduleTuples.add(Triple(it.getString(0), it.getString(1), it.getString(2) ?: ""))
+            }
+        }
+
+        for ((mId, mTitle, mDesc) in moduleTuples) {
+            val lessonsList = mutableListOf<LessonItem>()
+            val lessonCursor = readableDatabase.rawQuery(
+                """
+                    SELECT lesson_id, title, description, content_type, duration_minutes, display_order,
+                           resource_url, resource_provider, video_url, video_provider
+                    FROM local_lessons
+                    WHERE module_id = ?
+                    ORDER BY display_order ASC
+                """.trimIndent(),
+                arrayOf(mId)
+            )
+            lessonCursor.use {
+                while (it.moveToNext()) {
+                    val lId = it.getString(0)
+                    lessonsList.add(
+                        LessonItem(
+                            id = lId,
+                            moduleId = mId,
+                            courseId = resolvedCourseId,
+                            title = it.getString(1),
+                            description = it.getString(2),
+                            contentType = it.getString(3) ?: "article",
+                            durationMinutes = if (it.isNull(4)) null else it.getInt(4),
+                            displayOrder = it.getInt(5),
+                            resourceUrl = it.getString(6),
+                            resourceProvider = it.getString(7),
+                            videoUrl = it.getString(8),
+                            videoProvider = it.getString(9),
+                            isCompleted = completedLessonIds.contains(lId)
+                        )
+                    )
+                }
+            }
+            modulesList.add(
+                CourseModule(
+                    id = mId,
+                    courseId = resolvedCourseId,
+                    title = mTitle,
+                    description = mDesc,
+                    displayOrder = modulesList.size + 1,
+                    lessons = lessonsList
+                )
+            )
+        }
+
+        return meta.copy(modules = modulesList)
+    }
+
+    open fun recordUserLessonProgress(
+        userId: String,
+        courseId: String,
+        lessonId: String,
+        isCompleted: Boolean,
+        syncStatus: String = "synced"
+    ) {
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            val values = ContentValues().apply {
+                put("user_id", userId)
+                put("course_id", courseId)
+                put("lesson_id", lessonId)
+                put("is_completed", if (isCompleted) 1 else 0)
+                put("completion_timestamp", now)
+                put("sync_status", syncStatus)
+            }
+            db.insertWithOnConflict("local_user_lesson_progress", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+            // Update course progress summary
+            val completedCount = getUserCompletedLessonCount(userId, courseId)
+            val totalCursor = db.rawQuery(
+                "SELECT total_lessons FROM local_course_details WHERE course_id = ? LIMIT 1",
+                arrayOf(courseId)
+            )
+            val totalLessons = totalCursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+            val percentage = if (totalLessons > 0) (completedCount.toFloat() / totalLessons.toFloat() * 100f).coerceIn(0f, 100f) else 0f
+            val status = if (percentage >= 100f) "completed" else "in_progress"
+
+            val courseProgValues = ContentValues().apply {
+                put("user_id", userId)
+                put("course_id", courseId)
+                put("completion_percentage", percentage)
+                put("status", status)
+                put("last_accessed", now)
+                put("sync_status", syncStatus)
+            }
+            db.insertWithOnConflict("local_user_course_progress", null, courseProgValues, SQLiteDatabase.CONFLICT_REPLACE)
+
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    open fun getUserCompletedLessonCount(userId: String, courseId: String): Int {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_user_lesson_progress WHERE user_id = ? AND course_id = ? AND is_completed = 1",
+            arrayOf(userId, courseId)
+        )
+        return cursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+    open fun getUserCompletedLessonIds(userId: String, courseId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT lesson_id FROM local_user_lesson_progress WHERE user_id = ? AND course_id = ? AND is_completed = 1",
+            arrayOf(userId, courseId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(it.getString(0))
+            }
+        }
+        return result
+    }
+
+    open fun isUserLessonCompleted(userId: String, courseId: String, lessonId: String): Boolean {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT 1 FROM local_user_lesson_progress WHERE user_id = ? AND course_id = ? AND lesson_id = ? AND is_completed = 1 LIMIT 1",
+            arrayOf(userId, courseId, lessonId)
+        )
+        return cursor.use { it.moveToFirst() }
+    }
+
+    open fun getPendingSavedCourses(userId: String): List<LocalSavedCourse> {
+        val result = mutableListOf<LocalSavedCourse>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT user_id, course_id, saved_at, download_status, is_offline_ready, sync_status FROM local_saved_courses WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    LocalSavedCourse(
+                        userId = it.getString(0),
+                        courseId = it.getString(1),
+                        savedAt = it.getLong(2),
+                        downloadStatus = it.getString(3),
+                        isOfflineReady = it.getInt(4) == 1,
+                        syncStatus = it.getString(5)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun saveRoadmap(
+        userId: String,
+        roadmapId: String,
+        roadmapType: String = "system",
+        downloadStatus: String = "completed",
+        isOfflineReady: Boolean = true,
+        syncStatus: String = "synced"
+    ): Boolean {
+        return try {
+            val values = ContentValues().apply {
+                put("user_id", userId)
+                put("roadmap_id", roadmapId)
+                put("roadmap_type", roadmapType)
+                put("saved_at", System.currentTimeMillis())
+                put("download_status", downloadStatus)
+                put("is_offline_ready", if (isOfflineReady) 1 else 0)
+                put("sync_status", syncStatus)
+            }
+            val rowId = writableDatabase.insertWithOnConflict(
+                "local_saved_roadmaps",
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE
+            )
+            rowId != -1L
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    open fun unsaveRoadmap(userId: String, roadmapId: String): Boolean {
+        return try {
+            val rows = writableDatabase.delete(
+                "local_saved_roadmaps",
+                "user_id = ? AND roadmap_id = ?",
+                arrayOf(userId, roadmapId)
+            )
+            rows > 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    open fun isRoadmapSaved(userId: String, roadmapId: String): Boolean {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT 1 FROM local_saved_roadmaps WHERE (user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ? AND sync_status != 'pending_unsave' LIMIT 1",
+            arrayOf(userId, userId, roadmapId)
+        )
+        return cursor.use { it.moveToFirst() }
+    }
+
+    open fun isRoadmapOfflineReady(userId: String, roadmapId: String): Boolean {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT 1 FROM local_saved_roadmaps WHERE (user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ? AND is_offline_ready = 1 AND sync_status != 'pending_unsave' LIMIT 1",
+            arrayOf(userId, userId, roadmapId)
+        )
+        return cursor.use { it.moveToFirst() }
+    }
+
+    open fun queueUnsaveRoadmap(userId: String, roadmapId: String): Boolean {
+        val values = ContentValues().apply {
+            put("sync_status", "pending_unsave")
+            put("is_offline_ready", 0)
+        }
+        val rows = writableDatabase.update(
+            "local_saved_roadmaps",
+            values,
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ?",
+            arrayOf(userId, userId, roadmapId)
+        )
+        return rows > 0
+    }
+
+    open fun markSavedRoadmapSynced(userId: String, roadmapId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "synced") }
+        return writableDatabase.update("local_saved_roadmaps", values, "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ?", arrayOf(userId, userId, roadmapId)) > 0
+    }
+
+    open fun markSavedRoadmapFailed(userId: String, roadmapId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "failed") }
+        return writableDatabase.update("local_saved_roadmaps", values, "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ?", arrayOf(userId, userId, roadmapId)) > 0
+    }
+
+    open fun deleteSavedRoadmap(userId: String, roadmapId: String, onlyIfPendingUnsave: Boolean = false): Boolean {
+        val whereClause = if (onlyIfPendingUnsave) {
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ? AND sync_status = 'pending_unsave'"
+        } else {
+            "(user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND roadmap_id = ?"
+        }
+        return writableDatabase.delete("local_saved_roadmaps", whereClause, arrayOf(userId, userId, roadmapId)) > 0
+    }
+
+    open fun getPendingUnsavedRoadmaps(userId: String): List<LocalSavedRoadmap> {
+        val result = mutableListOf<LocalSavedRoadmap>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT user_id, roadmap_id, roadmap_type, saved_at, download_status, is_offline_ready, sync_status FROM local_saved_roadmaps WHERE (user_id = ? OR ? = 'default_user' OR user_id = 'default_user') AND sync_status = 'pending_unsave'",
+            arrayOf(userId, userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    LocalSavedRoadmap(
+                        userId = it.getString(0),
+                        roadmapId = it.getString(1),
+                        roadmapType = it.getString(2),
+                        savedAt = it.getLong(3),
+                        downloadStatus = it.getString(4),
+                        isOfflineReady = it.getInt(4) == 1,
+                        syncStatus = it.getString(5)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun getSavedRoadmaps(userId: String): List<RoadmapOption> {
+        val result = mutableListOf<RoadmapOption>()
+        // 1. Get saved system roadmaps
+        val sysSql = """
+            SELECT sr_saved.roadmap_id, COALESCE(sr.title, sr_saved.roadmap_id), COALESCE(sr.category, 'Skill-based'),
+                   COALESCE(sr.description, ''), COALESCE(sr.skills_json, '[]'), COALESCE(sr.level, 'Beginner to Advanced'),
+                   COALESCE(sr.duration, '8 weeks'), COALESCE(sr.stages, 4), COALESCE(sr.icon, 'school'),
+                   COALESCE(sr.accent_theme, 'primary'), COALESCE(sr.is_personalized, 0)
+            FROM local_saved_roadmaps sr_saved
+            LEFT JOIN local_system_roadmaps sr ON sr_saved.roadmap_id = sr.id
+            WHERE (sr_saved.user_id = ? OR ? = 'default_user' OR sr_saved.user_id = 'default_user') AND sr_saved.is_offline_ready = 1 AND sr_saved.sync_status != 'pending_unsave'
+            ORDER BY sr_saved.saved_at DESC
+        """.trimIndent()
+        val sysCursor = readableDatabase.rawQuery(sysSql, arrayOf(userId, userId))
+        sysCursor.use {
+            while (it.moveToNext()) {
+                val skillsJson = it.getString(4) ?: "[]"
+                val skills = runCatching { json.decodeFromString<List<String>>(skillsJson) }.getOrDefault(emptyList())
+                val themeStr = it.getString(9) ?: "PRIMARY"
+                result.add(
+                    RoadmapOption(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        category = it.getString(2),
+                        description = it.getString(3),
+                        skills = skills,
+                        level = it.getString(5),
+                        duration = it.getString(6),
+                        stages = it.getInt(7),
+                        icon = it.getString(8),
+                        accentTheme = mapAccentTheme(themeStr),
+                        isPersonalized = it.getInt(10) == 1
+                    )
+                )
+            }
+        }
+
+        // 2. Get saved personalized roadmaps
+        val persSql = """
+            SELECT pr.id, pr.title, pr.category, pr.goal, pr.level,
+                   pr.duration, pr.stages, pr.icon, pr.accent_theme
+            FROM local_saved_roadmaps pr_saved
+            JOIN local_personalized_roadmaps pr ON pr_saved.roadmap_id = pr.id
+            WHERE (pr_saved.user_id = ? OR ? = 'default_user' OR pr_saved.user_id = 'default_user') AND pr_saved.is_offline_ready = 1 AND pr_saved.sync_status != 'pending_unsave'
+            ORDER BY pr_saved.saved_at DESC
+        """.trimIndent()
+        val persCursor = readableDatabase.rawQuery(persSql, arrayOf(userId, userId))
+        persCursor.use {
+            while (it.moveToNext()) {
+                val themeStr = it.getString(8) ?: "PRIMARY"
+                result.add(
+                    RoadmapOption(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        category = it.getString(2),
+                        description = it.getString(3),
+                        skills = emptyList(),
+                        level = it.getString(4),
+                        duration = it.getString(5),
+                        stages = it.getInt(6),
+                        icon = it.getString(7),
+                        accentTheme = mapAccentTheme(themeStr),
+                        isPersonalized = true
+                    )
+                )
+            }
+        }
+
+        // 3. Also include user-specific personalized roadmaps
+        val persLocalSql = """
+            SELECT id, title, category, goal, level, duration, stages, icon, accent_theme
+            FROM local_personalized_roadmaps
+            WHERE user_id = ? OR ? = 'default_user' OR user_id = 'default_user'
+            ORDER BY updated_at DESC
+        """.trimIndent()
+        val persLocalCursor = readableDatabase.rawQuery(persLocalSql, arrayOf(userId, userId))
+        persLocalCursor.use {
+            while (it.moveToNext()) {
+                val themeStr = it.getString(8) ?: "PRIMARY"
+                result.add(
+                    RoadmapOption(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        category = it.getString(2),
+                        description = it.getString(3),
+                        skills = emptyList(),
+                        level = it.getString(4),
+                        duration = it.getString(5),
+                        stages = it.getInt(6),
+                        icon = it.getString(7),
+                        accentTheme = mapAccentTheme(themeStr),
+                        isPersonalized = true
+                    )
+                )
+            }
+        }
+
+        return result.distinctBy { it.id }
+    }
+
+    open fun getPendingSavedRoadmaps(userId: String): List<LocalSavedRoadmap> {
+        val result = mutableListOf<LocalSavedRoadmap>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT user_id, roadmap_id, roadmap_type, saved_at, download_status, is_offline_ready, sync_status FROM local_saved_roadmaps WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    LocalSavedRoadmap(
+                        userId = it.getString(0),
+                        roadmapId = it.getString(1),
+                        roadmapType = it.getString(2),
+                        savedAt = it.getLong(3),
+                        downloadStatus = it.getString(4),
+                        isOfflineReady = it.getInt(5) == 1,
+                        syncStatus = it.getString(6)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun getPendingUserLessonProgress(userId: String): List<LocalLessonProgressRecord> {
+        val result = mutableListOf<LocalLessonProgressRecord>()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT user_id, course_id, lesson_id, is_completed, completion_timestamp, sync_status FROM local_user_lesson_progress WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    LocalLessonProgressRecord(
+                        userId = it.getString(0),
+                        courseId = it.getString(1),
+                        lessonId = it.getString(2),
+                        isCompleted = it.getInt(3) == 1,
+                        completionTimestamp = it.getLong(4),
+                        syncStatus = it.getString(5)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    open fun markUserLessonProgressSynced(userId: String, courseId: String, lessonId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "synced") }
+        return writableDatabase.update(
+            "local_user_lesson_progress",
+            values,
+            "user_id = ? AND course_id = ? AND lesson_id = ?",
+            arrayOf(userId, courseId, lessonId)
+        ) > 0
+    }
+
+    open fun markUserLessonProgressFailed(userId: String, courseId: String, lessonId: String): Boolean {
+        val values = ContentValues().apply { put("sync_status", "failed") }
+        return writableDatabase.update(
+            "local_user_lesson_progress",
+            values,
+            "user_id = ? AND course_id = ? AND lesson_id = ?",
+            arrayOf(userId, courseId, lessonId)
+        ) > 0
+    }
+
+    open fun getPendingOperationsCount(userId: String): Int {
+        var count = 0
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_saved_courses WHERE user_id = ? AND sync_status IN ('pending_sync', 'pending_unsave')",
+            arrayOf(userId)
+        ).use { if (it.moveToFirst()) count += it.getInt(0) }
+
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_saved_roadmaps WHERE user_id = ? AND sync_status IN ('pending_sync', 'pending_unsave')",
+            arrayOf(userId)
+        ).use { if (it.moveToFirst()) count += it.getInt(0) }
+
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_user_lesson_progress WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        ).use { if (it.moveToFirst()) count += it.getInt(0) }
+
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_milestone_progress WHERE user_id = ? AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        ).use { if (it.moveToFirst()) count += it.getInt(0) }
+
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM local_personalized_roadmaps WHERE (user_id = ? OR user_id = 'default_user') AND sync_status = 'pending_sync'",
+            arrayOf(userId)
+        ).use { if (it.moveToFirst()) count += it.getInt(0) }
+
+        return count
+    }
+
+    private fun mapCourseAccent(accentStr: String): CourseAccent {
+        return when (accentStr.lowercase()) {
+            "secondary" -> CourseAccent.SECONDARY
+            "accent" -> CourseAccent.ACCENT
+            else -> CourseAccent.PRIMARY
         }
     }
 }

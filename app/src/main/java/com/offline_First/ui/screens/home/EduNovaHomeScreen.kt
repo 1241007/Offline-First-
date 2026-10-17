@@ -34,10 +34,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,6 +52,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import com.offline_First.data.AppContainer
+import com.offline_First.data.sync.SyncState
+import com.offline_First.data.sync.SyncStatus
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -120,6 +128,11 @@ fun EduNovaHomeScreen(
     var aiQueryText by remember { mutableStateOf("") }
     var showOfflineInfoDialog by remember { mutableStateOf(false) }
 
+    val syncManager = AppContainer.syncManager
+    val syncStatus by syncManager?.syncStatus?.collectAsState() ?: remember { mutableStateOf(null) }
+    val networkMonitor = AppContainer.networkMonitor
+    val isOnline by networkMonitor?.isOnline?.collectAsState() ?: remember { mutableStateOf(true) }
+
     val showMessage: (String) -> Unit = { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
@@ -165,8 +178,11 @@ fun EduNovaHomeScreen(
                 onVoice = { showMessage("Voice input active in AI Workspace") }
             )
 
-            // 3. Offline Learning Banner
+            // 3. Offline Learning Banner with sync and offline indicators
             OfflineLearningBanner(
+                syncStatus = syncStatus,
+                isOnline = isOnline,
+                onRetrySync = { scope.launch { syncManager?.syncNow() } },
                 onClick = { showOfflineInfoDialog = true }
             )
 
@@ -184,22 +200,60 @@ fun EduNovaHomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CloudDone,
+                        imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
                         contentDescription = null,
-                        tint = EduNovaPrimary,
+                        tint = if (isOnline) EduNovaPrimary else EduNovaTextSecondary,
                         modifier = Modifier.size(24.dp)
                     )
-                    Text("Offline Learning", fontWeight = FontWeight.Bold, color = EduNovaTextPrimary)
+                    Text("Offline-First Status", fontWeight = FontWeight.Bold, color = EduNovaTextPrimary)
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "EduNova is designed offline-first. Downloaded courses, syllabus topics, and your personalized study materials remain accessible without internet.",
-                        fontSize = 13.5.sp,
-                        color = EduNovaTextSecondary,
-                        lineHeight = 19.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Connection: ", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(
+                            text = if (isOnline) "Online" else "Offline",
+                            color = if (isOnline) EduNovaSuccess else EduNovaTextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    syncStatus?.let { status ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Sync State: ", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                text = status.state.name,
+                                color = when (status.state) {
+                                    SyncState.SUCCESS -> EduNovaSuccess
+                                    SyncState.SYNCING -> EduNovaPrimary
+                                    SyncState.FAILED -> MaterialTheme.colorScheme.error
+                                    else -> EduNovaTextSecondary
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        if (status.pendingOperationsCount > 0) {
+                            Text(
+                                text = "Pending queued items: ${status.pendingOperationsCount}",
+                                fontSize = 12.5.sp,
+                                color = EduNovaTextSecondary
+                            )
+                        }
+
+                        if (status.lastError != null) {
+                            Text(
+                                text = "Last error: ${status.lastError}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "• Local Syllabus & Notes: Instant access offline\n• Offline AI Models: Supported on device\n• Sync on Reconnect: Progress saves locally and syncs automatically",
                         fontSize = 12.5.sp,
@@ -209,8 +263,18 @@ fun EduNovaHomeScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showOfflineInfoDialog = false }) {
-                    Text("Got It", color = EduNovaPrimary, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isOnline && (syncStatus?.pendingOperationsCount ?: 0) > 0) {
+                        TextButton(onClick = {
+                            scope.launch { syncManager?.syncNow() }
+                            showOfflineInfoDialog = false
+                        }) {
+                            Text("Sync Now", color = EduNovaPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    TextButton(onClick = { showOfflineInfoDialog = false }) {
+                        Text("Close", color = EduNovaTextSecondary)
+                    }
                 }
             },
             shape = RoundedCornerShape(16.dp),
@@ -597,14 +661,21 @@ private fun EduNovaRobotIllustration(modifier: Modifier = Modifier) {
 @Composable
 private fun OfflineLearningBanner(
     onClick: () -> Unit,
+    syncStatus: SyncStatus? = null,
+    isOnline: Boolean = true,
+    onRetrySync: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val pendingCount = syncStatus?.pendingOperationsCount ?: 0
+    val isSyncing = syncStatus?.state == SyncState.SYNCING
+    val isFailed = syncStatus?.state == SyncState.FAILED
+
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
-        border = BorderStroke(1.dp, EduNovaBorder),
+        border = BorderStroke(1.dp, if (isFailed) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else EduNovaBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
@@ -614,18 +685,35 @@ private fun OfflineLearningBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Offline Icon Badge
+            // Icon Badge
             Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(EduNovaPrimaryContainer),
+                    .background(
+                        when {
+                            isFailed -> MaterialTheme.colorScheme.errorContainer
+                            isSyncing -> EduNovaPrimaryContainer
+                            !isOnline -> Color(0xFFF1F5F9)
+                            else -> EduNovaPrimaryContainer
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.CloudDone,
+                    imageVector = when {
+                        isFailed -> Icons.Default.Warning
+                        isSyncing -> Icons.Default.Sync
+                        !isOnline -> Icons.Default.CloudOff
+                        else -> Icons.Default.CloudDone
+                    },
                     contentDescription = null,
-                    tint = EduNovaPrimary,
+                    tint = when {
+                        isFailed -> MaterialTheme.colorScheme.error
+                        isSyncing -> EduNovaPrimary
+                        !isOnline -> EduNovaTextSecondary
+                        else -> EduNovaPrimary
+                    },
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -645,10 +733,15 @@ private fun OfflineLearningBanner(
                         color = EduNovaTextPrimary
                     )
 
-                    // Offline ready badge
+                    // Status badge
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = EduNovaSuccess.copy(alpha = 0.16f)
+                        color = when {
+                            isFailed -> MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                            isSyncing -> EduNovaPrimary.copy(alpha = 0.16f)
+                            !isOnline -> Color(0xFFE2E8F0)
+                            else -> EduNovaSuccess.copy(alpha = 0.16f)
+                        }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -656,23 +749,50 @@ private fun OfflineLearningBanner(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                                imageVector = when {
+                                    isFailed -> Icons.Default.Warning
+                                    isSyncing -> Icons.Default.Sync
+                                    !isOnline -> Icons.Default.CloudOff
+                                    else -> Icons.Default.CheckCircle
+                                },
                                 contentDescription = null,
-                                tint = EduNovaSuccess,
+                                tint = when {
+                                    isFailed -> MaterialTheme.colorScheme.error
+                                    isSyncing -> EduNovaPrimary
+                                    !isOnline -> EduNovaTextSecondary
+                                    else -> EduNovaSuccess
+                                },
                                 modifier = Modifier.size(10.dp)
                             )
                             Text(
-                                text = "Offline ready",
+                                text = when {
+                                    isFailed -> "Sync failed"
+                                    isSyncing -> "Syncing..."
+                                    !isOnline && pendingCount > 0 -> "$pendingCount queued"
+                                    !isOnline -> "Offline"
+                                    else -> "Offline ready"
+                                },
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = EduNovaSuccess
+                                color = when {
+                                    isFailed -> MaterialTheme.colorScheme.error
+                                    isSyncing -> EduNovaPrimary
+                                    !isOnline -> EduNovaTextSecondary
+                                    else -> EduNovaSuccess
+                                }
                             )
                         }
                     }
                 }
 
                 Text(
-                    text = "Access your downloaded courses and offline study materials without internet.",
+                    text = when {
+                        isFailed -> "Some changes could not be synced. Tap to view details or retry."
+                        isSyncing -> "Synchronizing your offline progress with the cloud..."
+                        !isOnline && pendingCount > 0 -> "You're offline. $pendingCount item(s) will sync when connection returns."
+                        !isOnline -> "You're offline. Access your downloaded courses and materials."
+                        else -> "Access your downloaded courses and offline study materials without internet."
+                    },
                     fontSize = 12.sp,
                     color = EduNovaTextSecondary,
                     lineHeight = 16.sp
