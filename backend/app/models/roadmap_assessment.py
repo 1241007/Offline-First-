@@ -26,6 +26,7 @@ class RoadmapAssessmentSession(Base):
     state: Mapped[str] = mapped_column(
         String(50), nullable=False, default="INITIALIZING"
     )
+    domain: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="Python")
     goal: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     target_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     target_timeline: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

@@ -6,15 +6,18 @@ import kotlin.math.ceil
 
 /**
  * Offline-first local diagnostic engine and personalized roadmap generator.
- * Seamlessly provides instant assessments and DAG roadmap generation on-device
- * when the remote API is unreachable or returns 404.
+ * Seamlessly provides domain-aware assessments and DAG roadmap generation on-device
+ * supporting Python, Java, SQL, Machine Learning, and Web tracks.
  */
 object LocalPersonalizedRoadmapEngine {
 
     private var activeSession: AssessmentSessionState? = null
     private val savedRoadmaps = mutableListOf<PersonalizedRoadmapDetail>()
 
-    private val DIAGNOSTIC_QUESTIONS = listOf(
+    fun getActiveSession(): AssessmentSessionState? = activeSession
+    fun getSession(sessionId: String): AssessmentSessionState? = activeSession?.takeIf { it.sessionId == sessionId }
+
+    private val PYTHON_QUESTIONS = listOf(
         AssessmentQuestion(
             id = "q_py_basics_1",
             topicTag = "python_basics",
@@ -31,14 +34,7 @@ object LocalPersonalizedRoadmapEngine {
             topicTag = "python_loops",
             questionType = AssessmentQuestionType.CODE_OUTPUT,
             prompt = "What is the final value printed by this loop?",
-            codeSnippet = """
-total = 0
-for i in range(1, 5):
-    if i == 3:
-        continue
-    total += i
-print(total)
-            """.trimIndent(),
+            codeSnippet = "total = 0\nfor i in range(1, 5):\n    if i == 3:\n        continue\n    total += i\nprint(total)",
             options = listOf("7", "10", "6", "8"),
             correctOptionIndex = 0,
             difficultyLevel = 1,
@@ -49,11 +45,7 @@ print(total)
             topicTag = "python_functions",
             questionType = AssessmentQuestionType.DEBUGGING,
             prompt = "What issue exists in this function definition with a default argument?",
-            codeSnippet = """
-def add_item(item, target_list=[]):
-    target_list.append(item)
-    return target_list
-            """.trimIndent(),
+            codeSnippet = "def add_item(item, target_list=[]):\n    target_list.append(item)\n    return target_list",
             options = listOf(
                 "SyntaxError on function header",
                 "Mutable default argument persists and mutates across calls",
@@ -95,21 +87,6 @@ def add_item(item, target_list=[]):
             explanation = "super() delegates method calls to the superclass hierarchy, ensuring proper initialization of inherited state."
         ),
         AssessmentQuestion(
-            id = "q_py_exc_1",
-            topicTag = "python_exceptions",
-            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
-            prompt = "In a try...except...else...finally statement, when does the 'else' block execute?",
-            options = listOf(
-                "Always, regardless of errors",
-                "Only when an exception was handled",
-                "Only when no exception was raised in the try block",
-                "Only when finally fails"
-            ),
-            correctOptionIndex = 2,
-            difficultyLevel = 2,
-            explanation = "The 'else' block runs only if the try clause finishes without throwing any exception."
-        ),
-        AssessmentQuestion(
             id = "q_py_adv_1",
             topicTag = "python_advanced",
             questionType = AssessmentQuestionType.CODE_OUTPUT,
@@ -121,6 +98,135 @@ def add_item(item, target_list=[]):
             explanation = "Generator expressions compute values lazily. The first call to next() yields 1 * 2 = 2."
         )
     )
+
+    private val JAVA_QUESTIONS = listOf(
+        AssessmentQuestion(
+            id = "q_java_oop_1",
+            topicTag = "java_oop",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "In Java, what is the key difference between an interface and an abstract class?",
+            options = listOf(
+                "A class can implement multiple interfaces, but extend only one class",
+                "Interfaces can have instance state fields, abstract classes cannot",
+                "Abstract classes cannot have concrete method implementations",
+                "Interfaces cannot have default methods"
+            ),
+            correctOptionIndex = 0,
+            difficultyLevel = 1,
+            explanation = "Java supports multiple interface implementation, but only single class inheritance."
+        ),
+        AssessmentQuestion(
+            id = "q_java_mem_1",
+            topicTag = "java_memory",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "Where are Java object instances allocated in JVM runtime memory?",
+            options = listOf("Method Area", "Stack Frame", "Heap Space", "PC Register"),
+            correctOptionIndex = 2,
+            difficultyLevel = 2,
+            explanation = "In the JVM, all object instances are dynamically allocated on the shared Heap space."
+        ),
+        AssessmentQuestion(
+            id = "q_java_streams_1",
+            topicTag = "java_streams",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "What characterizes intermediate operations in the Java Stream API?",
+            options = listOf(
+                "They execute eagerly and close the stream",
+                "They are lazy and return a new Stream without processing elements until a terminal operation is invoked",
+                "They mutate the underlying source collection directly",
+                "They can only process parallel streams"
+            ),
+            correctOptionIndex = 1,
+            difficultyLevel = 2,
+            explanation = "Intermediate stream operations like filter() and map() are evaluated lazily upon terminal invocation."
+        )
+    )
+
+    private val SQL_QUESTIONS = listOf(
+        AssessmentQuestion(
+            id = "q_sql_join_1",
+            topicTag = "sql_joins",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "How does an INNER JOIN differ from a LEFT OUTER JOIN in SQL?",
+            options = listOf(
+                "INNER returns only matched rows from both tables; LEFT includes all rows from the left table with NULLs for unmatched right rows",
+                "INNER returns all rows from right table; LEFT returns matches only",
+                "They produce identical results if both tables have primary keys",
+                "LEFT JOIN is only used with aggregate functions"
+            ),
+            correctOptionIndex = 0,
+            difficultyLevel = 1,
+            explanation = "LEFT JOIN preserves all rows from the left table regardless of whether matching rows exist on the right."
+        ),
+        AssessmentQuestion(
+            id = "q_sql_group_1",
+            topicTag = "sql_aggregations",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "When must a HAVING clause be used instead of WHERE in SQL?",
+            options = listOf(
+                "When filtering by string columns",
+                "When filtering results based on an aggregate function (e.g. COUNT, SUM)",
+                "When sorting records descending",
+                "When joining more than two tables"
+            ),
+            correctOptionIndex = 1,
+            difficultyLevel = 2,
+            explanation = "WHERE filters rows before aggregation; HAVING filters groups after aggregate calculation."
+        ),
+        AssessmentQuestion(
+            id = "q_sql_idx_1",
+            topicTag = "sql_indexing",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "What is the primary trade-off of adding a B-Tree index to a SQL column?",
+            options = listOf(
+                "Disables foreign key constraints",
+                "Speeds up equality and range SELECT queries but increases write (INSERT/UPDATE) overhead and disk usage",
+                "Forces queries to run sequentially without parallel workers",
+                "Allows duplicate primary key values"
+            ),
+            correctOptionIndex = 1,
+            difficultyLevel = 2,
+            explanation = "Indexes accelerate lookup performance at the expense of write latency and storage."
+        )
+    )
+
+    private val ML_QUESTIONS = listOf(
+        AssessmentQuestion(
+            id = "q_ml_reg_1",
+            topicTag = "ml_regularization",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "Which technique is most effective for mitigating overfitting in machine learning models?",
+            options = listOf(
+                "Increasing model complexity and training iterations indefinitely",
+                "Removing validation and test sets",
+                "Applying regularization (L1/L2) and early stopping",
+                "Duplicating noisy training records"
+            ),
+            correctOptionIndex = 2,
+            difficultyLevel = 1,
+            explanation = "Regularization penalizes large parameter weights, preventing the model from fitting training noise."
+        ),
+        AssessmentQuestion(
+            id = "q_ml_metrics_1",
+            topicTag = "ml_evaluation",
+            questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
+            prompt = "In fraud detection or disease screening where false negatives are critical, which metric should be prioritized?",
+            options = listOf("Accuracy", "Precision", "Recall (Sensitivity)", "Mean Squared Error"),
+            correctOptionIndex = 2,
+            difficultyLevel = 2,
+            explanation = "Recall measures the proportion of actual positives correctly identified, minimizing false negatives."
+        )
+    )
+
+    private fun getQuestionsForDomain(domain: String): List<AssessmentQuestion> {
+        val dom = domain.lowercase()
+        return when {
+            dom.contains("java") || dom.contains("spring") -> JAVA_QUESTIONS
+            dom.contains("sql") || dom.contains("data") || dom.contains("postgres") -> SQL_QUESTIONS
+            dom.contains("ml") || dom.contains("machine") || dom.contains("ai") || dom.contains("deep") -> ML_QUESTIONS
+            else -> PYTHON_QUESTIONS
+        }
+    }
 
     private val PYTHON_CURRICULUM_TEMPLATE = listOf(
         TemplateTopic("python_intro", "Python Setup & Syntax Basics", "Interpreter, scripts, comments, print statements, and PEP 8 conventions.", 25, emptyList()),
@@ -139,6 +245,48 @@ def add_item(item, target_list=[]):
         TemplateTopic("python_capstone", "Capstone Project: End-to-End Application", "Integrate data structures, OOP, file handling, and error checking into a real project.", 90, listOf("python_oop_adv", "python_advanced", "python_modules"))
     )
 
+    private val JAVA_CURRICULUM_TEMPLATE = listOf(
+        TemplateTopic("java_syntax", "Java Environment & Syntax Lab", "JDK setup, compiler (javac), JVM execution, primitive types, and operators.", 30, emptyList()),
+        TemplateTopic("java_oop", "Object-Oriented Programming & Interfaces", "Classes, encapsulation, inheritance, interfaces, abstract classes, and polymorphism.", 50, listOf("java_syntax")),
+        TemplateTopic("java_collections", "Collections Framework & Generics", "List, Set, Map hierarchies, ArrayList vs LinkedList, and generic type safety.", 45, listOf("java_oop")),
+        TemplateTopic("java_exceptions", "Exception Handling & Resource Management", "Checked vs unchecked exceptions, try-with-resources, and custom exception types.", 35, listOf("java_collections")),
+        TemplateTopic("java_streams", "Stream API & Lambdas", "Functional interfaces, map-filter-reduce pipelines, and collector aggregations.", 50, listOf("java_collections")),
+        TemplateTopic("java_concurrency", "Multithreading & Concurrency", "Thread lifecycle, synchronization, ExecutorService, and atomic variables.", 60, listOf("java_streams")),
+        TemplateTopic("java_persistence", "Data Persistence with JPA / Hibernate", "Entity modeling, ORM mappings, repositories, and transaction isolation.", 60, listOf("java_concurrency")),
+        TemplateTopic("java_capstone", "Enterprise Spring Boot Microservice", "Build, containerize, and test production REST service with automated tests.", 90, listOf("java_persistence"))
+    )
+
+    private val SQL_CURRICULUM_TEMPLATE = listOf(
+        TemplateTopic("sql_modeling", "Relational Schema Design & DDL", "3NF normalization, tables, primary keys, and foreign key constraints.", 30, emptyList()),
+        TemplateTopic("sql_queries", "SELECT Queries & Filtering", "Projection, WHERE filtering, logical operators, and NULL handling.", 35, listOf("sql_modeling")),
+        TemplateTopic("sql_joins", "Multi-Table Relational JOINs", "INNER, LEFT, RIGHT, FULL OUTER, and CROSS joins with foreign keys.", 45, listOf("sql_queries")),
+        TemplateTopic("sql_aggregations", "GROUP BY & Analytical Aggregations", "COUNT, SUM, AVG, MIN, MAX with GROUP BY and HAVING filters.", 40, listOf("sql_joins")),
+        TemplateTopic("sql_indexing", "B-Tree Indexes & Query Optimization", "Index types, EXPLAIN execution plans, index scans vs sequential scans.", 45, listOf("sql_aggregations")),
+        TemplateTopic("sql_transactions", "ACID Transactions & Concurrency", "BEGIN, COMMIT, ROLLBACK, dirty reads, and transaction isolation levels.", 40, listOf("sql_indexing")),
+        TemplateTopic("sql_window", "Window Functions & Common Table Expressions", "ROW_NUMBER, RANK, DENSE_RANK, OVER partitions, and recursive CTEs.", 50, listOf("sql_transactions")),
+        TemplateTopic("sql_capstone", "Analytics Warehouse & Reporting Capstone", "Design analytical reporting schema and author production business intelligence queries.", 90, listOf("sql_window"))
+    )
+
+    private val ML_CURRICULUM_TEMPLATE = listOf(
+        TemplateTopic("ml_foundations", "Mathematical Foundations for ML", "Linear algebra, matrix operations, multivariate calculus, and probability.", 40, emptyList()),
+        TemplateTopic("ml_data_prep", "Data Preprocessing & Feature Engineering", "Handling missing values, scaling, one-hot encoding, and train-test splits.", 45, listOf("ml_foundations")),
+        TemplateTopic("ml_supervised", "Supervised Learning Algorithms", "Linear regression, logistic regression, decision trees, and random forests.", 50, listOf("ml_data_prep")),
+        TemplateTopic("ml_evaluation", "Model Evaluation & Cross-Validation", "Confusion matrix, Precision, Recall, F1, ROC-AUC, and k-fold validation.", 40, listOf("ml_supervised")),
+        TemplateTopic("ml_regularization", "Regularization & Hyperparameter Tuning", "L1/L2 penalties, Dropout, GridSearchCV, and preventing overfitting.", 45, listOf("ml_evaluation")),
+        TemplateTopic("ml_deep_learning", "Deep Learning with PyTorch", "Tensors, autograd, neural network layers, loss functions, and backprop.", 60, listOf("ml_regularization")),
+        TemplateTopic("ml_capstone", "End-to-End ML Pipeline Capstone", "Train, evaluate, and deploy a production machine learning service with API inference.", 90, listOf("ml_deep_learning"))
+    )
+
+    private fun getTemplateForDomain(domain: String): List<TemplateTopic> {
+        val dom = domain.lowercase()
+        return when {
+            dom.contains("java") || dom.contains("spring") -> JAVA_CURRICULUM_TEMPLATE
+            dom.contains("sql") || dom.contains("data") || dom.contains("postgres") -> SQL_CURRICULUM_TEMPLATE
+            dom.contains("ml") || dom.contains("machine") || dom.contains("ai") || dom.contains("deep") -> ML_CURRICULUM_TEMPLATE
+            else -> PYTHON_CURRICULUM_TEMPLATE
+        }
+    }
+
     private data class TemplateTopic(
         val tag: String,
         val title: String,
@@ -147,23 +295,23 @@ def add_item(item, target_list=[]):
         val prereqTags: List<String>
     )
 
-    fun startAssessment(): AssessmentSessionState {
+    fun startAssessment(domain: String = "Python"): AssessmentSessionState {
         val session = AssessmentSessionState(
             sessionId = UUID.randomUUID().toString(),
-            domain = "Python",
+            domain = domain,
             phase = AssessmentPhase.PROFILE_COLLECTION,
             questionNumber = 1,
-            totalQuestions = 7,
+            totalQuestions = 6,
             currentQuestion = AssessmentQuestion(
                 id = "prof_goal",
                 topicTag = "profile_goal",
                 questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
-                prompt = "What is your primary goal with Python?",
+                prompt = "What is your primary goal with $domain?",
                 options = listOf(
-                    "Get a Software Developer / Backend job",
-                    "Build my own web projects & tools",
-                    "Learn Data Science & AI / ML",
-                    "Prepare for university exams / academic prep"
+                    "Get a Software Developer / Engineering job",
+                    "Build production applications and projects",
+                    "Deepen technical architecture & performance",
+                    "Prepare for technical interviews / certifications"
                 ),
                 explanation = "Your goal helps us tailor milestone priorities and project themes."
             ),
@@ -173,7 +321,7 @@ def add_item(item, target_list=[]):
         return session
     }
 
-    fun submitAnswer(sessionId: String, answer: String, quizSelectedIndex: Int?): AssessmentSessionState {
+    fun submitAnswer(sessionId: String, answer: String, quizSelectedIndex: Int? = null): AssessmentSessionState {
         val curr = activeSession?.takeIf { it.sessionId == sessionId } ?: startAssessment()
         val currQ = curr.currentQuestion ?: return curr
         val tag = currQ.topicTag
@@ -189,7 +337,7 @@ def add_item(item, target_list=[]):
                             id = "prof_level",
                             topicTag = "profile_level",
                             questionType = AssessmentQuestionType.MULTIPLE_CHOICE,
-                            prompt = "What best describes your current self-reported experience level?",
+                            prompt = "What best describes your current self-reported experience level in ${curr.domain}?",
                             options = listOf(
                                 "Complete Beginner (no prior coding)",
                                 "Some Experience (know basics/syntax)",
@@ -221,11 +369,12 @@ def add_item(item, target_list=[]):
                         answer.contains("15") -> 15
                         else -> 5
                     }
+                    val questions = getQuestionsForDomain(curr.domain)
                     activeSession = curr.copy(
                         profileStudyHoursPerWeek = hours,
                         phase = AssessmentPhase.DIAGNOSTIC,
                         questionNumber = 4,
-                        currentQuestion = DIAGNOSTIC_QUESTIONS[0]
+                        currentQuestion = questions[0]
                     )
                 }
             }
@@ -238,17 +387,18 @@ def add_item(item, target_list=[]):
             val newEv = currState.evidenceCount + 1
             val newCorr = currState.correctCount + (if (isCorrect) 1 else 0)
             val newLvl = when {
-                newCorr >= 2 -> TopicMasteryLevel.STRONG
-                newCorr >= 1 -> TopicMasteryLevel.ADEQUATE
-                else -> TopicMasteryLevel.WEAK
+                newCorr >= 1 -> TopicMasteryLevel.STRONG
+                newCorr == 0 && newEv > 0 -> TopicMasteryLevel.WEAK
+                else -> TopicMasteryLevel.UNKNOWN
             }
             mastery[tag] = currState.copy(masteryLevel = newLvl, evidenceCount = newEv, correctCount = newCorr)
 
             if (curr.questionNumber < curr.totalQuestions) {
                 val nextNum = curr.questionNumber + 1
                 val usedTags = mastery.keys
-                val nextQ = DIAGNOSTIC_QUESTIONS.find { it.topicTag !in usedTags }
-                    ?: DIAGNOSTIC_QUESTIONS[nextNum % DIAGNOSTIC_QUESTIONS.size]
+                val questions = getQuestionsForDomain(curr.domain)
+                val nextQ = questions.find { it.topicTag !in usedTags }
+                    ?: questions[nextNum % questions.size]
 
                 activeSession = curr.copy(
                     questionNumber = nextNum,
@@ -297,33 +447,48 @@ def add_item(item, target_list=[]):
 
     fun generateRoadmap(sessionId: String): PersonalizedRoadmapDetail {
         val session = activeSession?.takeIf { it.sessionId == sessionId } ?: startAssessment()
-        val tagToId = PYTHON_CURRICULUM_TEMPLATE.associate { it.tag to "topic_${it.tag}" }
+        val template = getTemplateForDomain(session.domain)
+        val tagToId = template.associate { it.tag to it.tag }
 
         var totalMinutes = 0
         val topics = mutableListOf<PersonalizedRoadmapTopic>()
         val edges = mutableListOf<PersonalizedRoadmapEdge>()
+        val skippedNodeIds = mutableSetOf<String>()
 
-        for (t in PYTHON_CURRICULUM_TEMPLATE) {
+        for (t in template) {
             val nodeId = tagToId[t.tag]!!
             val prereqIds = t.prereqTags.mapNotNull { tagToId[it] }
             val m = session.masteryMap[t.tag]?.masteryLevel ?: TopicMasteryLevel.UNKNOWN
 
-            val accelerated = (m == TopicMasteryLevel.STRONG)
+            val demonstrated = (m == TopicMasteryLevel.STRONG)
+            val isSkipped = demonstrated && !t.tag.contains("capstone")
+
+            if (isSkipped) {
+                skippedNodeIds.add(nodeId)
+            }
+
             val score = when (m) {
                 TopicMasteryLevel.WEAK -> 100
                 TopicMasteryLevel.ADEQUATE -> 65
                 TopicMasteryLevel.STRONG -> 20
                 TopicMasteryLevel.UNKNOWN -> 45
             }
-            val exp = when (m) {
-                TopicMasteryLevel.WEAK -> "Identified as a critical growth area in diagnostic assessment. Prioritized for mastery."
-                TopicMasteryLevel.STRONG -> "Demonstrated strong knowledge in diagnostic assessment. Accelerated pathway applied."
-                TopicMasteryLevel.ADEQUATE -> "Solid foundation demonstrated. Standard progression."
-                TopicMasteryLevel.UNKNOWN -> "Core milestone for your learning goal."
+            val exp = when {
+                isSkipped -> "Demonstrated mastery in diagnostic assessment. Accelerated past foundational requirement."
+                m == TopicMasteryLevel.WEAK -> "Identified as a critical growth area in diagnostic assessment. Prioritized for mastery."
+                m == TopicMasteryLevel.ADEQUATE -> "Solid foundation demonstrated. Standard progression."
+                else -> "Core milestone for your learning goal."
             }
-            val status = if (prereqIds.isEmpty()) PersonalizedTopicStatus.UNLOCKED else PersonalizedTopicStatus.LOCKED
 
-            totalMinutes += if (accelerated) (t.minutes * 0.4).toInt() else t.minutes
+            val status = when {
+                isSkipped -> PersonalizedTopicStatus.SKIPPED
+                prereqIds.isEmpty() || prereqIds.all { it in skippedNodeIds } -> PersonalizedTopicStatus.UNLOCKED
+                else -> PersonalizedTopicStatus.LOCKED
+            }
+
+            if (!isSkipped) {
+                totalMinutes += t.minutes
+            }
 
             topics.add(
                 PersonalizedRoadmapTopic(
@@ -336,7 +501,7 @@ def add_item(item, target_list=[]):
                     status = status,
                     masteryLevel = m,
                     priorityScore = score,
-                    accelerated = accelerated,
+                    accelerated = isSkipped,
                     explanation = exp
                 )
             )
@@ -347,18 +512,77 @@ def add_item(item, target_list=[]):
         val hours = session.profileStudyHoursPerWeek.coerceAtLeast(1)
         val weeks = ceil((totalMinutes / 60.0) / hours).toInt().coerceAtLeast(1)
 
+        val domainTitle = session.domain.ifBlank { "Personalized" }
+        val chunkSize = ceil(topics.size / 3.0).toInt().coerceAtLeast(1)
+        val phaseChunks = topics.chunked(chunkSize)
+        val phases = phaseChunks.mapIndexed { idx, chunkTopics ->
+            val phaseNum = idx + 1
+            val phaseTitle = when (phaseNum) {
+                1 -> "Phase 1: Foundations & Core Concepts"
+                2 -> "Phase 2: Intermediate Implementation & Systems"
+                else -> "Phase 3: Production Mastery & Capstone"
+            }
+            val phaseObjective = "Master ${chunkTopics.firstOrNull()?.title ?: domainTitle} through ${chunkTopics.lastOrNull()?.title ?: ""}"
+            val nonSkippedMinutes = chunkTopics.filter { it.status != PersonalizedTopicStatus.SKIPPED }.sumOf { it.estimatedMinutes }
+            val phaseWeeks = ceil((nonSkippedMinutes / 60.0) / hours).toInt().coerceAtLeast(1)
+
+            val tasks = chunkTopics.map { topic ->
+                PersonalizedTask(
+                    id = "task_${topic.id}",
+                    title = topic.title,
+                    description = topic.shortDescription,
+                    instructions = "Hands-on project and exercises for ${topic.title}",
+                    estimatedHours = topic.estimatedMinutes / 60.0,
+                    resources = listOf("Official Documentation for ${session.domain}"),
+                    completionCriteria = "Pass all diagnostic and unit exercises for ${topic.title}",
+                    isCompleted = false,
+                    dependencies = topic.prerequisiteTopicIds,
+                    topicId = topic.id,
+                    status = topic.status.name,
+                    subtopics = listOf("${topic.title} Fundamentals", "${topic.title} Best Practices"),
+                    learningObjectives = listOf("Understand ${topic.title}", "Apply ${topic.title} in projects"),
+                    skipReason = topic.explanation?.takeIf { topic.status == PersonalizedTopicStatus.SKIPPED }
+                )
+            }
+
+            val milestones = listOf(
+                PersonalizedMilestone(
+                    title = "Complete Phase $phaseNum Topics",
+                    completionCriteria = listOf("Pass all module assessments"),
+                    assessment = "Project Review",
+                    passingCriteria = "All exercises verified",
+                    isCompleted = false
+                )
+            )
+
+            PersonalizedPhase(
+                title = phaseTitle,
+                objective = phaseObjective,
+                durationWeeks = phaseWeeks,
+                topics = chunkTopics.map { it.title },
+                tasks = tasks,
+                activities = chunkTopics.map { "Build practical exercise for ${it.title}" },
+                resources = listOf("Official Documentation for ${session.domain}"),
+                milestones = milestones
+            )
+        }
+
         val roadmap = PersonalizedRoadmapDetail(
             id = UUID.randomUUID().toString(),
-            title = if (session.profileGoal.isNotBlank()) "Python: ${session.profileGoal.take(30)}" else "Personalized Python Roadmap",
+            title = if (session.profileGoal.isNotBlank()) "$domainTitle: ${session.profileGoal.take(30)}" else "$domainTitle Learning Roadmap",
             domain = session.domain,
-            goal = session.profileGoal.ifBlank { "Master Python" },
+            category = session.domain,
+            duration = "$weeks weeks",
+            goal = session.profileGoal.ifBlank { "Master ${session.domain}" },
             level = session.profileLevel.ifBlank { "Beginner" },
             studyHoursPerWeek = hours,
             estimatedWeeks = weeks,
+            stages = phases.size,
+            phases = phases,
             topics = topics,
             edges = edges,
             assessmentSessionId = session.sessionId
-        )
+        ).withRecomputedStatuses()
 
         savedRoadmaps.removeIf { it.id == roadmap.id }
         savedRoadmaps.add(0, roadmap)

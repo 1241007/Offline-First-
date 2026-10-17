@@ -159,51 +159,56 @@ class LocalRoadmapRepository : RoadmapRepository {
         Result.success(Pair(true, subject.trim()))
 
     override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> =
-        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+        Result.success(LocalPersonalizedRoadmapEngine.startAssessment(domain))
 
     override suspend fun getActiveAssessmentSession(): Result<AssessmentSessionState?> =
-        Result.success(null)
+        Result.success(LocalPersonalizedRoadmapEngine.getActiveSession())
 
     override suspend fun getAssessmentSession(sessionId: String): Result<AssessmentSessionState> =
-        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+        LocalPersonalizedRoadmapEngine.getSession(sessionId)?.let { Result.success(it) }
+            ?: Result.failure(NoSuchElementException("Session not found"))
 
     override suspend fun submitAssessmentAnswer(
         sessionId: String,
         answer: String,
         quizSelectedIndex: Int?
     ): Result<AssessmentSessionState> =
-        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+        Result.success(LocalPersonalizedRoadmapEngine.submitAnswer(sessionId, answer, quizSelectedIndex))
 
     override suspend fun correctProfileField(
         sessionId: String,
         field: String,
         value: String
     ): Result<AssessmentSessionState> =
-        Result.failure(UnsupportedOperationException("Personalized roadmap assessment requires backend connection"))
+        Result.success(LocalPersonalizedRoadmapEngine.correctProfileField(sessionId, field, value))
 
     override suspend fun generatePersonalizedRoadmap(sessionId: String): Result<PersonalizedRoadmapDetail> =
-        Result.failure(UnsupportedOperationException("Personalized roadmap generation requires backend connection"))
+        Result.success(LocalPersonalizedRoadmapEngine.generateRoadmap(sessionId))
 
     override suspend fun getMyPersonalizedRoadmaps(
         limit: Int?,
         offset: Int
     ): Result<List<PersonalizedRoadmapDetail>> =
-        Result.success(emptyList())
+        Result.success(LocalPersonalizedRoadmapEngine.getSavedRoadmaps())
 
     override fun getMyPersonalizedRoadmapsCached(): List<PersonalizedRoadmapDetail> =
-        emptyList()
+        LocalPersonalizedRoadmapEngine.getSavedRoadmaps()
 
     override suspend fun getPersonalizedRoadmapDetail(roadmapId: String): Result<PersonalizedRoadmapDetail> =
-        Result.failure(NoSuchElementException("Roadmap not found locally"))
+        LocalPersonalizedRoadmapEngine.getRoadmap(roadmapId)?.let { Result.success(it) }
+            ?: Result.failure(NoSuchElementException("Roadmap not found locally"))
 
     override suspend fun savePersonalizedRoadmap(roadmap: PersonalizedRoadmapDetail): Result<PersonalizedRoadmapDetail> =
-        Result.success(roadmap)
+        Result.success(LocalPersonalizedRoadmapEngine.saveRoadmap(roadmap))
 
-    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> =
-        Result.success(Unit)
+    override suspend fun deletePersonalizedRoadmap(roadmapId: String): Result<Unit> {
+        LocalPersonalizedRoadmapEngine.deleteRoadmap(roadmapId)
+        return Result.success(Unit)
+    }
 
     override suspend fun renamePersonalizedRoadmap(roadmapId: String, newTitle: String): Result<PersonalizedRoadmapDetail> =
-        Result.failure(UnsupportedOperationException("Renaming not supported locally"))
+        LocalPersonalizedRoadmapEngine.renameRoadmap(roadmapId, newTitle)?.let { Result.success(it) }
+            ?: Result.failure(NoSuchElementException("Roadmap not found locally"))
 
     override suspend fun getCompletedMilestones(roadmapId: String): Set<String> =
         emptySet()

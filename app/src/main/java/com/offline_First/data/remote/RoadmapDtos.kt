@@ -71,9 +71,15 @@ data class AssessmentMessageItemDto(
 )
 
 @Serializable
+data class StartAssessmentRequestDto(
+    val domain: String = "Python"
+)
+
+@Serializable
 data class AssessmentSessionResponseDto(
     val id: String,
     val state: String,
+    val domain: String = "Python",
     @SerialName("currentStepId") val currentStepId: String? = null,
     @SerialName("completedSteps") val completedSteps: List<String> = emptyList(),
     val goal: String? = null,
@@ -110,7 +116,13 @@ data class PersonalizedTaskDto(
     val resources: List<String> = emptyList(),
     @SerialName("completionCriteria") val completionCriteria: String = "",
     @SerialName("isCompleted") val isCompleted: Boolean = false,
-    val dependencies: List<String> = emptyList()
+    val dependencies: List<String> = emptyList(),
+    @SerialName("topicId") val topicId: String? = null,
+    val status: String? = null,
+    val subtopics: List<String> = emptyList(),
+    @SerialName("learningObjectives") val learningObjectives: List<String> = emptyList(),
+    @SerialName("codeExample") val codeExample: String? = null,
+    @SerialName("skipReason") val skipReason: String? = null
 )
 
 @Serializable
@@ -163,6 +175,27 @@ data class AssessmentSummaryDto(
 )
 
 @Serializable
+data class PersonalizedTopicDto(
+    val id: String,
+    val title: String,
+    val description: String = "",
+    val status: String = "UNLOCKED",
+    @SerialName("phaseTitle") val phaseTitle: String = "",
+    val subtopics: List<String> = emptyList(),
+    @SerialName("learningObjectives") val learningObjectives: List<String> = emptyList(),
+    @SerialName("codeExample") val codeExample: String = "",
+    @SerialName("prerequisiteTopicIds") val prerequisiteTopicIds: List<String> = emptyList(),
+    @SerialName("estimatedHours") val estimatedHours: Double = 2.0,
+    @SerialName("skipReason") val skipReason: String? = null
+)
+
+@Serializable
+data class PersonalizedEdgeDto(
+    @SerialName("fromTopicId") val fromTopicId: String,
+    @SerialName("toTopicId") val toTopicId: String
+)
+
+@Serializable
 data class PersonalizedRoadmapStructureDto(
     val title: String,
     val goal: String,
@@ -176,7 +209,10 @@ data class PersonalizedRoadmapStructureDto(
     val assumptions: List<String> = emptyList(),
     @SerialName("capstoneProject") val capstoneProject: String = "",
     @SerialName("nextAction") val nextAction: String = "",
-    @SerialName("completedMilestones") val completedMilestones: List<String> = emptyList()
+    @SerialName("completedMilestones") val completedMilestones: List<String> = emptyList(),
+    val domain: String? = null,
+    val topics: List<PersonalizedTopicDto> = emptyList(),
+    val edges: List<PersonalizedEdgeDto> = emptyList()
 )
 
 @Serializable
@@ -227,6 +263,34 @@ data class RenamePersonalizedRoadmapRequestDto(
 )
 
 @Serializable
+<<<<<<< HEAD
+data class ValidateSubjectRequestDto(
+    val subject: String
+)
+
+@Serializable
+data class ValidateSubjectResponseDto(
+    @SerialName("isValid") val isValid: Boolean = true,
+    @SerialName("standardizedName") val standardizedName: String,
+    val suggestions: List<String> = emptyList(),
+    val message: String? = null
+)
+
+@Serializable
+data class CompleteTopicRequestDto(
+    @SerialName("quizPassed") val quizPassed: Boolean = true,
+    @SerialName("quizScore") val quizScore: Int? = 100
+)
+
+@Serializable
+data class CompleteTopicResponseDto(
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("topicId") val topicId: String,
+    @SerialName("isCompleted") val isCompleted: Boolean = true,
+    @SerialName("progressPercentage") val progressPercentage: Int = 0,
+    @SerialName("completedTopicIds") val completedTopicIds: List<String> = emptyList()
+)
+=======
 data class SavedRoadmapActionResponseDto(
     val success: Boolean = true,
     val message: String = "",
@@ -252,3 +316,4 @@ data class SavedRoadmapResponseDto(
     @SerialName("accentTheme") val accentTheme: String = "primary"
 )
 
+>>>>>>> origin

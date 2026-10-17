@@ -33,6 +33,7 @@ class AssessmentSessionResponse(BaseModel):
     """Full assessment session state response for the client"""
     id: str
     state: str
+    domain: str = "Python"
     current_step_id: Optional[str] = Field(None, alias="currentStepId")
     completed_steps: List[str] = Field(default_factory=list, alias="completedSteps")
     goal: Optional[str] = None
@@ -78,6 +79,13 @@ class PersonalizedTaskSchema(BaseModel):
     completion_criteria: str = Field("", alias="completionCriteria")
     is_completed: bool = Field(False, alias="isCompleted")
     dependencies: List[str] = Field(default_factory=list)
+    # Curriculum-grounded attributes
+    topic_id: Optional[str] = Field(None, alias="topicId")
+    status: str = "UNLOCKED"  # "LOCKED", "UNLOCKED", "IN_PROGRESS", "COMPLETED", "SKIPPED"
+    subtopics: List[str] = Field(default_factory=list)
+    learning_objectives: List[str] = Field(default_factory=list, alias="learningObjectives")
+    code_example: Optional[str] = Field(None, alias="codeExample")
+    skip_reason: Optional[str] = Field(None, alias="skipReason")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -116,10 +124,11 @@ class WeeklyScheduleItemSchema(BaseModel):
 
 class SkillGapItemSchema(BaseModel):
     skill: str
-    status: str = "developing"  # "demonstrated", "developing", "not_yet_demonstrated", "unknown"
+    status: str = "developing"  # "verified_mastery", "partial_mastery", "needs_learning", "not_assessed", "demonstrated", "developing"
     source: str = "diagnostic_verified"  # "diagnostic_verified", "course_completion", "self_reported", "inferred"
     confidence: float = 1.0
     rationale: Optional[str] = None
+    topic_id: Optional[str] = Field(None, alias="topicId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -140,12 +149,15 @@ class PersonalizedRoadmapSchema(BaseModel):
     """Full structured roadmap output validated against AI model JSON generation"""
     title: str
     goal: str
+    domain: str = "Python"
     starting_level: str = Field(..., alias="startingLevel")
     category: str = "General"
     estimated_duration: str = Field(..., alias="estimatedDuration")
     weekly_hours: float = Field(..., alias="weeklyHours")
     assessment_summary: AssessmentSummarySchema = Field(..., alias="assessmentSummary")
     phases: List[PersonalizedPhaseSchema] = Field(default_factory=list)
+    topics: List[Dict[str, Any]] = Field(default_factory=list)
+    edges: List[Dict[str, Any]] = Field(default_factory=list)
     weekly_schedule: List[WeeklyScheduleItemSchema] = Field(default_factory=list, alias="weeklySchedule")
     assumptions: List[str] = Field(default_factory=list)
     capstone_project: str = Field(..., alias="capstoneProject")
@@ -208,5 +220,114 @@ class RoadmapMilestonesSyncResponse(BaseModel):
 class RenamePersonalizedRoadmapRequest(BaseModel):
     """Request to rename a personalized roadmap"""
     title: str = Field(..., min_length=1, max_length=255)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class StartAssessmentRequest(BaseModel):
+    """Request payload to initiate a personalized roadmap assessment session"""
+    domain: Optional[str] = "Python"
+    goal: Optional[str] = None
+    level: Optional[str] = None
+    weekly_hours: Optional[float] = Field(None, alias="weeklyHours")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ValidateSubjectRequest(BaseModel):
+    subject: str
+
+
+class ValidateSubjectResponse(BaseModel):
+    is_valid: bool = Field(True, alias="isValid")
+    standardized_name: str = Field(..., alias="standardizedName")
+    suggestions: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SubmitAnswerRequest(BaseModel):
+    answer: str
+    quiz_selected_index: Optional[int] = Field(None, alias="quizSelectedIndex")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CorrectProfileFieldRequest(BaseModel):
+    field: str
+    value: Any
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RenameRoadmapRequest(BaseModel):
+    title: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicCodeExampleDto(BaseModel):
+    title: str
+    code: str
+    explanation: str
+    expected_output: str = Field("", alias="expectedOutput")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicCommonMistakeDto(BaseModel):
+    mistake: str
+    why_it_happens: str = Field(..., alias="whyItHappens")
+    how_to_fix: str = Field(..., alias="howToFix")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicPracticeQuizDto(BaseModel):
+    question: str
+    options: List[str]
+    correct_option_index: int = Field(..., alias="correctOptionIndex")
+    explanation: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicLearningResourceDto(BaseModel):
+    title: str
+    url: str
+    source_name: str = Field("Official", alias="sourceName")
+    description: str = ""
+    is_verified: bool = Field(True, alias="isVerified")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicLearningContentResponse(BaseModel):
+    topic_id: str = Field(..., alias="topicId")
+    topic_title: str = Field(..., alias="topicTitle")
+    domain: str = "Python"
+    learning_objectives: List[str] = Field(default_factory=list, alias="learningObjectives")
+    beginner_explanation: str = Field("", alias="beginnerExplanation")
+    syntax_and_concepts: str = Field("", alias="syntaxAndConcepts")
+    code_examples: List[TopicCodeExampleDto] = Field(default_factory=list, alias="codeExamples")
+    common_mistakes: List[TopicCommonMistakeDto] = Field(default_factory=list, alias="commonMistakes")
+    practice_quiz: Optional[TopicPracticeQuizDto] = Field(None, alias="practiceQuiz")
+    resources: List[TopicLearningResourceDto] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CompleteTopicRequest(BaseModel):
+    quiz_passed: bool = Field(True, alias="quizPassed")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CompleteTopicResponse(BaseModel):
+    roadmap_id: str = Field(..., alias="roadmapId")
+    topic_id: str = Field(..., alias="topicId")
+    is_completed: bool = Field(True, alias="isCompleted")
+    progress_percentage: int = Field(..., alias="progressPercentage")
+    completed_topic_ids: List[str] = Field(default_factory=list, alias="completedTopicIds")
 
     model_config = ConfigDict(populate_by_name=True)

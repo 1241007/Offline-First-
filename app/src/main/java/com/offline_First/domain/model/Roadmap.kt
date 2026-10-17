@@ -90,7 +90,13 @@ data class PersonalizedTask(
     val resources: List<String> = emptyList(),
     val completionCriteria: String = "",
     val isCompleted: Boolean = false,
-    val dependencies: List<String> = emptyList()
+    val dependencies: List<String> = emptyList(),
+    val topicId: String? = null,
+    val status: String? = null,
+    val subtopics: List<String> = emptyList(),
+    val learningObjectives: List<String> = emptyList(),
+    val codeExample: String? = null,
+    val skipReason: String? = null
 )
 
 data class PersonalizedMilestone(
@@ -174,9 +180,12 @@ data class PersonalizedRoadmapDetail(
 ) {
     val totalTopics: Int get() = if (topics.isNotEmpty()) topics.size else phases.sumOf { it.milestones.size }
     val completedCount: Int get() = if (completedTopicIds.isNotEmpty()) completedTopicIds.size else completedMilestones.size
+    val skippedCount: Int get() = topics.count { it.status == PersonalizedTopicStatus.SKIPPED }
+    val requiredTotalTopics: Int get() = (totalTopics - skippedCount).coerceAtLeast(1)
     val progressPercentage: Int get() =
         if (totalTopics == 0) 0
-        else ((completedCount.toFloat() / totalTopics.toFloat()) * 100).toInt().coerceIn(0, 100)
+        else if (totalTopics == skippedCount) 100
+        else ((completedCount.toFloat() / requiredTotalTopics.toFloat()) * 100).toInt().coerceIn(0, 100)
 
     val recommendedNextTopic: PersonalizedRoadmapTopic?
         get() = topics
@@ -184,14 +193,19 @@ data class PersonalizedRoadmapDetail(
             .maxByOrNull { it.priorityScore }
 
     fun withRecomputedStatuses(): PersonalizedRoadmapDetail {
+        val skippedTopicIds = topics.filter { it.status == PersonalizedTopicStatus.SKIPPED }.map { it.id }.toSet()
+        val satisfiedTopicIds = completedTopicIds + skippedTopicIds
+
         val updatedTopics = topics.map { topic ->
             when {
+                topic.status == PersonalizedTopicStatus.SKIPPED ->
+                    topic
                 completedTopicIds.contains(topic.id) ->
                     topic.copy(status = PersonalizedTopicStatus.COMPLETED)
                 inProgressTopicIds.contains(topic.id) ->
                     topic.copy(status = PersonalizedTopicStatus.IN_PROGRESS)
                 topic.prerequisiteTopicIds.all { prereqId ->
-                    completedTopicIds.contains(prereqId)
+                    satisfiedTopicIds.contains(prereqId)
                 } -> topic.copy(status = PersonalizedTopicStatus.UNLOCKED)
                 else -> topic.copy(status = PersonalizedTopicStatus.LOCKED)
             }
@@ -232,20 +246,23 @@ data class PersonalizedRoadmapDetail(
                         emptyList()
                     }
 
-                    val isDemonstrated = demonstratedSkills.any { skill ->
+                    val isSkipped = task.status.equals("SKIPPED", ignoreCase = true)
+                    val isDemonstrated = isSkipped || demonstratedSkills.any { skill ->
                         task.title.lowercase().contains(skill) || skill.contains(task.title.lowercase())
                     }
                     val mastery = if (isDemonstrated) TopicMasteryLevel.STRONG else TopicMasteryLevel.UNKNOWN
                     val accelerated = isDemonstrated
 
                     val status = when {
+                        isSkipped -> PersonalizedTopicStatus.SKIPPED
                         isDone -> PersonalizedTopicStatus.COMPLETED
                         prereqs.isEmpty() -> PersonalizedTopicStatus.UNLOCKED
                         else -> PersonalizedTopicStatus.LOCKED
                     }
 
                     val desc = task.description.ifBlank { task.instructions.ifBlank { "Core module for ${phase.title}" } }
-                    val exp = if (accelerated) "Accelerated pathway: Demonstrated proficiency during assessment."
+                    val exp = if (isSkipped) task.skipReason ?: "Demonstrated mastery during assessment."
+                    else if (accelerated) "Accelerated pathway: Demonstrated proficiency during assessment."
                     else task.completionCriteria.ifBlank { phase.objective }
 
                     val minutes = (task.estimatedHours * 60).toInt().coerceIn(15, 240)
