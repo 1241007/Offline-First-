@@ -758,33 +758,6 @@ fun RoadmapScreen(
 
                                 // Skill-based course cards in a clean, responsive 2-column grid
                                 items(
-<<<<<<< HEAD
-                                    items = personalizedRoadmaps,
-                                    key = { "rec_${it.id}" }
-                                ) { roadmap ->
-                                    val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
-                                    val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
-
-                                    PersonalizedRoadmapCard(
-                                        roadmap = roadmap,
-                                        progress = progress,
-                                        nextMilestone = nextMilestone,
-                                        roadmapPrimary = roadmapPrimary,
-                                        onContinueLearning = {
-                                            viewModel.selectPersonalizedRoadmap(roadmap)
-                                            onOpenSavedRoadmap(roadmap)
-                                        },
-                                        onViewProfile = {
-                                            viewModel.selectPersonalizedRoadmap(roadmap)
-                                            selectedPersonalizedRoadmap = roadmap
-                                        },
-                                        onRename = {
-                                            roadmapToRename = roadmap
-                                            renameDraftTitle = roadmap.title
-                                        },
-                                        onDelete = {
-                                            roadmapToDelete = roadmap
-=======
                                     items = filteredSkillBased.chunked(2),
                                     key = { pair -> "skill_row_${pair.first()}" }
                                 ) { pair ->
@@ -800,7 +773,6 @@ fun RoadmapScreen(
                                                 onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
                                                 modifier = Modifier.weight(1f)
                                             )
->>>>>>> origin
                                         }
                                         if (pair.size == 1) {
                                             Spacer(modifier = Modifier.weight(1f))
@@ -1670,12 +1642,9 @@ private fun PersonalizedRoadmapCard(
     onContinueLearning: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-<<<<<<< HEAD
     onViewProfile: () -> Unit = {},
-=======
     isSaved: Boolean = false,
     onToggleSave: () -> Unit = {},
->>>>>>> origin
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1745,13 +1714,14 @@ private fun PersonalizedRoadmapCard(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-<<<<<<< HEAD
-                            text = { Text("View Assessment Profile") },
+text = { Text("View Assessment Profile") },
                             leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp)) },
                             onClick = {
                                 showMenu = false
                                 onViewProfile()
-=======
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text(if (isSaved) "Remove from Saved" else "Save for Offline") },
                             leadingIcon = {
                                 Icon(
@@ -1764,7 +1734,6 @@ private fun PersonalizedRoadmapCard(
                             onClick = {
                                 showMenu = false
                                 onToggleSave()
->>>>>>> origin
                             }
                         )
                         DropdownMenuItem(
