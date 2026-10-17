@@ -348,8 +348,6 @@ async def rename_personalized_roadmap(
         raise HTTPException(status_code=404, detail="Personalized roadmap not found or unauthorized")
     return updated
 
-
-<<<<<<< HEAD
 @router.post(
     "/roadmaps/personalized/validate-subject",
     response_model=ValidateSubjectResponse,
@@ -372,17 +370,10 @@ async def validate_personalized_subject(
 async def get_topic_learning_content(
     roadmap_id: str,
     topic_id: str,
-=======
-# --- Saved Roadmaps ---
-
-@router.get("/roadmaps/saved", response_model=List[SavedRoadmapResponse])
-async def get_saved_roadmaps(
->>>>>>> origin
     current_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-<<<<<<< HEAD
     Get rich structured learning content, objectives, code examples, common mistakes, and quiz for a topic.
     """
     service = PersonalizedRoadmapService(db)
@@ -402,22 +393,10 @@ async def complete_topic(
     roadmap_id: str,
     topic_id: str,
     payload: CompleteTopicRequest,
-=======
-    List all saved roadmaps for the authenticated user.
-    """
-    service = RoadmapService(db)
-    return await service.get_saved_roadmaps(user_id=current_user_id)
-
-
-@router.post("/roadmaps/{roadmap_id}/save", response_model=SavedRoadmapResponse)
-async def save_roadmap(
-    roadmap_id: str,
->>>>>>> origin
     current_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-<<<<<<< HEAD
     Mark a topic complete, unlock downstream dependencies, and update progress percentage.
     """
     service = PersonalizedRoadmapService(db)
@@ -430,7 +409,29 @@ async def save_roadmap(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-=======
+
+
+# --- Saved Roadmaps ---
+
+@router.get("/roadmaps/saved", response_model=List[SavedRoadmapResponse])
+async def get_saved_roadmaps(
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all saved roadmaps for the authenticated user.
+    """
+    service = RoadmapService(db)
+    return await service.get_saved_roadmaps(user_id=current_user_id)
+
+
+@router.post("/roadmaps/{roadmap_id}/save", response_model=SavedRoadmapResponse)
+async def save_roadmap(
+    roadmap_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
     Save a roadmap for offline access (idempotent).
     Enforces authorization for personalized roadmaps.
     """
@@ -449,7 +450,6 @@ async def unsave_roadmap(
     """
     service = RoadmapService(db)
     return await service.unsave_roadmap(user_id=current_user_id, roadmap_id=roadmap_id)
->>>>>>> origin
 
 
 # --- General Roadmap Detail (System & User) ---

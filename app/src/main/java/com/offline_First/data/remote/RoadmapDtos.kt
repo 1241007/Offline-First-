@@ -263,7 +263,6 @@ data class RenamePersonalizedRoadmapRequestDto(
 )
 
 @Serializable
-<<<<<<< HEAD
 data class ValidateSubjectRequestDto(
     val subject: String
 )
@@ -290,7 +289,8 @@ data class CompleteTopicResponseDto(
     @SerialName("progressPercentage") val progressPercentage: Int = 0,
     @SerialName("completedTopicIds") val completedTopicIds: List<String> = emptyList()
 )
-=======
+
+@Serializable
 data class SavedRoadmapActionResponseDto(
     val success: Boolean = true,
     val message: String = "",
@@ -315,5 +315,3 @@ data class SavedRoadmapResponseDto(
     val icon: String = "",
     @SerialName("accentTheme") val accentTheme: String = "primary"
 )
-
->>>>>>> origin
