@@ -77,6 +77,13 @@ interface RoadmapRepository {
 
     suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean = true): Result<PersonalizedRoadmapDetail>
 
+    // --- Saved Roadmaps ---
+    suspend fun saveRoadmap(roadmapId: String): Result<Boolean> = Result.success(true)
+    suspend fun unsaveRoadmap(roadmapId: String): Result<Boolean> = Result.success(true)
+    suspend fun isRoadmapSaved(roadmapId: String): Boolean = false
+    suspend fun isRoadmapOfflineReady(roadmapId: String): Boolean = false
+    suspend fun getSavedRoadmaps(): Result<List<RoadmapOption>> = Result.success(emptyList())
+
     // Legacy method for backward compatibility
     suspend fun generatePersonalizedRoadmap(
         goal: String,
@@ -85,3 +92,4 @@ interface RoadmapRepository {
         interest: String
     ): Result<GeneratedRoadmapPreview>
 }
+

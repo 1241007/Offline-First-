@@ -55,6 +55,12 @@ class Roadmap(Base):
         cascade="all, delete-orphan",
         order_by="RoadmapItem.display_order"
     )
+    saved_by: Mapped[list["UserSavedRoadmap"]] = relationship(
+        "UserSavedRoadmap",
+        back_populates="roadmap",
+        cascade="all, delete-orphan"
+    )
+
 
 
 class RoadmapItem(Base):
@@ -99,4 +105,33 @@ class RoadmapItem(Base):
         back_populates="items"
     )
     course: Mapped[Optional["Course"]] = relationship("Course")
+
+
+class UserSavedRoadmap(Base):
+    __tablename__ = "user_saved_roadmaps"
+    __table_args__ = (
+        Index("ix_user_saved_roadmaps_user_roadmap", "user_id", "roadmap_id", unique=True),
+        Index("ix_user_saved_roadmaps_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    roadmap_id: Mapped[str] = mapped_column(
+        ForeignKey("roadmaps.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    roadmap_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="system"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    # Relationships
+    roadmap: Mapped["Roadmap"] = relationship("Roadmap", back_populates="saved_by")
+
 

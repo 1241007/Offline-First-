@@ -49,9 +49,9 @@ enum class EduNovaBottomNavItem(
     val destination: AppDestination
 ) {
     HOME("Home", Icons.Default.Home, AppDestination.LANDING),
-    SUBJECTS("Subjects", Icons.AutoMirrored.Filled.MenuBook, AppDestination.MY_LEARNING),
+    SUBJECTS("Subjects", Icons.AutoMirrored.Filled.MenuBook, AppDestination.SCHOOL_DASHBOARD),
     PRACTICE("Practice", Icons.AutoMirrored.Filled.Assignment, AppDestination.ROADMAP),
-    COURSES("Courses", Icons.AutoMirrored.Filled.MenuBook, AppDestination.MY_LEARNING),
+    COURSES("Courses", Icons.AutoMirrored.Filled.MenuBook, AppDestination.COURSES),
     ROADMAP("Roadmap", Icons.Default.AccountTree, AppDestination.ROADMAP),
     CHAT("AI Chat", Icons.Default.ChatBubbleOutline, AppDestination.AI_WORKSPACE),
     TOOLS("Tools", Icons.Default.Build, AppDestination.AI_WORKSPACE)

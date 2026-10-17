@@ -249,8 +249,8 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         language: String = "en",
         contentHash: String? = null,
         embedding: FloatArray? = null,
-        embeddingModel: String? = null,
-        embeddingVersion: String? = null
+        embeddingModel: String? = if (embedding != null) E5EmbeddingService.MODEL_ID else null,
+        embeddingVersion: String? = if (embedding != null) E5EmbeddingService.MODEL_VERSION else null
     ): Long {
         val cv = ContentValues().apply {
             put("chunk_id", chunkId)
@@ -533,6 +533,75 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     /**
+     * Identifies and invalidates any legacy or incompatible embeddings (e.g. SHA-256 pseudo-vectors
+     * or older model versions) so they cannot silently coexist with genuine E5 embeddings.
+     * Sets their embedding BLOB to null so they safely fall back to keyword search until re-synced.
+     *
+     * @return Number of invalidated records.
+     */
+    fun invalidateIncompatibleEmbeddings(
+        expectedModel: String = E5EmbeddingService.MODEL_ID,
+        expectedVersion: String = E5EmbeddingService.MODEL_VERSION
+    ): Int {
+        val db = writableDatabase
+        val cursor = db.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_CHUNKS WHERE embedding IS NOT NULL AND (embedding_model IS NOT NULL AND embedding_model != ? OR embedding_version IS NOT NULL AND embedding_version != ?)",
+            arrayOf(expectedModel, expectedVersion)
+        )
+        val count = cursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        if (count > 0) {
+            val cv = ContentValues().apply {
+                putNull("embedding")
+                putNull("embedding_model")
+                putNull("embedding_version")
+            }
+            db.update(
+                TABLE_CHUNKS,
+                cv,
+                "embedding IS NOT NULL AND (embedding_model IS NOT NULL AND embedding_model != ? OR embedding_version IS NOT NULL AND embedding_version != ?)",
+                arrayOf(expectedModel, expectedVersion)
+            )
+            Log.i(TAG, "Invalidated $count incompatible embedding records")
+        }
+        return count
+    }
+
+    /**
+     * Safely rebuilds embeddings for chunks whose embedding is missing or was invalidated,
+     * using the real on-device E5EmbeddingService.
+     */
+    suspend fun rebuildMissingEmbeddings(
+        e5Service: E5EmbeddingService,
+        batchSize: Int = 50
+    ): Int {
+        if (!e5Service.isModelReady()) return 0
+        val db = writableDatabase
+        val cursor = db.rawQuery(
+            "SELECT chunk_id, content FROM $TABLE_CHUNKS WHERE embedding IS NULL LIMIT ?",
+            arrayOf(batchSize.toString())
+        )
+        val chunksToEmbed = mutableListOf<Pair<String, String>>()
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                chunksToEmbed.add(Pair(c.getString(0), c.getString(1)))
+            }
+        }
+        var updated = 0
+        for ((chunkId, content) in chunksToEmbed) {
+            val vector = e5Service.embedPassage(content)
+            val cv = ContentValues().apply {
+                put("embedding", floatArrayToBlob(vector))
+                put("embedding_model", E5EmbeddingService.MODEL_ID)
+                put("embedding_version", E5EmbeddingService.MODEL_VERSION)
+                put("updated_at", System.currentTimeMillis().toString())
+            }
+            db.update(TABLE_CHUNKS, cv, "chunk_id = ?", arrayOf(chunkId))
+            updated++
+        }
+        return updated
+    }
+
+    /**
      * Executes reliable LIKE-based keyword search on Android SQLite.
      *
      * Extracts keywords, constructs weighted score expressions, filters by curriculum metadata,
@@ -699,8 +768,12 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
         }
 
         val db = readableDatabase
-        val whereClauses = mutableListOf("embedding IS NOT NULL")
-        val args = mutableListOf<String>()
+        val whereClauses = mutableListOf(
+            "embedding IS NOT NULL",
+            "(embedding_model = ? OR embedding_model IS NULL)",
+            "(embedding_version = ? OR embedding_version IS NULL)"
+        )
+        val args = mutableListOf(E5EmbeddingService.MODEL_ID, E5EmbeddingService.MODEL_VERSION)
 
         if (!board.isNullOrBlank()) {
             whereClauses.add("board = ?")

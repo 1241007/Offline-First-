@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import CourseCategory, Course, CourseModule, Lesson
+from app.models import CourseCategory, Course, CourseModule, Lesson, UserSavedCourse
 
 # Mapping between Android client 7 canonical track IDs and backend slugs
 ANDROID_TRACK_SLUG_MAP = {
@@ -102,3 +102,50 @@ class CourseRepository:
 
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
+
+    async def get_saved_courses_for_user(self, user_id: str) -> List[UserSavedCourse]:
+        """Get all saved courses for a specific user"""
+        query = (
+            select(UserSavedCourse)
+            .where(UserSavedCourse.user_id == user_id)
+            .options(
+                selectinload(UserSavedCourse.course).selectinload(Course.category),
+                selectinload(UserSavedCourse.course).selectinload(Course.modules).selectinload(CourseModule.lessons),
+            )
+            .order_by(UserSavedCourse.created_at.desc())
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_saved_course(self, user_id: str, course_id: str) -> Optional[UserSavedCourse]:
+        """Check if a specific course is saved by user"""
+        query = select(UserSavedCourse).where(
+            UserSavedCourse.user_id == user_id,
+            UserSavedCourse.course_id == course_id,
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def save_course(self, user_id: str, course: Course) -> UserSavedCourse:
+        """Save a course for user idempotently"""
+        existing = await self.get_saved_course(user_id, course.id)
+        if existing:
+            return existing
+        saved = UserSavedCourse(
+            user_id=user_id,
+            course_id=course.id,
+        )
+        self.db.add(saved)
+        await self.db.commit()
+        await self.db.refresh(saved)
+        return saved
+
+    async def unsave_course(self, user_id: str, course_id: str) -> bool:
+        """Unsave a course for user idempotently"""
+        existing = await self.get_saved_course(user_id, course_id)
+        if existing:
+            await self.db.delete(existing)
+            await self.db.commit()
+            return True
+        return False
+

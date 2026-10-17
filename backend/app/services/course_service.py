@@ -2,8 +2,16 @@
 
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
 from app.repositories.course_repository import CourseRepository
-from app.schemas.course import CourseListResponse, CourseDetailResponse, ModuleResponse, LessonResponse
+from app.schemas.course import (
+    CourseListResponse,
+    CourseDetailResponse,
+    ModuleResponse,
+    LessonResponse,
+    SavedCourseActionResponse,
+    SavedCourseResponse,
+)
 
 
 class CourseService:
@@ -104,3 +112,112 @@ class CourseService:
             prerequisites=course.prerequisites or [],
             modules=modules
         )
+
+    async def get_saved_courses(self, user_id: str) -> List[SavedCourseResponse]:
+        """Get all saved courses for the authenticated user"""
+        records = await self.repo.get_saved_courses_for_user(user_id)
+        results = []
+        for rec in records:
+            course = rec.course
+            if not course:
+                continue
+            modules = course.modules or []
+            total_lessons = sum(len(m.lessons or []) for m in modules)
+            modules_count = len(modules)
+            course_dto = CourseListResponse(
+                id=course.id,
+                name=course.name,
+                slug=course.slug,
+                description=course.description,
+                icon=course.icon,
+                accent_color=course.accent_color,
+                category=course.category.name if course.category else "",
+                category_slug=course.category.slug if course.category else None,
+                level=course.level,
+                duration_hours=course.duration_hours,
+                is_featured=course.is_featured,
+                total_lessons=total_lessons,
+                modules_count=modules_count,
+            )
+            results.append(
+                SavedCourseResponse(
+                    id=rec.id,
+                    user_id=rec.user_id,
+                    course_id=rec.course_id,
+                    saved_at=rec.created_at,
+                    name=course.name,
+                    slug=course.slug,
+                    description=course.description,
+                    icon=course.icon,
+                    accent_color=course.accent_color,
+                    category=course.category.name if course.category else "",
+                    category_slug=course.category.slug if course.category else None,
+                    level=course.level,
+                    duration_hours=course.duration_hours,
+                    is_featured=course.is_featured,
+                    total_lessons=total_lessons,
+                    modules_count=modules_count,
+                    course=course_dto,
+                )
+            )
+        return results
+
+    async def save_course(self, user_id: str, course_id: str) -> SavedCourseResponse:
+        """Save a course for authenticated user (idempotent)"""
+        course = await self.repo.get_course_by_id(course_id)
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        rec = await self.repo.save_course(user_id, course)
+        modules = course.modules or []
+        total_lessons = sum(len(m.lessons or []) for m in modules)
+        modules_count = len(modules)
+        course_dto = CourseListResponse(
+            id=course.id,
+            name=course.name,
+            slug=course.slug,
+            description=course.description,
+            icon=course.icon,
+            accent_color=course.accent_color,
+            category=course.category.name if course.category else "",
+            category_slug=course.category.slug if course.category else None,
+            level=course.level,
+            duration_hours=course.duration_hours,
+            is_featured=course.is_featured,
+            total_lessons=total_lessons,
+            modules_count=modules_count,
+        )
+        return SavedCourseResponse(
+            id=rec.id,
+            user_id=rec.user_id,
+            course_id=rec.course_id,
+            saved_at=rec.created_at,
+            name=course.name,
+            slug=course.slug,
+            description=course.description,
+            icon=course.icon,
+            accent_color=course.accent_color,
+            category=course.category.name if course.category else "",
+            category_slug=course.category.slug if course.category else None,
+            level=course.level,
+            duration_hours=course.duration_hours,
+            is_featured=course.is_featured,
+            total_lessons=total_lessons,
+            modules_count=modules_count,
+            course=course_dto,
+        )
+
+    async def unsave_course(self, user_id: str, course_id: str) -> SavedCourseActionResponse:
+        """Unsave a course for authenticated user (idempotent)"""
+        course = await self.repo.get_course_by_id(course_id)
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        await self.repo.unsave_course(user_id, course.id)
+        return SavedCourseActionResponse(
+            success=True,
+            message="Course unsaved successfully",
+            course_id=course.id,
+            is_saved=False,
+        )
+

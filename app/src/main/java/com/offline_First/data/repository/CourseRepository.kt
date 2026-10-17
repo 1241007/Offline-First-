@@ -36,4 +36,19 @@ interface CourseRepository {
     suspend fun removeRevisionItem(courseId: String, lessonId: String): Result<Unit>
     suspend fun isMarkedForRevision(courseId: String, lessonId: String): Boolean
     suspend fun getRevisionItems(): Result<List<RevisionItem>>
+
+    // Offline persistence operations
+    suspend fun saveCourse(courseId: String): Result<Boolean> = Result.success(true)
+    suspend fun unsaveCourse(courseId: String): Result<Boolean> = Result.success(true)
+    suspend fun isCourseSaved(courseId: String): Boolean = false
+    suspend fun isCourseOfflineReady(courseId: String): Boolean = false
+    suspend fun getSavedCourses(): Result<List<Course>> = getSavedCourses("")
+
+    suspend fun saveCourseForOffline(userId: String, course: CourseDetail): Result<Unit> = Result.success(Unit)
+    suspend fun unsaveCourse(userId: String, courseId: String): Result<Unit> = Result.success(Unit)
+    suspend fun isCourseSaved(userId: String, courseId: String): Boolean = false
+    suspend fun isCourseOfflineReady(userId: String, courseId: String): Boolean = false
+    suspend fun getSavedCourses(userId: String): Result<List<Course>> = Result.success(emptyList())
+    suspend fun getOfflineCourseDetail(courseId: String): Result<CourseDetail?> = Result.success(null)
 }
+

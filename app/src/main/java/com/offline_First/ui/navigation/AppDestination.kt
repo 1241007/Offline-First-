@@ -7,6 +7,8 @@ package com.offline_First.ui.navigation
 enum class AppDestination {
     LOADING,
     LANDING,
+    COURSES,
+    SCHOOL_DASHBOARD,
     LOGIN,
     REGISTER,
     FORGOT_PASSWORD,

@@ -1,8 +1,24 @@
 # ROADMAP.md — EduNova Verification & Layered Evaluation Suite
 
-> **Milestone 1.0**: Architecture Verification & Retrieval Suite (`COMPLETE / FROZEN`)  
-> **Milestone 2.0**: Complete Layered Evaluation & Regression Framework (`IN PROGRESS`)  
+> **Milestone 1.0**: Architecture Verification & Retrieval Suite (`COMPLETE / FROZEN` — Candidate Release RC-1 Approved)  
+> **Milestone 2.0**: Complete Layered Evaluation & Regression Framework (`COMPLETE & VERIFIED`)  
 > **Target Scope**: Currently Implemented Chatbot Feature Only  
+
+## Milestone 1.0 Phases Overview (Archive)
+
+| Phase | Name | Wave | Primary Goal | Status |
+|-------|------|------|--------------|--------|
+| **Phase 1** | System State & Corpus Inventory | 1 | Audit Git, schema, config, request path, and real Supabase corpus | Complete |
+| **Phase 2** | Routing Contract & Orchestration Test Suite | 1 | Create `test_routing_contract.py` covering ROUTE-001 to ROUTE-012 | Complete |
+| **Phase 3** | Durable RAG Evaluation Framework & Golden Set | 2 | Build `evals/rag/` with NCERT golden set and deterministic metrics | Complete |
+| **Phase 4** | Retrieval Threshold Validation & Analysis | 2 | Mathematically verify RRF scoring and evaluate threshold calibration | Complete |
+| **Phase 5** | Online End-to-End RAG Integration Suite | 3 | Implement `test_online_rag_e2e.py` testing live FastAPI + pgvector + LLM | Complete |
+| **Phase 6** | Offline RAG Evaluation & Model Parity | 3 | Implement Android offline tests and cross-runtime E5 parity fixture | Complete |
+| **Phase 7** | Curriculum-Aware Syllabus Synchronization | 4 | End-to-end sync verification across backend and Android client | Complete |
+| **Phase 8** | Android Low-RAM & Performance Benchmark | 4 | Quantize footprint, latency, and memory safety evaluation | Complete |
+| **Phase 9** | Unified Reusable Evaluation Command | 5 | CLI runner `evals.rag.run_eval` with JSON/Markdown reporting | Complete |
+| **Phase 10** | Manual End-to-End Application Checklist | 5 | Produce 15-scenario manual verification checklist | Complete |
+| **Phase 11** | Defect Remediation & Verification Reports | 5 | Surgical bug fixes, regression checks, and final verification report | Complete |
 
 ---
 

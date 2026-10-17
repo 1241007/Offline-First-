@@ -436,6 +436,7 @@ class OnlineAIRepository(
 
         var syllabusContext = ""
         var offlineCitations: List<com.offline_First.domain.model.SourceCitation> = emptyList()
+        var retrievedChunks: List<RetrievedChunk> = emptyList()
         if (isOffline && isSchool) {
             val ragContext = RAGRequestContext(
                 executionMode = ConnectionMode.OFFLINE,
@@ -446,7 +447,12 @@ class OnlineAIRepository(
             )
 
             val (chunks, outcome) = if (e5EmbeddingService.isModelReady()) {
-                val queryEmb = e5EmbeddingService.embedQuery(normalizedPrompt)
+                val queryEmb = try {
+                    e5EmbeddingService.embedQuery(normalizedPrompt)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "E5 ONNX inference failed; falling back to lexical search: ${e.message}")
+                    null
+                }
                 offlineSyllabusRepository.retrieve(
                     query = normalizedPrompt,
                     context = ragContext,
@@ -462,6 +468,7 @@ class OnlineAIRepository(
                     queryEmbedding = null
                 )
             }
+            retrievedChunks = chunks
 
             if (outcome == EvidenceOutcome.MISSING || chunks.isEmpty()) {
                 // Strict abstention behavior on empty/insufficient syllabus evidence
@@ -570,9 +577,43 @@ class OnlineAIRepository(
             activeProvider.stopInference()
             throw cancelled
         } catch (error: Throwable) {
-            Log.e(TAG, "Streaming failed: ${error.message}", error)
-            _errorFlow.value = error.message ?: "AI generation failed"
-            throw error
+            if (isOffline && retrievedChunks.isNotEmpty() && (error is IllegalStateException || error.message?.contains("Offline AI model") == true)) {
+                Log.i(TAG, "Offline generative model unavailable; serving deterministic evidence-grounded extractive fallback.")
+                val extractiveAnswer = buildString {
+                    append("Here is the relevant excerpt from your official curriculum:\n\n")
+                    retrievedChunks.forEachIndexed { idx, c ->
+                        val book = c.textbookTitle?.takeIf { it.isNotBlank() } ?: "Official Curriculum"
+                        val ch = c.chapter?.takeIf { it.isNotBlank() } ?: "N/A"
+                        append("**[${idx + 1}] $book — Chapter: $ch**\n")
+                        append("> \"${c.content.trim()}\"\n\n")
+                    }
+                    append("*(Note: Running in offline extractive mode using authorized syllabus passages. Download on-device AI model in Settings for generated explanations.)*")
+                }
+                responseBuilder.append(extractiveAnswer)
+                emit(extractiveAnswer)
+
+                val activeMsg = ChatMessage(
+                    id = tempAiId,
+                    text = extractiveAnswer,
+                    fromUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    parentId = userMsgId,
+                    citations = offlineCitations
+                )
+                val curr = _currentSessionFlow.value ?: current
+                val messages = curr.messages
+                val updatedList = if (messages.isNotEmpty() && messages.last().id == tempAiId) {
+                    messages.toMutableList().apply { set(lastIndex, activeMsg) }
+                } else {
+                    messages + activeMsg
+                }
+                _currentSessionFlow.value = curr.copy(messages = updatedList)
+                streamCompletedNormally = true
+            } else {
+                Log.e(TAG, "Streaming failed: ${error.message}", error)
+                _errorFlow.value = error.message ?: "AI generation failed"
+                throw error
+            }
         } finally {
             val resolvedCitations = if (isOffline) offlineCitations else activeProvider.getLastCitations()
             if (!streamCompletedNormally && responseBuilder.isNotEmpty()) {

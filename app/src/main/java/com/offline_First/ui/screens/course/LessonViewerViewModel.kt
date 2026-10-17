@@ -76,9 +76,15 @@ class LessonViewerViewModel(
             courseResult.fold(
                 onSuccess = { course ->
                     if (course == null) {
+                        val isOfflineReady = repository.isCourseOfflineReady(courseId)
+                        val msg = if (!isOfflineReady) {
+                            "This course isn't available offline. Connect to the internet and save it first."
+                        } else {
+                            "Course details not found."
+                        }
                         _uiState.value = LessonViewerUiState(
                             state = UiState.Empty,
-                            errorMessage = "Course details not found."
+                            errorMessage = msg
                         )
                         return@launch
                     }
@@ -136,9 +142,10 @@ class LessonViewerViewModel(
                     )
                 },
                 onFailure = { err ->
+                    val msg = err.localizedMessage?.takeIf { it.isNotBlank() } ?: "Failed to load lesson."
                     _uiState.value = LessonViewerUiState(
-                        state = UiState.Error(err.localizedMessage ?: "Failed to load lesson."),
-                        errorMessage = err.localizedMessage ?: "Failed to load lesson."
+                        state = UiState.Error(msg),
+                        errorMessage = msg
                     )
                 }
             )

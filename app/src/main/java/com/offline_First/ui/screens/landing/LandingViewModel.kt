@@ -25,6 +25,7 @@ data class LandingUiState(
     val isLoading: Boolean = true,
     val isCoursesLoading: Boolean = false,
     val coursesError: String? = null,
+    val isOffline: Boolean = false,
     val profile: UserProfile? = null,
     val educationMode: EducationMode = EducationMode.GENERAL,
     val greetingName: String = "Learner",
@@ -43,19 +44,35 @@ class LandingViewModel(
     private val profileRepository: ProfileRepository = AppContainer.profileRepository,
     private val courseRepository: CourseRepository = AppContainer.courseRepository,
     private val learningRepository: LearningRepository = AppContainer.learningRepository,
+    private val networkMonitor: com.offline_First.data.sync.NetworkMonitor? = AppContainer.networkMonitor,
     private val coroutineContext: CoroutineContext = Dispatchers.IO
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(LandingUiState())
+    private val _uiState = MutableStateFlow(LandingUiState(isOffline = !(networkMonitor?.isOnline?.value ?: true)))
     val uiState: StateFlow<LandingUiState> = _uiState.asStateFlow()
 
     private var currentProfile: UserProfile? = null
-    private var loadedData = LandingUiState()
+    private var loadedData = LandingUiState(isOffline = !(networkMonitor?.isOnline?.value ?: true))
 
     init {
         observeProfileChanges()
         loadInitialData()
         observeProgressUpdates()
+        observeNetworkChanges()
+    }
+
+    private fun observeNetworkChanges() {
+        viewModelScope.launch(coroutineContext) {
+            networkMonitor?.isOnline?.collect { online ->
+                val wasOffline = _uiState.value.isOffline
+                val isNowOffline = !online
+                _uiState.value = _uiState.value.copy(isOffline = isNowOffline)
+                loadedData = loadedData.copy(isOffline = isNowOffline)
+                if (wasOffline != isNowOffline) {
+                    retryCourses()
+                }
+            }
+        }
     }
 
     private fun observeProgressUpdates() {
@@ -130,17 +147,19 @@ class LandingViewModel(
                 studyFocus.exceptionOrNull()
             )
 
+            val isCurrentlyOffline = !(networkMonitor?.isOnline?.value ?: true)
             loadedData = LandingUiState(
                 isLoading = false,
                 isCoursesLoading = false,
-                coursesError = formatCourseError(courseErr),
+                isOffline = isCurrentlyOffline,
+                coursesError = if (isCurrentlyOffline && explore.isEmpty()) null else formatCourseError(courseErr),
                 continueLearning = continueLearning.getOrNull(),
                 subjects = subjects.getOrNull().orEmpty(),
                 upcomingExams = exams.getOrNull().orEmpty(),
                 studyFocus = studyFocus.getOrNull(),
                 featuredCourses = feats,
                 exploreCourses = explore,
-                hasMoreCourses = explore.size >= 10,
+                hasMoreCourses = if (isCurrentlyOffline) false else explore.size >= 10,
                 errorMessage = run {
                     val raw = learningErrors.firstNotNullOfOrNull { it?.localizedMessage }
                     when {
@@ -190,7 +209,8 @@ class LandingViewModel(
 
     fun retryCourses() {
         viewModelScope.launch(coroutineContext) {
-            loadedData = loadedData.copy(isCoursesLoading = true, coursesError = null)
+            val isCurrentlyOffline = !(networkMonitor?.isOnline?.value ?: true)
+            loadedData = loadedData.copy(isCoursesLoading = true, coursesError = null, isOffline = isCurrentlyOffline)
             publishState()
 
             val courses = courseRepository.getCourses(limit = 10, offset = 0)
@@ -205,10 +225,11 @@ class LandingViewModel(
 
             loadedData = loadedData.copy(
                 isCoursesLoading = false,
-                coursesError = formatCourseError(courseErr),
+                isOffline = isCurrentlyOffline,
+                coursesError = if (isCurrentlyOffline && explore.isEmpty()) null else formatCourseError(courseErr),
                 featuredCourses = feats,
                 exploreCourses = explore,
-                hasMoreCourses = explore.size >= 10
+                hasMoreCourses = if (isCurrentlyOffline) false else explore.size >= 10
             )
             publishState()
         }

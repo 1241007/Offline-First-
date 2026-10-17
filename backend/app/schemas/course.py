@@ -1,5 +1,6 @@
 """Course-related Pydantic schemas"""
 
+from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -126,3 +127,42 @@ class CourseDetailResponse(BaseModel):
         populate_by_name=True,
         from_attributes=True
     )
+
+
+class SavedCourseActionResponse(BaseModel):
+    """Response after saving or unsaving a course"""
+    success: bool = True
+    message: str
+    course_id: str = Field(alias="courseId")
+    is_saved: bool = Field(True, alias="isSaved")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SavedCourseResponse(BaseModel):
+    """Saved course item with course metadata for offline identification and download"""
+    id: str
+    user_id: str = Field(alias="userId")
+    course_id: str = Field(alias="courseId")
+    saved_at: datetime = Field(alias="savedAt")
+    name: str
+    slug: Optional[str] = None
+    description: str
+    icon: str
+    accent_color: str = Field(alias="accentColor")
+    category: str = ""
+    category_slug: Optional[str] = Field(None, alias="categorySlug")
+    level: str = "Beginner"
+    duration_hours: Optional[int] = Field(None, alias="durationHours")
+    is_featured: bool = Field(False, alias="isFeatured")
+    total_lessons: int = Field(0, alias="totalLessons")
+    modules_count: int = Field(0, alias="modulesCount")
+    course: Optional[CourseListResponse] = None
+
+    @computed_field(alias="accent")
+    @property
+    def accent(self) -> str:
+        return self.accent_color
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
