@@ -122,7 +122,7 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
             if (!mayRun) return@execute
 
             val result = runCatching {
-                LlamaNativeBridge.nativeGenerate(loadedHandle, prompt, 512)
+                LlamaNativeBridge.nativeGenerate(loadedHandle, prompt, 768)
                     ?.trim()
                     ?.takeIf(String::isNotEmpty)
                     ?: throw IllegalStateException("The local model did not generate a response.")
@@ -135,7 +135,7 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
         }
     }
 
-    suspend fun generateWithMetrics(prompt: String, maxTokens: Int = 512): Pair<String, LongArray> = suspendCancellableCoroutine { continuation ->
+    suspend fun generateWithMetrics(prompt: String, maxTokens: Int = 768): Pair<String, LongArray> = suspendCancellableCoroutine { continuation ->
         val loadedHandle = handle.get()
         if (loadedHandle == 0L) {
             continuation.resumeWith(Result.failure(IllegalStateException("Offline AI has not loaded a local model.")))
@@ -206,7 +206,7 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
                 LlamaNativeBridge.nativeGenerateStream(
                     handle = loadedHandle,
                     prompt = chatPrompt,
-                    maxTokens = 512,
+                    maxTokens = 768,
                     callback = { tokenPiece ->
                         if (!unloading && handle.get() == loadedHandle) {
                             trySend(tokenPiece)

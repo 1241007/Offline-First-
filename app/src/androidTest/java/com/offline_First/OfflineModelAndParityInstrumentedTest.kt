@@ -417,5 +417,76 @@ class OfflineModelAndParityInstrumentedTest {
 
         engine.unload()
     }
+
+    // ==============================================================================
+    // 9. Real Android llama.cpp Offline Repeatability & State Resilience Experiment
+    // ==============================================================================
+    @Test
+    fun test_009_offline_repeatability_and_state_resilience() = runBlocking {
+        val modelFile = File(appContext.getDir("offline_models", Context.MODE_PRIVATE), "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf")
+        assertTrue("Model file must exist at ${modelFile.absolutePath}", modelFile.exists())
+
+        val engine = com.offline_First.data.local.LlamaCppInferenceEngine()
+        engine.loadModel(modelFile)
+        assertTrue("Model must be loaded", engine.isLoaded)
+
+        val prompt = "<|im_start|>system\nYou are EduNova, a helpful learning assistant.<|im_end|>\n<|im_start|>user\nExplain Database Management Systems (DBMS) in three concise bullet points.<|im_end|>\n<|im_start|>assistant\n"
+
+        val outputs = mutableListOf<String>()
+        val metricsList = mutableListOf<LongArray>()
+
+        // 5 repeated runs with identical prompt
+        for (i in 1..5) {
+            val (output, metrics) = engine.generateWithMetrics(prompt, maxTokens = 256)
+            outputs.add(output)
+            metricsList.add(metrics)
+            println("--- REPEATABILITY RUN $i ---")
+            println("Prompt tokens: ${metrics[0]}, Cached prefix: ${metrics[1]}, Eval: ${metrics[2]}, Gen tokens: ${metrics[3]}, Latency: ${metrics[5]}ms")
+            println("Output preview: ${output.take(80)}...")
+        }
+
+        // Compare all runs against run 1 byte-for-byte
+        var exactMatches = 0
+        for (i in 0 until outputs.size) {
+            if (outputs[i] == outputs[0]) {
+                exactMatches++
+            }
+        }
+        val matchRate = (exactMatches.toDouble() / outputs.size.toDouble()) * 100.0
+        println("=== REPEATABILITY RESULTS ===")
+        println("Total Runs: ${outputs.size}, Exact Matches: $exactMatches, Match Rate: $matchRate%")
+        println("Run 1 length: ${outputs[0].length} chars")
+        println("Full Output:\n${outputs[0]}")
+        println("=============================")
+
+        assertEquals("All 5 runs must produce byte-for-byte identical output", outputs.size, exactMatches)
+
+        // Test 6: Changed prompt produces different answer
+        val changedPrompt = "<|im_start|>system\nYou are EduNova, a helpful learning assistant.<|im_end|>\n<|im_start|>user\nWhat is an Operating System?<|im_end|>\n<|im_start|>assistant\n"
+        val (changedOutput, _) = engine.generateWithMetrics(changedPrompt, maxTokens = 256)
+        assertFalse("Different prompt must not match DBMS output", changedOutput == outputs[0])
+        assertTrue("Changed prompt must mention OS concepts", changedOutput.contains("hardware", ignoreCase = true) || changedOutput.contains("software", ignoreCase = true) || changedOutput.contains("manage", ignoreCase = true) || changedOutput.contains("system", ignoreCase = true))
+
+        // Test 7: Post-cancellation recovery preserves determinism
+        var receivedCount = 0
+        kotlinx.coroutines.withTimeoutOrNull(5000) {
+            engine.stream(
+                systemPrompt = "You are EduNova.",
+                history = emptyList(),
+                prompt = "Count from 1 to 100"
+            ).collect {
+                receivedCount++
+                if (receivedCount >= 3) {
+                    engine.cancelCurrentGeneration()
+                }
+            }
+        }
+
+        // Fresh post-cancellation generation with original prompt
+        val (postCancelOutput, _) = engine.generateWithMetrics(prompt, maxTokens = 256)
+        assertEquals("Generation after cancellation must still be deterministic and byte-for-byte identical", outputs[0], postCancelOutput)
+
+        engine.unload()
+    }
 }
 

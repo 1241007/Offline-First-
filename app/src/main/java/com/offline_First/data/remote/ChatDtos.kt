@@ -88,7 +88,9 @@ data class StreamEventDto(
     val decision: String? = null,
     val query: String? = null,
     val outcome: String? = null,
-    val citations: List<CitationDto>? = null
+    val citations: List<CitationDto>? = null,
+    @SerialName("finish_reason") val finishReason: String? = null,
+    val truncated: Boolean? = false
 )
 
 @Serializable

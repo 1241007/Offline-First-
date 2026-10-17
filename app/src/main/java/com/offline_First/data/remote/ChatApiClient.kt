@@ -314,6 +314,7 @@ object ChatApiClient {
             }
 
             var hasLoggedFirstToken = false
+            var receivedDoneEvent = false
             val reader = BufferedReader(InputStreamReader(body.byteStream()))
             var line: String? = reader.readLine()
             while (line != null) {
@@ -333,6 +334,7 @@ object ChatApiClient {
                             }
                             trySend(event)
                             if (event.type == "done") {
+                                receivedDoneEvent = true
                                 android.util.Log.i("ChatApiClient", "ONLINE_CHAT: stream_completed")
                                 break
                             }
@@ -343,7 +345,12 @@ object ChatApiClient {
                 }
                 line = reader.readLine()
             }
-            close()
+            if (!receivedDoneEvent) {
+                android.util.Log.e("ChatApiClient", "ONLINE_CHAT: stream_interrupted_unexpected_eof")
+                close(java.io.IOException("Incomplete stream: SSE connection closed before completion event."))
+            } else {
+                close()
+            }
         } catch (e: Exception) {
             android.util.Log.e("ChatApiClient", "ONLINE_CHAT: request_failed ${e.message}")
             close(e)

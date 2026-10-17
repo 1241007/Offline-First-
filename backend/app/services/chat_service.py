@@ -302,6 +302,7 @@ class ChatService:
         yield f"data: {json.dumps({'type': 'route', 'decision': route_decision.value, 'query': standalone_query})}\n\n"
 
         accumulated_chunks = []
+        stream_interrupted = False
         try:
             if route_decision == RouteDecision.RAG:
                 retrieval_service = SupabaseRetrievalService(self.db)
@@ -372,6 +373,7 @@ class ChatService:
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
         except Exception as exc:
+            stream_interrupted = True
             logger.warning(f"Stream interrupted or cancelled for conv={conversation_id}: {exc}")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
         finally:
@@ -396,7 +398,10 @@ class ChatService:
                 title=new_title,
             )
 
-            yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or initial_title})}\n\n"
+            if not stream_interrupted:
+                finish_reason = getattr(openrouter_service, "last_finish_reason", "stop")
+                is_truncated = (finish_reason == "length")
+                yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or initial_title, 'finish_reason': finish_reason, 'truncated': is_truncated})}\n\n"
 
     async def update_conversation(
         self,

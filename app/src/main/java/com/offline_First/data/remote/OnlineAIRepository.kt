@@ -677,13 +677,18 @@ class OnlineAIRepository(
     override fun regenerateLastResponse(): Flow<String> = flow {
         val current = _currentSessionFlow.value ?: return@flow
         val lastUserMsg = current.messages.lastOrNull { it.fromUser } ?: return@flow
-        // Remove the last assistant message if present
+        val lastAssistantMsg = current.messages.lastOrNull { !it.fromUser }
+        if (lastAssistantMsg != null) {
+            safeCacheDb {
+                it.deleteMessage(lastAssistantMsg.id, currentUserId)
+            }
+        }
         val prunedMessages = current.messages.dropLastWhile { !it.fromUser }
-        _currentSessionFlow.value = current.copy(messages = prunedMessages)
+        _currentSessionFlow.value = current.copy(messages = prunedMessages.filter { it.id != lastUserMsg.id })
         streamMessage(
             prompt = lastUserMsg.text,
             parentId = lastUserMsg.parentId,
-            clientMessageId = null
+            clientMessageId = lastUserMsg.id
         ).collect { emit(it) }
     }
 

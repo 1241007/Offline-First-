@@ -393,4 +393,54 @@ class OnlineChatIntegrationTest {
         assertEquals("1.2", citation.section)
         assertEquals("p. 14-16", citation.pageReference)
     }
+
+    @Test
+    fun test11_unexpectedSseStreamEofThrowsIOException() = runBlocking {
+        // SSE sends token but drops connection before 'done' event
+        val partialPayload = """
+            data: {"type":"metadata","user_message_id":"u-1","assistant_message_id":"a-1"}
+
+            data: {"type":"token","content":"Partial sentence ending prematurely"}
+
+        """.trimIndent()
+
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(partialPayload)
+        )
+
+        try {
+            ChatApiClient.streamMessage("conv-drop-test", "Explain DBMS").toList()
+            fail("Expected IOException when stream terminates without done event")
+        } catch (e: java.io.IOException) {
+            assertTrue("Exception message should indicate premature stream close", e.message?.contains("Incomplete stream") == true)
+        }
+    }
+
+    @Test
+    fun test12_finishReasonTruncatedDetectedInDoneEvent() = runBlocking {
+        val payload = """
+            data: {"type":"metadata","user_message_id":"u-1","assistant_message_id":"a-1"}
+
+            data: {"type":"token","content":"Response truncated due to length"}
+
+            data: {"type":"done","finish_reason":"length","truncated":true}
+
+        """.trimIndent()
+
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(payload)
+        )
+
+        val events = ChatApiClient.streamMessage("conv-trunc-test", "Explain DBMS").toList()
+        val doneEvent = events.firstOrNull { it.type == "done" }
+        assertNotNull(doneEvent)
+        assertEquals("length", doneEvent?.finishReason)
+        assertEquals(true, doneEvent?.truncated)
+    }
 }

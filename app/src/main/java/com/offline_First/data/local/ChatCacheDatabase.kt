@@ -584,6 +584,10 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
         }
     }
 
+    fun deleteMessage(messageId: String, userId: String) {
+        writableDatabase.delete("local_messages", "id = ? AND user_id = ?", arrayOf(messageId, userId))
+    }
+
     // --- Memory operations (Strictly scoped by user_id) ---
 
     fun upsertMemory(memory: UserMemoryItem, userId: String, sourceConvId: String? = null) {

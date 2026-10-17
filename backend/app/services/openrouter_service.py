@@ -94,14 +94,20 @@ class OpenRouterService:
             getattr(settings, "openrouter_base_url", None)
             or "https://openrouter.ai/api/v1"
         ).rstrip("/")
-        self._max_tokens = getattr(settings, "openrouter_max_tokens", 1024)
+        self._max_tokens = getattr(settings, "openrouter_max_tokens", 2048)
         self._temperature = getattr(settings, "openrouter_temperature", 0.0)
         self._seed = getattr(settings, "openrouter_seed", 42)
+        self._provider_order = getattr(settings, "openrouter_provider_order", ["Google"])
+        self._provider_allow_fallbacks = getattr(settings, "openrouter_provider_allow_fallbacks", False)
+        self._require_parameters = getattr(settings, "openrouter_require_parameters", True)
         self._client: Optional[httpx.AsyncClient] = None
+        self.last_finish_reason: str = "stop"
+        self.last_model_used: str = self._model_name
+        self.last_provider: str = "Google"
 
         # Do NOT log the API key
         logger.info(
-            f"OpenRouterService initialized with model: {self._model_name}, base_url: {self._base_url}, temperature: {self._temperature}, seed: {self._seed}"
+            f"OpenRouterService initialized with model: {self._model_name}, base_url: {self._base_url}, temperature: {self._temperature}, seed: {self._seed}, max_tokens: {self._max_tokens}"
         )
 
     @property
@@ -167,6 +173,12 @@ class OpenRouterService:
             "temperature": temperature if temperature is not None else self._temperature,
             "seed": seed if seed is not None else self._seed,
         }
+        if self._provider_order:
+            payload["provider"] = {
+                "order": list(self._provider_order),
+                "allow_fallbacks": self._provider_allow_fallbacks,
+                "require_parameters": self._require_parameters,
+            }
         return target_model, payload
 
     async def generate_response(
@@ -256,8 +268,12 @@ class OpenRouterService:
                     if choices:
                         message = choices[0].get("message", {})
                         content = message.get("content") or ""
+                        finish_reason = choices[0].get("finish_reason") or "stop"
+                        self.last_finish_reason = finish_reason
+                        self.last_model_used = data.get("model", model_name)
+                        self.last_provider = data.get("provider", "Google")
                         logger.info(
-                            f"OpenRouter response received from {model_name}, length={len(content)}"
+                            f"OpenRouter response received from {self.last_model_used} ({self.last_provider}), finish_reason={finish_reason}, length={len(content)}"
                         )
                         return content
                     return ""
@@ -385,11 +401,19 @@ class OpenRouterService:
                                     if choices:
                                         delta = choices[0].get("delta", {})
                                         content = delta.get("content")
+                                        finish_reason = choices[0].get("finish_reason")
+                                        if finish_reason:
+                                            self.last_finish_reason = finish_reason
+                                        actual_model = chunk_data.get("model") or model_name
+                                        self.last_model_used = actual_model
                                         if content:
                                             yielded_any = True
                                             yield content
 
                     if yielded_any:
+                        logger.info(
+                            f"OpenRouter stream completed from {self.last_model_used}, finish_reason={self.last_finish_reason}"
+                        )
                         return
                     return
 
