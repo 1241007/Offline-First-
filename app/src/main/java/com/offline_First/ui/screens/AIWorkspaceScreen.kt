@@ -530,7 +530,6 @@ private fun AILandingScreenView(
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
-                .navigationBarsPadding()
         ) {
             Column(
                 modifier = Modifier
@@ -1337,7 +1336,6 @@ private fun CleanChatScreenView(
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
-                .navigationBarsPadding()
         ) {
             LazyColumn(
                 state = listState,
