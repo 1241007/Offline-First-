@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.offline_First.domain.model.EducationMode
 
 private val supportedLanguages = listOf("English", "Hindi", "Marathi")
 
@@ -37,7 +38,9 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
     language: String = "English",
-    onLanguageSelected: (String) -> Unit = {}
+    onLanguageSelected: (String) -> Unit = {},
+    educationMode: EducationMode = EducationMode.GENERAL,
+    onEducationModeChanged: (EducationMode) -> Unit = {}
 ) {
     var notifications by rememberSaveable { mutableStateOf(true) }
     var darkTheme by rememberSaveable { mutableStateOf(false) }
@@ -74,6 +77,14 @@ fun SettingsScreen(
                 }, languages)
             }
             SettingsSection("PREFERENCES") {
+                ToggleRow(
+                    title = "School Mode (Class 9–12)",
+                    subtitle = if (educationMode == EducationMode.SCHOOL) "CBSE Class 9–12 subjects & exams" else "General college & skills courses",
+                    checked = educationMode == EducationMode.SCHOOL,
+                    onCheckedChange = { isSchool ->
+                        onEducationModeChanged(if (isSchool) EducationMode.SCHOOL else EducationMode.GENERAL)
+                    }
+                )
                 ToggleRow("Notifications", "Receive learning reminders", notifications) { notifications = it }
                 ToggleRow("Theme / Appearance", "Use dark appearance", darkTheme) { darkTheme = it }
             }

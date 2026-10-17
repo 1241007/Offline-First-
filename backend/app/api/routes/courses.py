@@ -4,10 +4,17 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.core.deps import get_current_user_id
 from app.services.course_service import CourseService
-from app.schemas.course import CourseListResponse, CourseDetailResponse
+from app.schemas.course import (
+    CourseListResponse,
+    CourseDetailResponse,
+    SavedCourseResponse,
+    SavedCourseActionResponse,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["courses"])
+
 
 
 @router.get("/courses", response_model=List[CourseListResponse])
@@ -31,6 +38,44 @@ async def get_courses(
     return await service.get_courses(featured=featured, category=category, limit=limit, offset=offset)
 
 
+@router.get("/courses/saved", response_model=List[SavedCourseResponse])
+async def get_saved_courses(
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all saved courses for the authenticated user.
+    """
+    service = CourseService(db)
+    return await service.get_saved_courses(user_id=current_user_id)
+
+
+@router.post("/courses/{course_id}/save", response_model=SavedCourseResponse)
+async def save_course(
+    course_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Save a course for offline access (idempotent).
+    """
+    service = CourseService(db)
+    return await service.save_course(user_id=current_user_id, course_id=course_id)
+
+
+@router.delete("/courses/{course_id}/save", response_model=SavedCourseActionResponse)
+async def unsave_course(
+    course_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Unsave a course for the authenticated user (idempotent).
+    """
+    service = CourseService(db)
+    return await service.unsave_course(user_id=current_user_id, course_id=course_id)
+
+
 @router.get("/courses/{course_id}", response_model=CourseDetailResponse)
 async def get_course_detail(
     course_id: str,
@@ -46,3 +91,4 @@ async def get_course_detail(
         raise HTTPException(status_code=404, detail="Course not found")
     
     return course
+

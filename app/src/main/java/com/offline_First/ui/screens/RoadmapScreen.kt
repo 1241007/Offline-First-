@@ -38,6 +38,7 @@ import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaSecondary
 import com.offline_First.ui.theme.EduNovaSuccess
 import com.offline_First.ui.utils.IconResolver
+import kotlinx.coroutines.launch
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.KeyboardActions
@@ -82,6 +83,7 @@ fun RoadmapScreen(
     val savedRoadmaps = personalizedState.savedRoadmaps
     val roadmapPrimary = MaterialTheme.colorScheme.primary
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // Intercept back presses to stay within Roadmap sub-views when not on the root Catalog
     BackHandler(enabled = uiState.currentSubView != RoadmapSubView.CATALOG) {
@@ -90,6 +92,7 @@ fun RoadmapScreen(
 
     LaunchedEffect(Unit) {
         viewModel.loadMyPersonalizedRoadmaps()
+        viewModel.loadSavedRoadmaps()
     }
 
     LaunchedEffect(uiState.errorMessage) {
@@ -245,8 +248,14 @@ fun RoadmapScreen(
                                 Spacer(modifier = Modifier.weight(1f))
                                 FilledTonalButton(
                                     onClick = {
-                                        viewModel.startNewAssessment()
-                                        onBuildRoadmap()
+                                        if (uiState.isOffline) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Creating custom roadmaps with AI requires an internet connection.")
+                                            }
+                                        } else {
+                                            viewModel.startNewAssessment()
+                                            onBuildRoadmap()
+                                        }
                                     },
                                     shape = RoundedCornerShape(12.dp),
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -395,26 +404,336 @@ fun RoadmapScreen(
                                         },
                                         onDelete = {
                                             roadmapToDelete = roadmap
-                                        }
+                                        },
+                                        isSaved = uiState.savedRoadmapIds.contains(roadmap.id),
+                                        onToggleSave = { viewModel.toggleSaveRoadmap(roadmap.id) }
                                     )
                                 }
                             }
                         }
 
                         "Roadmaps" -> {
-                            // "Learn with AI" card (matching Screenshot 2)
-                            item(key = "learn-with-ai-card") {
-                                LearnWithAiCard(
-                                    onClick = {
-                                        viewModel.startNewAssessment()
-                                        onBuildRoadmap()
+                            if (uiState.isOffline) {
+                                // Offline Notice Header
+                                item(key = "offline-roadmap-notice") {
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CloudOff,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Offline Mode",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "Showing roadmaps saved for offline learning.",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = EduNovaSuccess.copy(alpha = 0.15f)
+                                            ) {
+                                                Text(
+                                                    text = "Offline Ready",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = EduNovaSuccess,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
+                                            }
+                                        }
                                     }
-                                )
-                            }
+                                }
 
-                            // Prominently show user's personalized roadmaps if any exist
-                            if (personalizedRoadmaps.isNotEmpty()) {
-                                item(key = "my-custom-roadmaps-header") {
+                                val offlineSavedSystem = uiState.savedRoadmaps.filter { !it.isPersonalized }
+                                val hasAnyOfflineRoadmaps = personalizedRoadmaps.isNotEmpty() || offlineSavedSystem.isNotEmpty()
+
+                                if (!hasAnyOfflineRoadmaps) {
+                                    item(key = "empty-offline-roadmaps") {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 12.dp),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(24.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudOff,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(40.dp)
+                                                )
+                                                Text(
+                                                    text = "No roadmaps saved for offline learning",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 15.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                Text(
+                                                    text = "Connect to the internet and save a roadmap to access it offline.",
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textAlign = TextAlign.Center,
+                                                    lineHeight = 18.sp
+                                                )
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.loadSavedRoadmaps()
+                                                        viewModel.loadMyPersonalizedRoadmaps()
+                                                    },
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = roadmapPrimary),
+                                                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text("Refresh", fontWeight = FontWeight.SemiBold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // 1. Show user's custom / personalized roadmaps
+                                    if (personalizedRoadmaps.isNotEmpty()) {
+                                        item(key = "offline-custom-roadmaps-header") {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 8.dp, bottom = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "My Custom Roadmaps",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                EduNovaBadge("${personalizedRoadmaps.size} Available")
+                                            }
+                                        }
+
+                                        items(
+                                            items = personalizedRoadmaps,
+                                            key = { "rec_${it.id}" }
+                                        ) { roadmap ->
+                                            val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
+                                            val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
+
+                                            PersonalizedRoadmapCard(
+                                                roadmap = roadmap,
+                                                progress = progress,
+                                                nextMilestone = nextMilestone,
+                                                roadmapPrimary = roadmapPrimary,
+                                                onContinueLearning = {
+                                                    viewModel.selectPersonalizedRoadmap(roadmap)
+                                                    selectedPersonalizedRoadmap = roadmap
+                                                },
+                                                onRename = {
+                                                    roadmapToRename = roadmap
+                                                    renameDraftTitle = roadmap.title
+                                                },
+                                                onDelete = {
+                                                    roadmapToDelete = roadmap
+                                                },
+                                                isSaved = true,
+                                                onToggleSave = { viewModel.toggleSaveRoadmap(roadmap.id) }
+                                            )
+                                        }
+                                    }
+
+                                    // 2. Show saved system roadmaps (e.g. Python Developer, Java Developer, SQL, ML)
+                                    if (offlineSavedSystem.isNotEmpty()) {
+                                        item(key = "offline-saved-system-header") {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 12.dp, bottom = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "Saved Learning Paths",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onBackground,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                EduNovaBadge("${offlineSavedSystem.size} Saved")
+                                            }
+                                        }
+
+                                        items(
+                                            items = offlineSavedSystem,
+                                            key = { "saved_sys_${it.id}" }
+                                        ) { sysRoadmap ->
+                                            Card(
+                                                shape = RoundedCornerShape(14.dp),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        viewModel.selectCourseByName(sysRoadmap.title, sysRoadmap.category)
+                                                    }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(16.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(42.dp)
+                                                            .background(roadmapPrimary.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = IconResolver.resolve(sysRoadmap.icon),
+                                                            contentDescription = null,
+                                                            tint = roadmapPrimary,
+                                                            modifier = Modifier.size(24.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = sysRoadmap.title,
+                                                            style = MaterialTheme.typography.titleMedium,
+                                                            fontWeight = FontWeight.Bold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = EduNovaSuccess.copy(alpha = 0.15f)
+                                                            ) {
+                                                                Text(
+                                                                    text = "Offline Ready",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = EduNovaSuccess,
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            }
+                                                            Text(
+                                                                text = sysRoadmap.description.ifEmpty { "${sysRoadmap.category} • ${sysRoadmap.level}" },
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                modifier = Modifier.weight(1f, fill = false)
+                                                            )
+                                                        }
+                                                    }
+                                                    IconButton(onClick = { viewModel.toggleSaveRoadmap(sysRoadmap.id) }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Bookmark,
+                                                            contentDescription = "Saved",
+                                                            tint = roadmapPrimary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // ONLINE: Show standard online experience
+                                // "Learn with AI" card (matching Screenshot 2)
+                                item(key = "learn-with-ai-card") {
+                                    LearnWithAiCard(
+                                        onClick = {
+                                            viewModel.startNewAssessment()
+                                            onBuildRoadmap()
+                                        }
+                                    )
+                                }
+
+                                // Prominently show user's personalized roadmaps if any exist
+                                if (personalizedRoadmaps.isNotEmpty()) {
+                                    item(key = "my-custom-roadmaps-header") {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 12.dp, bottom = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "My Custom Roadmaps",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            EduNovaBadge("${personalizedRoadmaps.size} Active")
+                                        }
+                                    }
+
+                                    items(
+                                        items = personalizedRoadmaps,
+                                        key = { "rec_${it.id}" }
+                                    ) { roadmap ->
+                                        val progress = viewModel.calculateRoadmapProgress(roadmap, uiState.completedMilestones)
+                                        val nextMilestone = viewModel.getNextActionableMilestone(roadmap, uiState.completedMilestones)
+
+                                        PersonalizedRoadmapCard(
+                                            roadmap = roadmap,
+                                            progress = progress,
+                                            nextMilestone = nextMilestone,
+                                            roadmapPrimary = roadmapPrimary,
+                                            onContinueLearning = {
+                                                viewModel.selectPersonalizedRoadmap(roadmap)
+                                                selectedPersonalizedRoadmap = roadmap
+                                            },
+                                            onRename = {
+                                                roadmapToRename = roadmap
+                                                renameDraftTitle = roadmap.title
+                                            },
+                                            onDelete = {
+                                                roadmapToDelete = roadmap
+                                            },
+                                            isSaved = uiState.savedRoadmapIds.contains(roadmap.id),
+                                            onToggleSave = { viewModel.toggleSaveRoadmap(roadmap.id) }
+                                        )
+                                    }
+                                }
+
+                                // 1. Skill-based Section Header
+                                item(key = "skill-based-header") {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -422,16 +741,24 @@ fun RoadmapScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "My Custom Roadmaps",
+                                            text = "Skill-based",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        EduNovaBadge("${personalizedRoadmaps.size} Active")
+                                        Text(
+                                            text = "${filteredSkillBased.size}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
 
+                                // Skill-based course cards in a clean, responsive 2-column grid
                                 items(
+<<<<<<< HEAD
                                     items = personalizedRoadmaps,
                                     key = { "rec_${it.id}" }
                                 ) { roadmap ->
@@ -457,166 +784,156 @@ fun RoadmapScreen(
                                         },
                                         onDelete = {
                                             roadmapToDelete = roadmap
+=======
+                                    items = filteredSkillBased.chunked(2),
+                                    key = { pair -> "skill_row_${pair.first()}" }
+                                ) { pair ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        pair.forEach { courseName ->
+                                            CompactCourseCard(
+                                                courseName = courseName,
+                                                isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
+                                                onClick = { viewModel.selectCourseByName(courseName, "Skill-based") },
+                                                onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+>>>>>>> origin
                                         }
-                                    )
+                                        if (pair.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
-                            }
 
-                            // 1. Skill-based Section Header
-                            item(key = "skill-based-header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 12.dp, bottom = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Skill-based",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "${filteredSkillBased.size}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            // Skill-based course cards in a clean, responsive 2-column grid
-                            items(
-                                items = filteredSkillBased.chunked(2),
-                                key = { pair -> "skill_row_${pair.first()}" }
-                            ) { pair ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    pair.forEach { courseName ->
-                                        CompactCourseCard(
-                                            courseName = courseName,
-                                            isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
-                                            onClick = { viewModel.selectCourseByName(courseName, "Skill-based") },
-                                            onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+                                // 2. Role-based Section Header
+                                item(key = "role-based-header") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Role-based",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground,
                                             modifier = Modifier.weight(1f)
                                         )
-                                    }
-                                    if (pair.size == 1) {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-
-                            // 2. Role-based Section Header
-                            item(key = "role-based-header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 16.dp, bottom = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Role-based",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "${filteredRoleBased.size}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            // Role-based course cards in a clean, responsive 2-column grid
-                            items(
-                                items = filteredRoleBased.chunked(2),
-                                key = { pair -> "role_row_${pair.first()}" }
-                            ) { pair ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    pair.forEach { courseName ->
-                                        CompactCourseCard(
-                                            courseName = courseName,
-                                            isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
-                                            onClick = { viewModel.selectCourseByName(courseName, "Role-based") },
-                                            onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
-                                            modifier = Modifier.weight(1f)
+                                        Text(
+                                            text = "${filteredRoleBased.size}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    if (pair.size == 1) {
-                                        Spacer(modifier = Modifier.weight(1f))
+                                }
+
+                                // Role-based course cards in a clean, responsive 2-column grid
+                                items(
+                                    items = filteredRoleBased.chunked(2),
+                                    key = { pair -> "role_row_${pair.first()}" }
+                                ) { pair ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        pair.forEach { courseName ->
+                                            CompactCourseCard(
+                                                courseName = courseName,
+                                                isBookmarked = uiState.bookmarkedCourseNames.contains(courseName),
+                                                onClick = { viewModel.selectCourseByName(courseName, "Role-based") },
+                                                onToggleBookmark = { viewModel.toggleBookmarkCourse(courseName) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        if (pair.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
                                     }
                                 }
                             }
                         }
 
                         "Lesson Packs" -> {
-                            item(key = "lesson-packs-header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Curated Lesson Packs",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.weight(1f)
+                            if (uiState.isOffline) {
+                                item(key = "offline-lesson-packs") {
+                                    OfflineTabNoticeCard(
+                                        title = "Lesson Packs Unavailable Offline",
+                                        message = "Connect to the internet to explore and download curated lesson packs."
                                     )
-                                    EduNovaBadge("${PythonRoadmapStagingData.LESSON_PACKS.size} Packs")
                                 }
-                            }
-
-                            items(
-                                items = PythonRoadmapStagingData.LESSON_PACKS,
-                                key = { it.id }
-                            ) { pack ->
-                                LessonPackCard(
-                                    pack = pack,
-                                    onClick = {
-                                        viewModel.selectCourseByName(pack.title, "Lesson Pack")
+                            } else {
+                                item(key = "lesson-packs-header") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Curated Lesson Packs",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        EduNovaBadge("${PythonRoadmapStagingData.LESSON_PACKS.size} Packs")
                                     }
-                                )
+                                }
+
+                                items(
+                                    items = PythonRoadmapStagingData.LESSON_PACKS,
+                                    key = { it.id }
+                                ) { pack ->
+                                    LessonPackCard(
+                                        pack = pack,
+                                        onClick = {
+                                            viewModel.selectCourseByName(pack.title, "Lesson Pack")
+                                        }
+                                    )
+                                }
                             }
                         }
 
                         "Project Ideas" -> {
-                            item(key = "project-ideas-header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Practical Project Ideas",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.weight(1f)
+                            if (uiState.isOffline) {
+                                item(key = "offline-project-ideas") {
+                                    OfflineTabNoticeCard(
+                                        title = "Project Ideas Unavailable Offline",
+                                        message = "Connect to the internet to explore practical project ideas."
                                     )
-                                    EduNovaBadge("${PythonRoadmapStagingData.PYTHON_PROJECTS.size} Projects")
                                 }
-                            }
+                            } else {
+                                item(key = "project-ideas-header") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Practical Project Ideas",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        EduNovaBadge("${PythonRoadmapStagingData.PYTHON_PROJECTS.size} Projects")
+                                    }
+                                }
 
-                            items(
-                                items = PythonRoadmapStagingData.PYTHON_PROJECTS,
-                                key = { it.id }
-                            ) { project ->
-                                RoadmapProjectCard(
-                                    project = project,
-                                    isCompleted = uiState.completedProjectIds.contains(project.id),
-                                    onClick = { viewModel.selectProject(project) }
-                                )
+                                items(
+                                    items = PythonRoadmapStagingData.PYTHON_PROJECTS,
+                                    key = { it.id }
+                                ) { project ->
+                                    RoadmapProjectCard(
+                                        project = project,
+                                        isCompleted = uiState.completedProjectIds.contains(project.id),
+                                        onClick = { viewModel.selectProject(project) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -751,6 +1068,8 @@ fun RoadmapScreen(
         RoadmapDetailDialog(
             roadmap = roadmap,
             roadmapPrimary = roadmapPrimary,
+            isSaved = uiState.savedRoadmapIds.contains(roadmap.id),
+            onToggleSave = { viewModel.toggleSaveRoadmap(roadmap.id) },
             onDismiss = { selectedRoadmap = null }
         )
     }
@@ -762,8 +1081,55 @@ fun RoadmapScreen(
             completedMilestones = uiState.completedMilestones,
             onToggleMilestone = { key -> viewModel.toggleMilestone(key) },
             roadmapPrimary = roadmapPrimary,
+            isSaved = uiState.savedRoadmapIds.contains(pRoadmap.id),
+            onToggleSave = { viewModel.toggleSaveRoadmap(pRoadmap.id) },
             onDismiss = { selectedPersonalizedRoadmap = null }
         )
+    }
+}
+
+@Composable
+private fun OfflineTabNoticeCard(
+    title: String,
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(36.dp)
+            )
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = message,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
+            )
+        }
     }
 }
 
@@ -1304,7 +1670,12 @@ private fun PersonalizedRoadmapCard(
     onContinueLearning: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+<<<<<<< HEAD
     onViewProfile: () -> Unit = {},
+=======
+    isSaved: Boolean = false,
+    onToggleSave: () -> Unit = {},
+>>>>>>> origin
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1374,11 +1745,26 @@ private fun PersonalizedRoadmapCard(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
+<<<<<<< HEAD
                             text = { Text("View Assessment Profile") },
                             leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp)) },
                             onClick = {
                                 showMenu = false
                                 onViewProfile()
+=======
+                            text = { Text(if (isSaved) "Remove from Saved" else "Save for Offline") },
+                            leadingIcon = {
+                                Icon(
+                                    if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                    tint = if (isSaved) EduNovaSuccess else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onToggleSave()
+>>>>>>> origin
                             }
                         )
                         DropdownMenuItem(
@@ -1409,6 +1795,9 @@ private fun PersonalizedRoadmapCard(
                 EduNovaBadge(roadmap.level, containerColor = roadmapPrimary.copy(alpha = 0.08f), contentColor = roadmapPrimary)
                 EduNovaBadge("${roadmap.duration} • ${roadmap.weeklyHours} hrs/wk")
                 EduNovaBadge(statusText, containerColor = statusColor.copy(alpha = 0.12f), contentColor = statusColor)
+                if (isSaved) {
+                    EduNovaBadge("Saved Offline", containerColor = EduNovaSuccess.copy(alpha = 0.12f), contentColor = EduNovaSuccess)
+                }
             }
 
             // Progress Bar & Percentage
@@ -1565,6 +1954,8 @@ private fun RoadmapDetailDialog(
     roadmap: RoadmapOption,
     roadmapPrimary: Color,
     onDismiss: () -> Unit,
+    isSaved: Boolean = false,
+    onToggleSave: (() -> Unit)? = null,
     onStartAssessment: (String) -> Unit = {}
 ) {
     AlertDialog(
@@ -1626,7 +2017,25 @@ private fun RoadmapDetailDialog(
             ) {
                 Text("Close")
             }
-        }
+        },
+        dismissButton = if (onToggleSave != null) {
+            {
+                OutlinedButton(
+                    onClick = onToggleSave,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isSaved) EduNovaSuccess else roadmapPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isSaved) "Saved" else "Save Offline")
+                }
+            }
+        } else null
     )
 }
 
@@ -1636,7 +2045,9 @@ private fun PersonalizedRoadmapDetailDialog(
     completedMilestones: Set<String>,
     onToggleMilestone: (String) -> Unit,
     roadmapPrimary: Color,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isSaved: Boolean = false,
+    onToggleSave: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1883,6 +2294,24 @@ private fun PersonalizedRoadmapDetailDialog(
             ) {
                 Text("Close")
             }
-        }
+        },
+        dismissButton = if (onToggleSave != null) {
+            {
+                OutlinedButton(
+                    onClick = onToggleSave,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isSaved) EduNovaSuccess else roadmapPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isSaved) "Saved" else "Save Offline")
+                }
+            }
+        } else null
     )
 }

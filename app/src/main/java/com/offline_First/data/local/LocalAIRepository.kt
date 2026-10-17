@@ -490,7 +490,9 @@ class LocalAIRepository(
     override fun regenerateLastResponse(): Flow<String> = kotlinx.coroutines.flow.flow {
         val current = currentSession.value ?: return@flow
         val lastUserMsg = current.messages.lastOrNull { it.fromUser } ?: return@flow
-        streamMessage(lastUserMsg.text, lastUserMsg.parentId, null).collect { emit(it) }
+        val pruned = current.messages.dropLastWhile { !it.fromUser }
+        currentSession.value = current.copy(messages = pruned.filter { it.id != lastUserMsg.id })
+        streamMessage(lastUserMsg.text, lastUserMsg.parentId, lastUserMsg.id).collect { emit(it) }
     }
 
     override fun editMessageAndRegenerate(messageId: String, newContent: String): Flow<String> = kotlinx.coroutines.flow.flow {

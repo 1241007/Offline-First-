@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -84,41 +85,44 @@ class AIViewModel(
     init {
         observeRepositoryFlows()
         loadMemories()
+        refreshConversations()
     }
 
     private fun observeRepositoryFlows() {
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeConnectionMode().collect { mode ->
-                _uiState.value = _uiState.value.copy(connectionMode = mode)
+                _uiState.update { it.copy(connectionMode = mode) }
             }
         }
 
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeExplanationMode().collect { mode ->
-                _uiState.value = _uiState.value.copy(explanationMode = mode)
+                _uiState.update { it.copy(explanationMode = mode) }
             }
         }
 
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeOfflineAIStatus().collect { status ->
-                _uiState.value = _uiState.value.copy(offlineAIStatus = status)
+                _uiState.update { it.copy(offlineAIStatus = status) }
             }
         }
 
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeDownloadProgress().collect { progressInfo ->
-                _uiState.value = _uiState.value.copy(
-                    downloadProgress = progressInfo.progress,
-                    downloadSize = progressInfo.downloadSize,
-                    estimatedTimeRemaining = progressInfo.estimatedTimeRemaining,
-                    downloadStage = progressInfo.stage
-                )
+                _uiState.update {
+                    it.copy(
+                        downloadProgress = progressInfo.progress,
+                        downloadSize = progressInfo.downloadSize,
+                        estimatedTimeRemaining = progressInfo.estimatedTimeRemaining,
+                        downloadStage = progressInfo.stage
+                    )
+                }
             }
         }
 
         viewModelScope.launch(coroutineContext) {
             aiRepository.observeChatSessions().collect { sessionList ->
-                _uiState.value = _uiState.value.copy(sessions = sessionList)
+                _uiState.update { it.copy(sessions = sessionList) }
             }
         }
 
@@ -127,14 +131,16 @@ class AIViewModel(
             aiRepository.observeCurrentSession().collect { session ->
                 val sessionIdChanged = session?.id != lastSessionId
                 lastSessionId = session?.id
-                _uiState.value = _uiState.value.copy(
-                    currentSession = session,
-                    draftMessage = if (sessionIdChanged) {
-                        session?.draftText.orEmpty()
-                    } else {
-                        _uiState.value.draftMessage
-                    }
-                )
+                _uiState.update { current ->
+                    current.copy(
+                        currentSession = session,
+                        draftMessage = if (sessionIdChanged) {
+                            session?.draftText.orEmpty()
+                        } else {
+                            current.draftMessage
+                        }
+                    )
+                }
             }
         }
 
@@ -142,7 +148,7 @@ class AIViewModel(
             viewModelScope.launch(coroutineContext) {
                 aiRepository.onlineErrorFlow.collect { error ->
                     if (error != null) {
-                        _uiState.value = _uiState.value.copy(errorMessage = error)
+                        _uiState.update { it.copy(errorMessage = error) }
                     }
                 }
             }
@@ -150,16 +156,18 @@ class AIViewModel(
     }
 
     fun setScreen(screen: AIScreen) {
-        val prev = _uiState.value.currentScreen
-        val newPrevious = if (prev == AIScreen.CHAT || prev == AIScreen.LANDING) {
-            prev
-        } else {
-            _uiState.value.previousScreen
+        _uiState.update { state ->
+            val prev = state.currentScreen
+            val newPrevious = if (prev == AIScreen.CHAT || prev == AIScreen.LANDING) {
+                prev
+            } else {
+                state.previousScreen
+            }
+            state.copy(
+                currentScreen = screen,
+                previousScreen = newPrevious
+            )
         }
-        _uiState.value = _uiState.value.copy(
-            currentScreen = screen,
-            previousScreen = newPrevious
-        )
     }
 
     fun openChat() = setScreen(AIScreen.CHAT)
@@ -212,23 +220,29 @@ class AIViewModel(
     }
 
     fun setDrawerOpen(isOpen: Boolean) {
-        _uiState.value = _uiState.value.copy(isDrawerOpen = isOpen)
+        _uiState.update { it.copy(isDrawerOpen = isOpen) }
     }
 
     fun setDeleteConfirmDialogVisible(visible: Boolean) {
-        _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = visible)
+        _uiState.update { it.copy(showDeleteConfirmDialog = visible) }
     }
 
     fun createNewChat() {
+        currentStreamingJob?.cancel()
+        currentStreamingJob = null
         viewModelScope.launch(coroutineContext) {
             aiRepository.createNewChat().fold(
                 onSuccess = { session ->
-                    _uiState.value = _uiState.value.copy(
-                        isDrawerOpen = false,
-                        currentScreen = AIScreen.CHAT,
-                        activeToolName = null,
-                        draftMessage = ""
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isDrawerOpen = false,
+                            currentScreen = AIScreen.CHAT,
+                            currentSession = session,
+                            activeToolName = null,
+                            draftMessage = "",
+                            isGeneratingResponse = false
+                        )
+                    }
                 },
                 onFailure = ::reportError
             )
@@ -240,12 +254,16 @@ class AIViewModel(
             aiRepository.selectChat(sessionId).fold(
                 onSuccess = {
                     val session = _uiState.value.sessions.find { it.id == sessionId }
-                    _uiState.value = _uiState.value.copy(
-                        isDrawerOpen = false,
-                        currentScreen = AIScreen.CHAT,
-                        activeToolName = null,
-                        draftMessage = session?.draftText.orEmpty()
-                    )
+                    _uiState.update { current ->
+                        current.copy(
+                            isDrawerOpen = false,
+                            currentScreen = AIScreen.CHAT,
+                            currentSession = if (current.currentSession?.id == sessionId) current.currentSession else session?.copy(messages = emptyList()),
+                            activeToolName = null,
+                            draftMessage = session?.draftText.orEmpty(),
+                            isGeneratingResponse = false
+                        )
+                    }
                 },
                 onFailure = ::reportError
             )
@@ -253,14 +271,16 @@ class AIViewModel(
     }
 
     fun startRenameChat(sessionId: String, currentTitle: String) {
-        _uiState.value = _uiState.value.copy(
-            renameTargetSessionId = sessionId,
-            renameDraftText = currentTitle
-        )
+        _uiState.update {
+            it.copy(
+                renameTargetSessionId = sessionId,
+                renameDraftText = currentTitle
+            )
+        }
     }
 
     fun onRenameDraftChanged(text: String) {
-        _uiState.value = _uiState.value.copy(renameDraftText = text)
+        _uiState.update { it.copy(renameDraftText = text) }
     }
 
     fun confirmRenameChat() {
@@ -269,10 +289,12 @@ class AIViewModel(
         viewModelScope.launch(coroutineContext) {
             aiRepository.renameChat(targetId, newTitle).fold(
                 onSuccess = {
-                    _uiState.value = _uiState.value.copy(
-                        renameTargetSessionId = null,
-                        renameDraftText = ""
-                    )
+                    _uiState.update {
+                        it.copy(
+                            renameTargetSessionId = null,
+                            renameDraftText = ""
+                        )
+                    }
                 },
                 onFailure = ::reportError
             )
@@ -280,10 +302,12 @@ class AIViewModel(
     }
 
     fun cancelRenameChat() {
-        _uiState.value = _uiState.value.copy(
-            renameTargetSessionId = null,
-            renameDraftText = ""
-        )
+        _uiState.update {
+            it.copy(
+                renameTargetSessionId = null,
+                renameDraftText = ""
+            )
+        }
     }
 
     fun deleteChat(sessionId: String) {
@@ -305,7 +329,7 @@ class AIViewModel(
     }
 
     fun onDraftMessageChanged(draft: String) {
-        _uiState.value = _uiState.value.copy(draftMessage = draft)
+        _uiState.update { it.copy(draftMessage = draft) }
         val currentId = _uiState.value.currentSession?.id
         if (currentId != null) {
             viewModelScope.launch(coroutineContext) {
@@ -324,13 +348,15 @@ class AIViewModel(
 
         android.util.Log.i("AIViewModel", "OFFLINE_LATENCY: send_clicked (t=${sendTimestamp}ms)")
 
-        _uiState.value = _uiState.value.copy(
-            draftMessage = "",
-            isGeneratingResponse = true,
-            currentScreen = AIScreen.CHAT,
-            activeToolName = null,
-            errorMessage = null
-        )
+        _uiState.update {
+            it.copy(
+                draftMessage = "",
+                isGeneratingResponse = true,
+                currentScreen = AIScreen.CHAT,
+                activeToolName = null,
+                errorMessage = null
+            )
+        }
 
         // Clear persisted draft
         _uiState.value.currentSession?.id?.let { convId ->
@@ -350,10 +376,11 @@ class AIViewModel(
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
-                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Generation failed")
+                    _uiState.update { it.copy(errorMessage = e.localizedMessage ?: "Generation failed") }
                 }
             } finally {
-                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+                _uiState.update { it.copy(isGeneratingResponse = false) }
+                loadMemories()
             }
         }
     }
@@ -363,40 +390,42 @@ class AIViewModel(
             currentStreamingJob?.cancel()
             currentStreamingJob = null
             aiRepository.stopGeneration()
-            _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+            _uiState.update { it.copy(isGeneratingResponse = false) }
         }
     }
 
     fun regenerateLastResponse() {
         if (_uiState.value.isGeneratingResponse) return
-        _uiState.value = _uiState.value.copy(isGeneratingResponse = true, errorMessage = null)
+        _uiState.update { it.copy(isGeneratingResponse = true, errorMessage = null) }
 
         currentStreamingJob = viewModelScope.launch(coroutineContext) {
             try {
                 aiRepository.regenerateLastResponse().collect {}
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
-                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Regeneration failed")
+                    _uiState.update { it.copy(errorMessage = e.localizedMessage ?: "Regeneration failed") }
                 }
             } finally {
-                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+                _uiState.update { it.copy(isGeneratingResponse = false) }
             }
         }
     }
 
     fun startEditMessage(messageId: String, currentText: String) {
-        _uiState.value = _uiState.value.copy(
-            editingMessageId = messageId,
-            editDraftText = currentText
-        )
+        _uiState.update {
+            it.copy(
+                editingMessageId = messageId,
+                editDraftText = currentText
+            )
+        }
     }
 
     fun onEditDraftChanged(newText: String) {
-        _uiState.value = _uiState.value.copy(editDraftText = newText)
+        _uiState.update { it.copy(editDraftText = newText) }
     }
 
     fun cancelEditMessage() {
-        _uiState.value = _uiState.value.copy(editingMessageId = null, editDraftText = "")
+        _uiState.update { it.copy(editingMessageId = null, editDraftText = "") }
     }
 
     fun confirmEditAndRegenerate() {
@@ -404,22 +433,24 @@ class AIViewModel(
         val newText = _uiState.value.editDraftText.trim()
         if (newText.isBlank()) return
 
-        _uiState.value = _uiState.value.copy(
-            editingMessageId = null,
-            editDraftText = "",
-            isGeneratingResponse = true,
-            errorMessage = null
-        )
+        _uiState.update {
+            it.copy(
+                editingMessageId = null,
+                editDraftText = "",
+                isGeneratingResponse = true,
+                errorMessage = null
+            )
+        }
 
         currentStreamingJob = viewModelScope.launch(coroutineContext) {
             try {
                 aiRepository.editMessageAndRegenerate(msgId, newText).collect {}
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
-                    _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage ?: "Edit failed")
+                    _uiState.update { it.copy(errorMessage = e.localizedMessage ?: "Edit failed") }
                 }
             } finally {
-                _uiState.value = _uiState.value.copy(isGeneratingResponse = false)
+                _uiState.update { it.copy(isGeneratingResponse = false) }
             }
         }
     }
@@ -441,16 +472,18 @@ class AIViewModel(
 
     fun loadMemories() {
         viewModelScope.launch(coroutineContext) {
-            _uiState.value = _uiState.value.copy(isLoadingMemories = true)
+            _uiState.update { it.copy(isLoadingMemories = true) }
             aiRepository.getMemories().fold(
                 onSuccess = { items ->
-                    _uiState.value = _uiState.value.copy(
-                        memories = items,
-                        isLoadingMemories = false
-                    )
+                    _uiState.update {
+                        it.copy(
+                            memories = items,
+                            isLoadingMemories = false
+                        )
+                    }
                 },
                 onFailure = {
-                    _uiState.value = _uiState.value.copy(isLoadingMemories = false)
+                    _uiState.update { it.copy(isLoadingMemories = false) }
                 }
             )
         }
@@ -460,9 +493,11 @@ class AIViewModel(
         viewModelScope.launch(coroutineContext) {
             aiRepository.deleteMemory(memoryId).fold(
                 onSuccess = {
-                    _uiState.value = _uiState.value.copy(
-                        memories = _uiState.value.memories.filter { it.id != memoryId }
-                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            memories = state.memories.filter { it.id != memoryId }
+                        )
+                    }
                 },
                 onFailure = ::reportError
             )
@@ -470,7 +505,7 @@ class AIViewModel(
     }
 
     fun setMemoriesSheetVisible(visible: Boolean) {
-        _uiState.value = _uiState.value.copy(showMemoriesSheet = visible)
+        _uiState.update { it.copy(showMemoriesSheet = visible) }
         if (visible) loadMemories()
     }
 
@@ -490,31 +525,35 @@ class AIViewModel(
     }
 
     fun openTool(toolName: String) {
-        _uiState.value = _uiState.value.copy(
-            activeToolName = toolName,
-            showToolsSheet = false
-        )
+        _uiState.update {
+            it.copy(
+                activeToolName = toolName,
+                showToolsSheet = false
+            )
+        }
     }
 
     fun closeActiveTool() {
-        _uiState.value = _uiState.value.copy(activeToolName = null)
+        _uiState.update { it.copy(activeToolName = null) }
     }
 
     fun setToolsSheetVisible(visible: Boolean) {
-        _uiState.value = _uiState.value.copy(showToolsSheet = visible)
+        _uiState.update { it.copy(showToolsSheet = visible) }
     }
 
     fun setAttachmentsSheetVisible(visible: Boolean) {
-        _uiState.value = _uiState.value.copy(showAttachmentsSheet = visible)
+        _uiState.update { it.copy(showAttachmentsSheet = visible) }
     }
 
     fun clearError() {
-        _uiState.value = _uiState.value.copy(errorMessage = null)
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     private fun reportError(error: Throwable) {
-        _uiState.value = _uiState.value.copy(
-            errorMessage = error.localizedMessage ?: "The request could not be completed."
-        )
+        _uiState.update {
+            it.copy(
+                errorMessage = error.localizedMessage ?: "The request could not be completed."
+            )
+        }
     }
 }

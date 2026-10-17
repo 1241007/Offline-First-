@@ -34,4 +34,9 @@ interface LLMProvider {
      * Returns source citations captured during the most recent stream inference.
      */
     fun getLastCitations(): List<com.offline_First.domain.model.SourceCitation> = emptyList()
+
+    /**
+     * Returns generated conversation title captured during the most recent stream inference, if any.
+     */
+    fun getLastTitle(): String? = null
 }

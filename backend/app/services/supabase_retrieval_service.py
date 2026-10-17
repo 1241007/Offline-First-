@@ -57,7 +57,8 @@ def check_lexical_corroboration(query: Optional[str], content: str) -> bool:
     Rules:
     - Extracts domain terms (>= 3 chars) excluding general stopwords.
     - If 1 or 2 domain terms exist: requires at least 1 match.
-    - If >= 3 domain terms exist: requires at least 2 distinct matches OR >= 30% overlap.
+    - If 3 or 4 domain terms exist: requires at least 2 distinct matches.
+    - If >= 5 domain terms exist: requires at least 3 distinct matches OR >= 30% overlap.
     """
     if not query or not content:
         return False
@@ -71,7 +72,9 @@ def check_lexical_corroboration(query: Optional[str], content: str) -> bool:
 
     if len(domain_words) <= 2:
         return len(matches) >= 1
-    return len(matches) >= 2 or (len(matches) / len(domain_words)) >= 0.30
+    if len(domain_words) <= 4:
+        return len(matches) >= 2
+    return len(matches) >= 3 or (len(matches) / len(domain_words)) >= 0.30
 
 
 def compute_rrf_score(
@@ -389,13 +392,26 @@ class SupabaseRetrievalService:
                 )
             )
 
-        scored_chunks.sort(key=lambda c: c.normalized_score or 0.0, reverse=True)
+        # Sort descending by normalized score, with similarity_score and chunk_id as deterministic tie-breakers
+        scored_chunks.sort(
+            key=lambda c: (
+                c.normalized_score or 0.0,
+                c.similarity_score or 0.0,
+                str(c.chunk_id or ""),
+            ),
+            reverse=True,
+        )
         top_chunks = scored_chunks[:top_k]
         outcome = assess_evidence_outcome(top_chunks, query=query)
 
+        # When evidence outcome is MISSING, clear candidate chunks so downstream prompt assembly
+        # and evaluation metrics correctly observe zero evidence rather than ungrounded distractors.
+        returned_chunks = top_chunks if outcome != EvidenceOutcome.MISSING else []
+
         return RetrieveResponse(
-            chunks=top_chunks,
+            chunks=returned_chunks,
             evidence_outcome=outcome,
             query_used=query,
             search_time_ms=(time.perf_counter() - start_time) * 1000,
         )
+

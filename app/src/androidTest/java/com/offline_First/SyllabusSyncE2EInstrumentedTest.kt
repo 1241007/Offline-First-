@@ -21,6 +21,8 @@ import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 
 class TestTokenStorage(private var token: String? = null) : TokenStorage {
+    private var userIdentity: com.offline_First.data.local.CachedUserIdentity? = null
+
     override fun saveTokens(accessToken: String, refreshToken: String) {
         token = accessToken
     }
@@ -30,6 +32,16 @@ class TestTokenStorage(private var token: String? = null) : TokenStorage {
         token = null
     }
     override fun hasTokens(): Boolean = token != null
+
+    override fun saveUserIdentity(userId: String, email: String, fullName: String) {
+        userIdentity = com.offline_First.data.local.CachedUserIdentity(userId, email, fullName)
+    }
+
+    override fun getUserIdentity(): com.offline_First.data.local.CachedUserIdentity? = userIdentity
+
+    override fun clearUserIdentity() {
+        userIdentity = null
+    }
 }
 
 /**

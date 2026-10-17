@@ -63,13 +63,16 @@ class TokenAuthenticator(
             val refreshResponse = try {
                 publicClient().newCall(refreshRequest).execute()
             } catch (e: Exception) {
-                sessionManager.onSessionExpired()
+                // Ordinary network failure must never invalidate a valid session
                 return null
             }
 
             if (!refreshResponse.isSuccessful) {
+                val code = refreshResponse.code
                 refreshResponse.close()
-                sessionManager.onSessionExpired()
+                if (code == 401 || code == 403) {
+                    sessionManager.onSessionExpired()
+                }
                 return null
             }
 

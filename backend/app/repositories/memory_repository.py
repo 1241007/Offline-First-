@@ -156,8 +156,16 @@ class MemoryRepository:
             score = (overlap * 2.0 + cat_boost + 0.1) * mem.importance * mem.confidence
             scored.append((score, mem))
 
-        # Sort descending by score
-        scored.sort(key=lambda x: x[0], reverse=True)
+        # Sort descending by score, with importance, updated_at, and id as deterministic tie-breakers
+        scored.sort(
+            key=lambda x: (
+                x[0],
+                x[1].importance or 0.0,
+                x[1].updated_at or datetime.min.replace(tzinfo=timezone.utc),
+                str(x[1].id),
+            ),
+            reverse=True,
+        )
         top = [mem for _, mem in scored[:limit]]
 
         # Update last_used_at timestamp on selected memories

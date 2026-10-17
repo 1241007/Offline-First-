@@ -100,6 +100,6 @@ class ModeAwareAIRepository(
     override suspend fun syncOfflineData(): Result<Unit> = online.syncOfflineData()
 
     suspend fun refreshOnlineConversations() {
-        if (!isOffline()) online.refreshConversations()
+        online.refreshConversations()
     }
 }

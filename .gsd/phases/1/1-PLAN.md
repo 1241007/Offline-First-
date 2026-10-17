@@ -4,55 +4,57 @@ plan: 1
 wave: 1
 ---
 
-# Plan 1.1: Establish Actual System State & Real Request Path Inventory
+# Plan 1.1: Online Generation Quality & Error Resilience Evaluator
 
 ## Objective
-Establish an empirical, secret-safe inventory of the entire system (Git, configuration, database schema, real Supabase pgvector corpus contents, and request paths) to prove or disprove architectural assumptions before writing test or remediation code.
+Build an independently runnable evaluation suite for cloud-based LLM generation (`OpenRouterService`), validating prompt assembly, grounded answering from supplied evidence, factual correctness against reference rubrics, unsupported-claim detection, and error/fallback resilience.
 
 ## Context
 - .gsd/SPEC.md
-- PROJECT_RULES.md
+- .gsd/ROADMAP.md
+- docs/evaluation/EVALUATION_INVENTORY.md
+- backend/app/services/openrouter_service.py
+- backend/app/services/chat_service.py
 - backend/app/core/config.py
-- backend/app/services/supabase_retrieval_service.py
-- backend/scripts/ingest_syllabus.py
-- app/src/main/java/com/offline_First/data/remote/OnlineAIRepository.kt
-- app/src/main/java/com/offline_First/data/local/OfflineSyllabusRepository.kt
+- backend/evals/rag/golden_set.jsonl
 
 ## Tasks
 
 <task type="auto">
-  <name>Audit Database Corpus and Model Artifact Metadata</name>
-  <files>backend/scripts/audit_corpus_inventory.py</files>
+  <name>Build Online Generation Evaluation Suite</name>
+  <files>backend/evals/generation/test_online_generation_eval.py, backend/evals/generation/answer_eval_metrics.py</files>
   <action>
-    Create a standalone, read-only audit script `backend/scripts/audit_corpus_inventory.py` that queries Supabase PostgreSQL directly to measure:
-    - Exact document count in `syllabus_documents`
-    - Exact chunk count in `syllabus_chunks`
-    - Null or invalid embeddings count
-    - Distinct vector dimensions via `vector_dims(embedding)`
-    - Model and version distribution
-    - Duplicate content hashes
-    - Official source provenance URLs and metadata completeness
-    Verify that output contains no `.env` credentials, API keys, or raw textbook dumps.
+    Create `backend/evals/generation/answer_eval_metrics.py` defining:
+    - `compute_factual_correctness(response, reference_facts)`: verifies presence of required facts from rubric.
+    - `compute_unsupported_claim_rate(response, evidence_chunks)`: detects claims without grounding in evidence.
+    - `compute_instruction_adherence(response, mode)`: checks mode-specific constraints (Teacher: step-by-step + practice question; Explainable: structured rationale; General: concise direct answer).
+    
+    Create `backend/evals/generation/test_online_generation_eval.py` testing:
+    - System instruction integrity across all 3 explanation modes.
+    - Grounded generation using real CBSE curriculum evidence.
+    - Reproducibility under configured decoding parameters (temperature=0.0, seed=42).
+    - Separation of offline-safe deterministic mock tests from optional live provider evaluations.
   </action>
-  <verify>.\backend\.venv\Scripts\python.exe backend/scripts/audit_corpus_inventory.py</verify>
-  <done>Script executes cleanly and returns structured JSON proving exact database corpus counts and 384-dimensional pgvector health.</done>
+  <verify>$env:PYTHONPATH="backend"; .\backend\.venv\Scripts\python.exe -m pytest backend/evals/generation/test_online_generation_eval.py -v</verify>
+  <done>Online generation evaluator executes cleanly in CI-safe mode with explicit metric thresholds.</done>
 </task>
 
 <task type="auto">
-  <name>Trace and Document Online and Offline Request Pathways</name>
-  <files>docs/architecture/EDUNOVA_REQUEST_FLOW_AUDIT.md</files>
+  <name>Implement Provider Fallback and Error Resilience Tests</name>
+  <files>backend/evals/generation/test_provider_resilience.py</files>
   <action>
-    Document the step-by-step runtime request path for both Online and Offline modes based on the active codebase.
-    Identify and flag all architectural disconnects, including:
-    - Android `OnlineGeminiProvider` dropping `citations` SSE events
-    - Android `OnlineAIRepository` bypassing `OfflineSyllabusRepository` and `E5EmbeddingService`
-    - Silent ungrounded generation when offline evidence is empty
+    Author `backend/evals/generation/test_provider_resilience.py` testing OpenRouter edge and failure paths:
+    - HTTP 429 rate limit backoff and retry behavior.
+    - HTTP 502/503 server error recovery.
+    - Dynamic fallback model chain (`google/gemini-3.8-flash` -> `google/gemini-2.5-flash` -> `google/gemini-3.5-flash`).
+    - Fatal authentication errors (HTTP 401/403) cleanly raising `RuntimeError` without infinite loops.
+    - Token streaming order preservation and disconnection handling.
   </action>
-  <verify>Test-Path docs/architecture/EDUNOVA_REQUEST_FLOW_AUDIT.md</verify>
-  <done>Comprehensive request flow audit document created with source code references and confirmed gaps.</done>
+  <verify>$env:PYTHONPATH="backend"; .\backend\.venv\Scripts\python.exe -m pytest backend/evals/generation/test_provider_resilience.py -v</verify>
+  <done>All provider error, timeout, rate-limit, and fallback contracts verified with 100% pass rate.</done>
 </task>
 
 ## Success Criteria
-- [ ] Database corpus proven with live SQL results (14 docs, 219 chunks, 0 nulls, 384-dim).
-- [ ] Working-tree changes preserved intact without resetting or reverting.
-- [ ] Disconnected runtime components documented with file and line references.
+- [ ] Online generation quality evaluator independently executable without requiring live OpenRouter credentials.
+- [ ] Metric algorithms (factual correctness, unsupported claims, instruction adherence) unit-tested with mathematical rigor.
+- [ ] Provider fallback chain verified across transient and fatal HTTP statuses.

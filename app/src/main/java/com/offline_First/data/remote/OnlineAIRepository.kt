@@ -23,8 +23,10 @@ import com.offline_First.data.provider.LLMProvider
 import com.offline_First.data.provider.OnlineGeminiProvider
 import com.offline_First.data.provider.OfflineLlamaProvider
 import com.offline_First.data.local.systemPromptFor
+import com.offline_First.data.local.MemoryExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -126,6 +128,19 @@ class OnlineAIRepository(
 
     override suspend fun createNewChat(): Result<ChatSession> = withContext(Dispatchers.IO) {
         _errorFlow.value = null
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        if (isOffline) {
+            val localId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val session = ChatSession(id = localId, title = "New Conversation", lastUpdated = now)
+            safeCacheDb {
+                it.upsertConversation(localId, currentUserId, "New Conversation", now, now, syncStatus = "pending_sync")
+            }
+            _sessionsFlow.value = listOf(session) + _sessionsFlow.value.filter { it.id != localId }
+            _currentSessionFlow.value = session
+            return@withContext Result.success(session)
+        }
+
         val remoteResult = try {
             ChatApiClient.createConversation()
         } catch (e: Throwable) {
@@ -141,29 +156,32 @@ class OnlineAIRepository(
                     isPinned = dto.isPinned,
                     draftText = dto.draftText
                 )
-                cacheDb.upsertConversation(
-                    id = dto.id,
-                    userId = currentUserId,
-                    title = dto.title,
-                    createdAt = parseIsoToMillis(dto.createdAt),
-                    updatedAt = parseIsoToMillis(dto.updatedAt),
-                    isArchived = dto.isArchived,
-                    isPinned = dto.isPinned,
-                    draftText = dto.draftText
-                )
+                safeCacheDb {
+                    it.upsertConversation(
+                        id = dto.id,
+                        userId = currentUserId,
+                        title = dto.title,
+                        createdAt = parseIsoToMillis(dto.createdAt),
+                        updatedAt = parseIsoToMillis(dto.updatedAt),
+                        isArchived = dto.isArchived,
+                        isPinned = dto.isPinned,
+                        draftText = dto.draftText
+                    )
+                }
                 _sessionsFlow.value = listOf(session) + _sessionsFlow.value.filter { it.id != session.id }
                 _currentSessionFlow.value = session
                 Result.success(session)
             },
             onFailure = { error ->
-                Log.e(TAG, "createNewChat failed: ${error.message}")
+                Log.w(TAG, "createNewChat remote failed, creating local session: ${error.message}")
                 val localId = UUID.randomUUID().toString()
                 val now = System.currentTimeMillis()
                 val session = ChatSession(id = localId, title = "New Conversation", lastUpdated = now)
-                cacheDb.upsertConversation(localId, currentUserId, "New Conversation", now, now, syncStatus = "pending_sync")
-                _sessionsFlow.value = listOf(session) + _sessionsFlow.value
+                safeCacheDb {
+                    it.upsertConversation(localId, currentUserId, "New Conversation", now, now, syncStatus = "pending_sync")
+                }
+                _sessionsFlow.value = listOf(session) + _sessionsFlow.value.filter { it.id != localId }
                 _currentSessionFlow.value = session
-                _errorFlow.value = "Could not connect to server. Working offline."
                 Result.success(session)
             }
         )
@@ -171,12 +189,23 @@ class OnlineAIRepository(
 
     override suspend fun selectChat(sessionId: String): Result<Unit> = withContext(Dispatchers.IO) {
         _errorFlow.value = null
-        // First show cached data
+        // 1. Immediately resolve cached or in-memory session to isolate and show immediately
         val cached = cacheDb.getConversationWithMessages(sessionId, currentUserId)
         if (cached != null) {
             _currentSessionFlow.value = cached
+        } else {
+            val inMemory = _sessionsFlow.value.find { it.id == sessionId }
+            if (inMemory != null) {
+                _currentSessionFlow.value = inMemory
+            }
         }
-        // Then fetch fresh from backend
+
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        if (isOffline) {
+            return@withContext Result.success(Unit)
+        }
+
+        // 2. Fetch fresh conversation details and messages from backend
         ChatApiClient.getConversation(sessionId).fold(
             onSuccess = { detail ->
                 val messages = detail.messages.map { msg ->
@@ -198,20 +227,22 @@ class OnlineAIRepository(
                     draftText = detail.draftText,
                     messages = messages
                 )
-                cacheDb.upsertConversation(
-                    id = detail.id,
-                    userId = currentUserId,
-                    title = detail.title,
-                    createdAt = parseIsoToMillis(detail.createdAt),
-                    updatedAt = parseIsoToMillis(detail.updatedAt),
-                    isArchived = detail.isArchived,
-                    isPinned = detail.isPinned,
-                    draftText = detail.draftText
-                )
-                val messagesWithRoles = messages.map { msg ->
-                    Pair(msg, if (msg.fromUser) "user" else "assistant")
+                safeCacheDb {
+                    it.upsertConversation(
+                        id = detail.id,
+                        userId = currentUserId,
+                        title = detail.title,
+                        createdAt = parseIsoToMillis(detail.createdAt),
+                        updatedAt = parseIsoToMillis(detail.updatedAt),
+                        isArchived = detail.isArchived,
+                        isPinned = detail.isPinned,
+                        draftText = detail.draftText
+                    )
+                    val messagesWithRoles = messages.map { msg ->
+                        Pair(msg, if (msg.fromUser) "user" else "assistant")
+                    }
+                    it.upsertMessages(messagesWithRoles, detail.id, currentUserId)
                 }
-                cacheDb.upsertMessages(messagesWithRoles, detail.id, currentUserId)
                 _currentSessionFlow.value = session
                 _sessionsFlow.value = _sessionsFlow.value.map {
                     if (it.id == session.id) session.copy(messages = emptyList()) else it
@@ -324,6 +355,7 @@ class OnlineAIRepository(
     ): Flow<String> = flow {
         _errorFlow.value = null
         val current = _currentSessionFlow.value ?: createNewChat().getOrThrow()
+        val originatingConvId = current.id
         val userMsgId = clientMessageId ?: UUID.randomUUID().toString()
         val userTimestamp = System.currentTimeMillis()
         val tempUserMsg = ChatMessage(
@@ -338,21 +370,24 @@ class OnlineAIRepository(
         val syncStatus = if (isOffline) "pending_sync" else "synced"
 
         // 1. Immediately clear draft in local cache, session, and conversation list
-        safeCacheDb { it.updateConversationDraft(current.id, currentUserId, "") }
+        safeCacheDb { it.updateConversationDraft(originatingConvId, currentUserId, "") }
         val sessionWithoutDraft = current.copy(
             draftText = "",
             messages = current.messages.filter { it.id != userMsgId } + tempUserMsg
         )
-        _currentSessionFlow.value = sessionWithoutDraft
+        val currStart = _currentSessionFlow.value
+        if (currStart == null || currStart.id == originatingConvId) {
+            _currentSessionFlow.value = sessionWithoutDraft
+        }
         _sessionsFlow.value = _sessionsFlow.value.map {
-            if (it.id == current.id) it.copy(draftText = "") else it
+            if (it.id == originatingConvId) it.copy(draftText = "") else it
         }
 
         // 2. Optimistically show & persist user message in local cache & unified session
         safeCacheDb {
             it.upsertMessage(
                 id = userMsgId,
-                conversationId = current.id,
+                conversationId = originatingConvId,
                 userId = currentUserId,
                 role = "user",
                 content = prompt,
@@ -362,9 +397,32 @@ class OnlineAIRepository(
             )
         }
 
-        // 2. Extract top relevant memories for prompt context
+        // 2. Extract long-term memories from user prompt and persist locally & cloud
+        val extractedMemories = MemoryExtractor.extract(prompt)
+        for (extracted in extractedMemories) {
+            val memoryItem = UserMemoryItem(
+                id = UUID.randomUUID().toString(),
+                category = extracted.category,
+                content = extracted.content,
+                importance = extracted.importance,
+                confidence = extracted.confidence,
+                active = true
+            )
+            safeCacheDb { it.upsertMemory(memoryItem, currentUserId, originatingConvId) }
+            if (!isOffline) {
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        ChatApiClient.createMemory(extracted.category, extracted.content)
+                    } catch (_: Throwable) {}
+                }
+            }
+        }
+
+        val normalizedPrompt = com.offline_First.data.local.QueryNormalizer.normalize(prompt)
+
+        // 3. Extract top relevant memories for prompt context
         val relevantMemories = try {
-            cacheDb.getRelevantMemories(currentUserId, prompt, limit = 5)
+            cacheDb.getRelevantMemories(currentUserId, normalizedPrompt, limit = 5)
         } catch (_: Throwable) {
             emptyList()
         }
@@ -390,13 +448,13 @@ class OnlineAIRepository(
 
             val (chunks, outcome) = if (e5EmbeddingService.isModelReady()) {
                 val queryEmb = try {
-                    e5EmbeddingService.embedQuery(prompt)
+                    e5EmbeddingService.embedQuery(normalizedPrompt)
                 } catch (e: Throwable) {
                     Log.w(TAG, "E5 ONNX inference failed; falling back to lexical search: ${e.message}")
                     null
                 }
                 offlineSyllabusRepository.retrieve(
-                    query = prompt,
+                    query = normalizedPrompt,
                     context = ragContext,
                     topK = 3,
                     queryEmbedding = queryEmb
@@ -404,7 +462,7 @@ class OnlineAIRepository(
             } else {
                 // Graceful keyword fallback when E5 model artifact is not ready
                 offlineSyllabusRepository.retrieve(
-                    query = prompt,
+                    query = normalizedPrompt,
                     context = ragContext,
                     topK = 3,
                     queryEmbedding = null
@@ -431,7 +489,7 @@ class OnlineAIRepository(
                 safeCacheDb {
                     it.upsertMessage(
                         id = abstentionMsg.id,
-                        conversationId = current.id,
+                        conversationId = originatingConvId,
                         userId = currentUserId,
                         role = "assistant",
                         content = abstentionText,
@@ -440,12 +498,15 @@ class OnlineAIRepository(
                         syncStatus = syncStatus
                     )
                 }
-                val curr = _currentSessionFlow.value ?: current
-                val finalizedList = curr.messages + abstentionMsg
-                val updatedSession = curr.copy(messages = finalizedList)
-                _currentSessionFlow.value = updatedSession
-                _sessionsFlow.value = listOf(updatedSession.copy(messages = emptyList())) +
-                    _sessionsFlow.value.filter { it.id != updatedSession.id }
+                val curr = _currentSessionFlow.value
+                if (curr != null && curr.id == originatingConvId) {
+                    val finalizedList = curr.messages + abstentionMsg
+                    val updatedSession = curr.copy(messages = finalizedList)
+                    _currentSessionFlow.value = updatedSession
+                }
+                _sessionsFlow.value = _sessionsFlow.value.map {
+                    if (it.id == originatingConvId) it.copy(lastUpdated = abstentionMsg.timestamp) else it
+                }
 
                 return@flow
             } else {
@@ -489,24 +550,26 @@ class OnlineAIRepository(
                 responseBuilder.append(token)
                 emit(token)
 
-                // Update active session with live streaming text
-                val currentCitations = if (isOffline) offlineCitations else activeProvider.getLastCitations()
-                val activeMsg = ChatMessage(
-                    id = tempAiId,
-                    text = responseBuilder.toString(),
-                    fromUser = false,
-                    timestamp = System.currentTimeMillis(),
-                    parentId = userMsgId,
-                    citations = currentCitations
-                )
-                val curr = _currentSessionFlow.value ?: current
-                val messages = curr.messages
-                val updatedList = if (messages.isNotEmpty() && messages.last().id == tempAiId) {
-                    messages.toMutableList().apply { set(lastIndex, activeMsg) }
-                } else {
-                    messages + activeMsg
+                // Update active session with live streaming text ONLY IF active session is still the originating conversation!
+                val curr = _currentSessionFlow.value
+                if (curr != null && curr.id == originatingConvId) {
+                    val currentCitations = if (isOffline) offlineCitations else activeProvider.getLastCitations()
+                    val activeMsg = ChatMessage(
+                        id = tempAiId,
+                        text = responseBuilder.toString(),
+                        fromUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        parentId = userMsgId,
+                        citations = currentCitations
+                    )
+                    val messages = curr.messages
+                    val updatedList = if (messages.isNotEmpty() && messages.last().id == tempAiId) {
+                        messages.toMutableList().apply { set(lastIndex, activeMsg) }
+                    } else {
+                        messages + activeMsg
+                    }
+                    _currentSessionFlow.value = curr.copy(messages = updatedList)
                 }
-                _currentSessionFlow.value = curr.copy(messages = updatedList)
             }
             streamCompletedNormally = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -558,7 +621,7 @@ class OnlineAIRepository(
                 safeCacheDb {
                     it.upsertMessage(
                         id = tempAiId,
-                        conversationId = current.id,
+                        conversationId = originatingConvId,
                         userId = currentUserId,
                         role = "assistant",
                         content = partialText,
@@ -567,18 +630,23 @@ class OnlineAIRepository(
                         syncStatus = syncStatus
                     )
                 }
-                val curr = _currentSessionFlow.value ?: current
-                val stoppedMsg = ChatMessage(
-                    id = tempAiId,
-                    text = partialText,
-                    fromUser = false,
-                    timestamp = System.currentTimeMillis(),
-                    parentId = userMsgId,
-                    citations = resolvedCitations
-                )
-                _currentSessionFlow.value = curr.copy(
-                    messages = curr.messages.filter { it.id != tempAiId } + stoppedMsg
-                )
+                val curr = _currentSessionFlow.value
+                if (curr != null && curr.id == originatingConvId) {
+                    val stoppedMsg = ChatMessage(
+                        id = tempAiId,
+                        text = partialText,
+                        fromUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        parentId = userMsgId,
+                        citations = resolvedCitations
+                    )
+                    _currentSessionFlow.value = curr.copy(
+                        messages = curr.messages.filter { it.id != tempAiId } + stoppedMsg
+                    )
+                }
+                _sessionsFlow.value = _sessionsFlow.value.map {
+                    if (it.id == originatingConvId) it.copy(lastUpdated = System.currentTimeMillis()) else it
+                }
             } else if (streamCompletedNormally && responseBuilder.isNotEmpty()) {
                 val finalContent = responseBuilder.toString()
                 val finalAiMsg = ChatMessage(
@@ -589,13 +657,17 @@ class OnlineAIRepository(
                     parentId = userMsgId,
                     citations = resolvedCitations
                 )
-                val finalTitle = if (current.messages.isEmpty() && prompt.isNotBlank()) {
-                    prompt.take(40).trim().replaceFirstChar { it.uppercase() }
+                val isFirstExchange = current.messages.count { it.fromUser } <= 1 &&
+                    (current.title == "New Conversation" || current.title.isBlank())
+                val finalTitle = if (isFirstExchange && prompt.isNotBlank()) {
+                    activeProvider.getLastTitle()?.takeIf { it.isNotBlank() }
+                        ?: com.offline_First.data.local.TitleGenerator.generateFallbackTitle(prompt)
                 } else current.title
+
                 safeCacheDb {
                     it.upsertMessage(
                         id = tempAiId,
-                        conversationId = current.id,
+                        conversationId = originatingConvId,
                         userId = currentUserId,
                         role = "assistant",
                         content = finalContent,
@@ -603,14 +675,29 @@ class OnlineAIRepository(
                         parentId = userMsgId,
                         syncStatus = syncStatus
                     )
-                    it.updateConversationTitle(current.id, currentUserId, finalTitle)
+                    it.updateConversationTitle(originatingConvId, currentUserId, finalTitle)
                 }
-                val curr = _currentSessionFlow.value ?: current
-                val finalizedList = curr.messages.filter { it.id != tempAiId } + finalAiMsg
-                val updatedSession = curr.copy(title = finalTitle, messages = finalizedList)
-                _currentSessionFlow.value = updatedSession
-                _sessionsFlow.value = listOf(updatedSession.copy(messages = emptyList())) +
-                    _sessionsFlow.value.filter { it.id != updatedSession.id }
+
+                if (!isOffline && isFirstExchange && finalTitle != "New Conversation") {
+                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            ChatApiClient.updateConversation(originatingConvId, title = finalTitle)
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Failed to sync generated title: ${e.message}")
+                        }
+                    }
+                }
+
+                val curr = _currentSessionFlow.value
+                if (curr != null && curr.id == originatingConvId) {
+                    val finalizedList = curr.messages.filter { it.id != tempAiId } + finalAiMsg
+                    val updatedSession = curr.copy(title = finalTitle, messages = finalizedList)
+                    _currentSessionFlow.value = updatedSession
+                }
+                _sessionsFlow.value = _sessionsFlow.value.map {
+                    if (it.id == originatingConvId) it.copy(title = finalTitle, lastUpdated = finalAiMsg.timestamp)
+                    else it
+                }
             } else if (streamCompletedNormally && responseBuilder.isEmpty()) {
                 Log.w(TAG, "Stream completed normally but response was empty")
                 _errorFlow.value = "No response generated by AI. Please try again."
@@ -633,13 +720,18 @@ class OnlineAIRepository(
     override fun regenerateLastResponse(): Flow<String> = flow {
         val current = _currentSessionFlow.value ?: return@flow
         val lastUserMsg = current.messages.lastOrNull { it.fromUser } ?: return@flow
-        // Remove the last assistant message if present
+        val lastAssistantMsg = current.messages.lastOrNull { !it.fromUser }
+        if (lastAssistantMsg != null) {
+            safeCacheDb {
+                it.deleteMessage(lastAssistantMsg.id, currentUserId)
+            }
+        }
         val prunedMessages = current.messages.dropLastWhile { !it.fromUser }
-        _currentSessionFlow.value = current.copy(messages = prunedMessages)
+        _currentSessionFlow.value = current.copy(messages = prunedMessages.filter { it.id != lastUserMsg.id })
         streamMessage(
             prompt = lastUserMsg.text,
             parentId = lastUserMsg.parentId,
-            clientMessageId = null
+            clientMessageId = lastUserMsg.id
         ).collect { emit(it) }
     }
 
@@ -697,6 +789,11 @@ class OnlineAIRepository(
     ): Result<List<ChatSession>> = withContext(Dispatchers.IO) {
         val local = cacheDb.getConversations(currentUserId, limit, beforeCursor)
         val isoCursor = beforeCursor?.let { Instant.ofEpochMilli(it).toString() }
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        if (isOffline) {
+            _sessionsFlow.value = (local + _sessionsFlow.value).distinctBy { it.id }
+            return@withContext Result.success(local)
+        }
         ChatApiClient.listConversations(limit = limit, cursor = isoCursor).fold(
             onSuccess = { dtos ->
                 val remote = dtos.map { dto ->
@@ -708,29 +805,36 @@ class OnlineAIRepository(
                         isPinned = dto.isPinned,
                         draftText = dto.draftText
                     ).also {
-                        cacheDb.upsertConversation(
-                            id = dto.id,
-                            userId = currentUserId,
-                            title = dto.title,
-                            createdAt = parseIsoToMillis(dto.updatedAt),
-                            updatedAt = parseIsoToMillis(dto.updatedAt),
-                            isArchived = dto.isArchived,
-                            isPinned = dto.isPinned,
-                            draftText = dto.draftText
-                        )
+                        safeCacheDb { db ->
+                            db.upsertConversation(
+                                id = dto.id,
+                                userId = currentUserId,
+                                title = dto.title,
+                                createdAt = parseIsoToMillis(dto.updatedAt),
+                                updatedAt = parseIsoToMillis(dto.updatedAt),
+                                isArchived = dto.isArchived,
+                                isPinned = dto.isPinned,
+                                draftText = dto.draftText
+                            )
+                        }
                     }
                 }
-                _sessionsFlow.value = (_sessionsFlow.value + remote).distinctBy { it.id }
+                _sessionsFlow.value = (remote + local + _sessionsFlow.value).distinctBy { it.id }
                 Result.success(remote)
             },
             onFailure = {
+                _sessionsFlow.value = (local + _sessionsFlow.value).distinctBy { it.id }
                 Result.success(local)
             }
         )
     }
 
     override suspend fun getMemories(): Result<List<UserMemoryItem>> = withContext(Dispatchers.IO) {
-        val cached = cacheDb.getMemories(currentUserId)
+        val cached = try { cacheDb.getMemories(currentUserId) } catch (_: Throwable) { emptyList() }
+        val isOffline = delegate.currentConnectionMode() == ConnectionMode.OFFLINE
+        if (isOffline) {
+            return@withContext Result.success(cached)
+        }
         ChatApiClient.listMemories().fold(
             onSuccess = { dtos ->
                 val domainItems = dtos.map { dto ->
@@ -742,10 +846,11 @@ class OnlineAIRepository(
                         confidence = dto.confidence,
                         active = dto.active
                     )
-                    cacheDb.upsertMemory(item, currentUserId, null)
+                    safeCacheDb { it.upsertMemory(item, currentUserId, null) }
                     item
                 }
-                Result.success(domainItems)
+                val combined = (domainItems + cached).distinctBy { "${it.category}:${it.content.trim().lowercase()}" }
+                Result.success(combined)
             },
             onFailure = {
                 Result.success(cached)

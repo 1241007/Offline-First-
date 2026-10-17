@@ -24,7 +24,10 @@ data class CourseDetailUiState(
     val isCourseCompleted: Boolean = false,
     val certificate: CourseCertificate? = null,
     val learnerName: String = "Learner",
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isSaved: Boolean = false,
+    val isOfflineReady: Boolean = false,
+    val isSaving: Boolean = false
 )
 
 class CourseDetailViewModel(
@@ -122,6 +125,9 @@ class CourseDetailViewModel(
                             )
                         }
 
+                        val isSaved = repository.isCourseSaved(courseId)
+                        val isOfflineReady = repository.isCourseOfflineReady(courseId)
+
                         _uiState.value = CourseDetailUiState(
                             courseDetailState = UiState.Success(detail.copy(modules = updatedModules)),
                             completedLessonsCount = completedCount,
@@ -129,22 +135,61 @@ class CourseDetailViewModel(
                             progressPercentage = progress,
                             isCourseCompleted = isCompleted,
                             certificate = cert,
-                            learnerName = learnerName
+                            learnerName = learnerName,
+                            isSaved = isSaved,
+                            isOfflineReady = isOfflineReady
                         )
                     } else {
+                        val isSaved = repository.isCourseSaved(courseId)
+                        val isOfflineReady = repository.isCourseOfflineReady(courseId)
+                        val message = if (!isOfflineReady) {
+                            "This course isn't available offline. Connect to the internet and save it first."
+                        } else {
+                            "Course details not found."
+                        }
                         _uiState.value = CourseDetailUiState(
                             courseDetailState = UiState.Empty,
-                            errorMessage = "Course details not found."
+                            errorMessage = message,
+                            isSaved = isSaved,
+                            isOfflineReady = isOfflineReady
                         )
                     }
                 },
                 onFailure = { error ->
+                    val isSaved = repository.isCourseSaved(courseId)
+                    val isOfflineReady = repository.isCourseOfflineReady(courseId)
+                    val message = error.localizedMessage?.takeIf { it.isNotBlank() } ?: "Failed to load course details."
                     _uiState.value = CourseDetailUiState(
-                        courseDetailState = UiState.Error(error.localizedMessage ?: "Failed to load course details."),
-                        errorMessage = error.localizedMessage ?: "Failed to load course details."
+                        courseDetailState = UiState.Error(message),
+                        errorMessage = message,
+                        isSaved = isSaved,
+                        isOfflineReady = isOfflineReady
                     )
                 }
             )
+        }
+    }
+
+    fun toggleSaveCourse() {
+        val currentSaved = _uiState.value.isSaved
+        viewModelScope.launch(coroutineContext) {
+            _uiState.value = _uiState.value.copy(isSaving = true)
+            if (currentSaved) {
+                repository.unsaveCourse(courseId)
+                _uiState.value = _uiState.value.copy(
+                    isSaved = false,
+                    isOfflineReady = false,
+                    isSaving = false
+                )
+            } else {
+                repository.saveCourse(courseId)
+                val isReady = repository.isCourseOfflineReady(courseId)
+                _uiState.value = _uiState.value.copy(
+                    isSaved = true,
+                    isOfflineReady = isReady,
+                    isSaving = false
+                )
+            }
         }
     }
 

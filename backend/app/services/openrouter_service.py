@@ -1,9 +1,11 @@
+import os
 import asyncio
 import json
 import logging
 from typing import Optional, AsyncIterator
 import httpx
 from app.core.config import settings
+from app.core.query_normalizer import normalize_query
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,8 @@ def _format_messages_for_openrouter(
             content = "\n\n".join(parts_str).strip()
 
         if content:
+            if role == "user":
+                content = normalize_query(content)
             messages.append({"role": role, "content": content})
 
     return messages
@@ -93,13 +97,26 @@ class OpenRouterService:
             getattr(settings, "openrouter_base_url", None)
             or "https://openrouter.ai/api/v1"
         ).rstrip("/")
-        self._max_tokens = getattr(settings, "openrouter_max_tokens", 1024)
+        self._max_tokens = getattr(settings, "openrouter_max_tokens", 2048)
+        self._temperature = getattr(settings, "openrouter_temperature", 0.0)
+        self._seed = getattr(settings, "openrouter_seed", 42)
+        self._provider_order = getattr(settings, "openrouter_provider_order", ["Google"])
+        self._provider_allow_fallbacks = getattr(settings, "openrouter_provider_allow_fallbacks", False)
+        self._require_parameters = getattr(settings, "openrouter_require_parameters", True)
         self._client: Optional[httpx.AsyncClient] = None
+        self.last_finish_reason: str = "stop"
+        self.last_model_used: str = self._model_name
+        self.last_provider: str = "Google"
 
         # Do NOT log the API key
         logger.info(
-            f"OpenRouterService initialized with model: {self._model_name}, base_url: {self._base_url}"
+            f"OpenRouterService initialized with model: {self._model_name}, base_url: {self._base_url}, temperature: {self._temperature}, seed: {self._seed}, max_tokens: {self._max_tokens}"
         )
+
+    @property
+    def is_configured(self) -> bool:
+        """Returns True if an API key is present for OpenRouter/Gemini service."""
+        return bool(self._api_key)
 
     async def get_client(self) -> httpx.AsyncClient:
         """Returns a pooled, persistent AsyncClient with configured connection limits."""
@@ -128,35 +145,54 @@ class OpenRouterService:
 
     def _build_payload(
         self,
-        history: list[dict],
+        history: Optional[list[dict]] = None,
         explanation_mode: str = "general",
         memory_context: Optional[str] = None,
         model_name: Optional[str] = None,
         stream: bool = False,
+        messages: Optional[list[dict]] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+        max_tokens: Optional[int] = None,
     ) -> tuple[str, dict]:
         target_model = _normalize_model_name(model_name or self._model_name)
-        instruction = _SYSTEM_INSTRUCTIONS.get(
-            explanation_mode, _SYSTEM_INSTRUCTIONS["general"]
-        )
-        if memory_context:
-            instruction = (
-                f"{instruction}\n\n[USER RELEVANT MEMORY & PREFERENCES]\n{memory_context}"
+        if messages is not None:
+            effective_messages = messages
+        else:
+            instruction = _SYSTEM_INSTRUCTIONS.get(
+                explanation_mode, _SYSTEM_INSTRUCTIONS["general"]
             )
+            if memory_context:
+                instruction = (
+                    f"{instruction}\n\n[USER RELEVANT MEMORY & PREFERENCES]\n{memory_context}"
+                )
+            effective_messages = _format_messages_for_openrouter(history or [], instruction)
 
-        messages = _format_messages_for_openrouter(history, instruction)
         payload = {
             "model": target_model,
-            "messages": messages,
+            "messages": effective_messages,
             "stream": stream,
-            "max_tokens": self._max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
+            "temperature": temperature if temperature is not None else self._temperature,
+            "seed": seed if seed is not None else self._seed,
         }
+        if self._provider_order:
+            payload["provider"] = {
+                "order": list(self._provider_order),
+                "allow_fallbacks": self._provider_allow_fallbacks,
+                "require_parameters": self._require_parameters,
+            }
         return target_model, payload
 
     async def generate_response(
         self,
-        history: list[dict],
+        history: Optional[list[dict]] = None,
         explanation_mode: str = "general",
         memory_context: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """
         Sends request to OpenRouter and returns full assistant response.
@@ -172,11 +208,15 @@ class OpenRouterService:
 
         for model_name in models_to_try:
             _, payload = self._build_payload(
-                history,
+                history=history,
                 explanation_mode=explanation_mode,
                 memory_context=memory_context,
                 model_name=model_name,
                 stream=False,
+                messages=messages,
+                temperature=temperature,
+                seed=seed,
+                max_tokens=max_tokens,
             )
 
             for attempt in range(2):
@@ -231,8 +271,12 @@ class OpenRouterService:
                     if choices:
                         message = choices[0].get("message", {})
                         content = message.get("content") or ""
+                        finish_reason = choices[0].get("finish_reason") or "stop"
+                        self.last_finish_reason = finish_reason
+                        self.last_model_used = data.get("model", model_name)
+                        self.last_provider = data.get("provider", "Google")
                         logger.info(
-                            f"OpenRouter response received from {model_name}, length={len(content)}"
+                            f"OpenRouter response received from {self.last_model_used} ({self.last_provider}), finish_reason={finish_reason}, length={len(content)}"
                         )
                         return content
                     return ""
@@ -257,9 +301,13 @@ class OpenRouterService:
 
     async def generate_response_stream(
         self,
-        history: list[dict],
+        history: Optional[list[dict]] = None,
         explanation_mode: str = "general",
         memory_context: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+        max_tokens: Optional[int] = None,
     ) -> AsyncIterator[str]:
         """
         Streams response tokens from OpenRouter asynchronously with automatic fallback across models.
@@ -274,11 +322,15 @@ class OpenRouterService:
 
         for model_name in models_to_try:
             _, payload = self._build_payload(
-                history,
+                history=history,
                 explanation_mode=explanation_mode,
                 memory_context=memory_context,
                 model_name=model_name,
                 stream=True,
+                messages=messages,
+                temperature=temperature,
+                seed=seed,
+                max_tokens=max_tokens,
             )
 
             for attempt in range(2):
@@ -352,11 +404,19 @@ class OpenRouterService:
                                     if choices:
                                         delta = choices[0].get("delta", {})
                                         content = delta.get("content")
+                                        finish_reason = choices[0].get("finish_reason")
+                                        if finish_reason:
+                                            self.last_finish_reason = finish_reason
+                                        actual_model = chunk_data.get("model") or model_name
+                                        self.last_model_used = actual_model
                                         if content:
                                             yielded_any = True
                                             yield content
 
                     if yielded_any:
+                        logger.info(
+                            f"OpenRouter stream completed from {self.last_model_used}, finish_reason={self.last_finish_reason}"
+                        )
                         return
                     return
 
@@ -385,6 +445,88 @@ class OpenRouterService:
 
         raise last_error or RuntimeError("All OpenRouter models exhausted")
 
+    async def generate_title(self, user_message: str) -> str:
+        """
+        Generates a concise, student-facing conversation title (3-8 words) from the user message.
+        Falls back cleanly to a deterministic fallback title on failure, when unconfigured, or in test environments.
+        """
+        fallback = clean_fallback_title(user_message)
+        if not self.is_configured or not user_message.strip() or os.environ.get("PYTEST_CURRENT_TEST"):
+            return fallback
+
+        prompt = (
+            "Generate a concise, descriptive title for a conversation that starts with the following user message. "
+            "The title should be approximately 3 to 8 words, plain text only, without quotation marks, without punctuation at the end, and without markdown. "
+            "Appropriate for a student-facing educational assistant.\n\n"
+            f"User message: {user_message.strip()[:300]}\n\n"
+            "Title:"
+        )
+
+        try:
+            raw_title = await self.generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=30,
+            )
+            title = raw_title.strip().strip('"\'`').strip()
+            if "\n" in title:
+                title = title.split("\n")[0].strip()
+            if title.lower().startswith("title:"):
+                title = title[6:].strip()
+            title = title.strip('"\'`').strip()
+
+            words = title.split()
+            if 1 <= len(words) <= 12 and len(title) <= 70:
+                if len(words) > 8:
+                    title = " ".join(words[:8])
+                return title
+            return fallback
+        except Exception as e:
+            logger.warning(f"LLM title generation failed, using fallback: {e}")
+            return fallback
+
+
+def clean_fallback_title(first_message: str) -> str:
+    """Deterministic fallback title from first user message."""
+    title = " ".join(first_message.split()).strip()
+    if not title:
+        return "New Conversation"
+
+    lower = title.lower()
+    prefixes = [
+        "what is the meaning of ", "what is the difference between ",
+        "what is an ", "what is a ", "what is the ", "what is ",
+        "what are the ", "what are ",
+        "could you please explain ", "can you please explain ",
+        "can you explain to me ", "can you explain ",
+        "tell me about the ", "tell me about ",
+        "help me understand ", "help me with ",
+        "how does ", "how do ", "how to ",
+        "why does ", "why do ", "why is ",
+    ]
+    for prefix in prefixes:
+        if lower.startswith(prefix):
+            title = title[len(prefix):].strip()
+            break
+
+    # Strip trailing punctuation
+    title = title.rstrip("?.!:,;")
+    title = title.strip('"\'`').strip()
+
+    if not title:
+        title = " ".join(first_message.split()).strip()
+
+    words = title.split()
+    if len(words) > 8:
+        title = " ".join(words[:8])
+    if len(title) > 60:
+        title = title[:60].strip()
+
+    if title:
+        title = title[0].upper() + title[1:]
+    return title
+
 
 # Singleton
 openrouter_service = OpenRouterService()
+

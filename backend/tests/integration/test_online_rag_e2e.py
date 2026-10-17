@@ -346,45 +346,48 @@ async def test_missing_evidence_halts_llm_generation(authenticated_student, db_s
 
     llm_mock = AsyncMock()
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        conv_resp = await client.post(
-            "/api/v1/chat/conversations",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        conv_id = conv_resp.json()["id"]
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            conv_resp = await client.post(
+                "/api/v1/chat/conversations",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            conv_id = conv_resp.json()["id"]
 
-        with patch.object(SupabaseRetrievalService, "retrieve", return_value=missing_response):
-            with patch.object(openrouter_service, "generate_response_stream", side_effect=llm_mock):
-                payload = {
-                    "content": "Explain quantum entanglement and Bell state tomography.",
-                    "explanation_mode": "teacher",
-                    "app_mode": "student",
-                    "board": "CBSE",
-                    "class_grade": "10",
-                    "subject": "Science",
-                }
-                stream_resp = await client.post(
-                    f"/api/v1/chat/conversations/{conv_id}/messages/stream",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                assert stream_resp.status_code == 200
+            from app.services.routing_service import routing_service
+            with patch.object(routing_service, "route_query", return_value=(RouteDecision.RAG, "Explain quantum entanglement and Bell state tomography.")):
+                with patch.object(SupabaseRetrievalService, "retrieve", return_value=missing_response):
+                    with patch.object(openrouter_service, "generate_response_stream", side_effect=llm_mock):
+                        payload = {
+                            "content": "Explain quantum entanglement and Bell state tomography.",
+                            "explanation_mode": "teacher",
+                            "app_mode": "student",
+                            "board": "CBSE",
+                            "class_grade": "10",
+                            "subject": "Science",
+                        }
+                        stream_resp = await client.post(
+                            f"/api/v1/chat/conversations/{conv_id}/messages/stream",
+                            json=payload,
+                            headers={"Authorization": f"Bearer {token}"},
+                        )
+                        assert stream_resp.status_code == 200
 
-                buffer = SseStreamBuffer()
-                events = buffer.feed(stream_resp.text)
-                events.extend(buffer.finalize())
+                        buffer = SseStreamBuffer()
+                        events = buffer.feed(stream_resp.text)
+                        events.extend(buffer.finalize())
 
-        # Assert that LLM generation stream was NEVER called
-        assert llm_mock.call_count == 0, "LLM must NOT be called when evidence is MISSING!"
+            # Assert that LLM generation stream was NEVER called
+            assert llm_mock.call_count == 0, "LLM must NOT be called when evidence is MISSING!"
 
-        # Assert refusal message was yielded to the student
-        token_events = [e for e in events if e["type"] == "token"]
-        refusal_text = "".join(e["content"] for e in token_events)
-        assert "not found in the official curriculum corpus" in refusal_text
-        assert "CBSE Class 10 Science" in refusal_text
-
-    app.dependency_overrides.clear()
+            # Assert refusal message was yielded to the student
+            token_events = [e for e in events if e["type"] == "token"]
+            refusal_text = "".join(e["content"] for e in token_events)
+            assert "not found in the official curriculum corpus" in refusal_text
+            assert "CBSE Class 10 Science" in refusal_text
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ==============================================================================

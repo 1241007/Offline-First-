@@ -79,7 +79,7 @@ class AuthViewModel(
                 onSuccess = { onSuccess() },
                 onFailure = { error ->
                     _uiState.value = AuthUiState(
-                        errorMessage = error.localizedMessage ?: "The request could not be completed."
+                        errorMessage = formatAuthError(error)
                     )
                 }
             )
@@ -88,6 +88,17 @@ class AuthViewModel(
             } else {
                 _uiState.value = _uiState.value.copy(isSubmitting = false)
             }
+        }
+    }
+
+    private fun formatAuthError(error: Throwable): String {
+        val msg = error.localizedMessage ?: ""
+        return when {
+            error is java.net.UnknownHostException || error is java.net.ConnectException || msg.contains("Failed to connect", ignoreCase = true) ->
+                "Unable to connect to EduNova server. Please check your internet connection and try again."
+            error is java.net.SocketTimeoutException || msg.contains("timeout", ignoreCase = true) ->
+                "Connection timed out. The server may be waking up, please try again in a moment."
+            else -> msg.ifBlank { "The request could not be completed." }
         }
     }
 }

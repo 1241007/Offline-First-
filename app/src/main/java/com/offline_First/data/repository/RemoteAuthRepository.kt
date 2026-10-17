@@ -5,6 +5,8 @@ import com.offline_First.data.SessionManager
 import com.offline_First.data.local.TokenStorage
 import com.offline_First.data.remote.AuthApiClient
 import com.offline_First.data.remote.AuthenticatedApiClient
+import com.offline_First.data.remote.ApiException
+import com.offline_First.data.remote.AuthenticationException
 import com.offline_First.data.remote.ChatApiConfig
 import com.offline_First.data.remote.ForgotPasswordRequestDto
 import com.offline_First.data.remote.LoginRequestDto
@@ -25,7 +27,8 @@ class RemoteAuthRepository(
     private val authenticatedApiClient: AuthenticatedApiClient,
     private val sessionManager: SessionManager,
     private val tokenStorage: TokenStorage,
-    private val baseUrl: String = ChatApiConfig.BASE_URL
+    private val baseUrl: String = ChatApiConfig.BASE_URL,
+    private val isOnlineProvider: () -> Boolean = { true }
 ) : AuthRepository {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -34,6 +37,29 @@ class RemoteAuthRepository(
 
     override suspend fun signIn(contact: String, password: String): Result<Unit> =
         withContext(Dispatchers.IO) {
+            val cachedIdentity = tokenStorage.getUserIdentity()
+            val trimmedContact = contact.trim()
+            val isMatchingCachedUser = cachedIdentity != null && cachedIdentity.userId.isNotBlank() && (
+                trimmedContact.equals(cachedIdentity.email.trim(), ignoreCase = true) ||
+                trimmedContact.equals(cachedIdentity.userId.trim(), ignoreCase = true)
+            )
+
+            // If device is already offline, restore offline session if user previously logged in
+            if (!isOnlineProvider()) {
+                if (isMatchingCachedUser) {
+                    sessionManager.onRestoreOfflineSession(
+                        userId = cachedIdentity!!.userId,
+                        email = cachedIdentity.email,
+                        fullName = cachedIdentity.fullName
+                    )
+                    return@withContext Result.success(Unit)
+                } else {
+                    return@withContext Result.failure(
+                        IllegalStateException("No internet connection. Please connect to the internet to log in with this account.")
+                    )
+                }
+            }
+
             val res = authApiClient.login(LoginRequestDto(contact = contact, password = password))
             res.fold(
                 onSuccess = { dto ->
@@ -49,7 +75,24 @@ class RemoteAuthRepository(
                     } catch (_: Exception) {}
                     Result.success(Unit)
                 },
-                onFailure = { Result.failure(it) }
+                onFailure = { error ->
+                    // If network dropped or unreachable and user matches cached login, restore offline session!
+                    val isNetworkError = error is java.io.IOException ||
+                            error.message?.contains("Failed to connect", ignoreCase = true) == true ||
+                            error.message?.contains("timeout", ignoreCase = true) == true ||
+                            error.message?.contains("Unable to resolve", ignoreCase = true) == true
+
+                    if (isNetworkError && isMatchingCachedUser) {
+                        sessionManager.onRestoreOfflineSession(
+                            userId = cachedIdentity!!.userId,
+                            email = cachedIdentity.email,
+                            fullName = cachedIdentity.fullName
+                        )
+                        Result.success(Unit)
+                    } else {
+                        Result.failure(error)
+                    }
+                }
             )
         }
 
@@ -122,16 +165,57 @@ class RemoteAuthRepository(
 
     override suspend fun restoreSession(): Result<Boolean> = withContext(Dispatchers.IO) {
         val refreshToken = tokenStorage.getRefreshToken()
-        if (refreshToken.isNullOrBlank()) {
+        val cachedIdentity = tokenStorage.getUserIdentity()
+
+        if (cachedIdentity == null || cachedIdentity.userId.isBlank()) {
             sessionManager.setUnauthenticated()
             return@withContext Result.success(false)
         }
 
-        // Try refreshing token to ensure valid session and obtain up-to-date access token
+        // Fast-path: If currently offline, restore offline session immediately without waiting for network timeout
+        if (!isOnlineProvider()) {
+            sessionManager.onRestoreOfflineSession(
+                userId = cachedIdentity.userId,
+                email = cachedIdentity.email,
+                fullName = cachedIdentity.fullName
+            )
+            return@withContext Result.success(true)
+        }
+
+        if (refreshToken.isNullOrBlank()) {
+            sessionManager.onRestoreOfflineSession(
+                userId = cachedIdentity.userId,
+                email = cachedIdentity.email,
+                fullName = cachedIdentity.fullName
+            )
+            return@withContext Result.success(true)
+        }
+
+        // Try refreshing token online to verify validity and obtain up-to-date access token
         val refreshRes = authApiClient.refresh(RefreshTokenRequestDto(refreshToken))
         if (refreshRes.isFailure) {
-            sessionManager.onSessionExpired()
-            return@withContext Result.success(false)
+            val error = refreshRes.exceptionOrNull()
+            val isExplicitAuthRejection = error is AuthenticationException ||
+                    (error is ApiException && (error.statusCode == 401 || error.statusCode == 403)) ||
+                    (error?.message?.contains("401") == true || error?.message?.contains("403") == true)
+
+            if (isExplicitAuthRejection) {
+                // Explicit rejection: follow expiry policy
+                sessionManager.onSessionExpired()
+                return@withContext Result.success(false)
+            } else if (cachedIdentity != null && cachedIdentity.userId.isNotBlank()) {
+                // Unreachable server / network failure: restore restricted offline session
+                sessionManager.onRestoreOfflineSession(
+                    userId = cachedIdentity.userId,
+                    email = cachedIdentity.email,
+                    fullName = cachedIdentity.fullName
+                )
+                return@withContext Result.success(true)
+            } else {
+                // Network failed and no cached identity exists: cannot fake user
+                sessionManager.setUnauthenticated()
+                return@withContext Result.success(false)
+            }
         }
 
         val tokens = refreshRes.getOrThrow()
@@ -140,8 +224,28 @@ class RemoteAuthRepository(
         // Authoritative user info via /me
         val meRes = fetchMe()
         if (meRes.isFailure) {
-            sessionManager.setUnauthenticated()
-            return@withContext Result.success(false)
+            val meError = meRes.exceptionOrNull()
+            val isMeAuthRejection = meError is AuthenticationException ||
+                    (meError is ApiException && (meError.statusCode == 401 || meError.statusCode == 403)) ||
+                    (meError?.message?.contains("401") == true || meError?.message?.contains("403") == true)
+
+            if (isMeAuthRejection) {
+                sessionManager.onSessionExpired()
+                return@withContext Result.success(false)
+            } else if (cachedIdentity != null && cachedIdentity.userId.isNotBlank()) {
+                // Online refresh succeeded but /me encountered temporary network issue
+                sessionManager.onLoginSuccess(
+                    accessToken = tokens.accessToken,
+                    refreshToken = tokens.refreshToken,
+                    userId = cachedIdentity.userId,
+                    email = cachedIdentity.email,
+                    fullName = cachedIdentity.fullName
+                )
+                return@withContext Result.success(true)
+            } else {
+                sessionManager.setUnauthenticated()
+                return@withContext Result.success(false)
+            }
         }
 
         val user = meRes.getOrThrow()

@@ -28,6 +28,8 @@ enum class RoadmapSubView {
 
 data class RoadmapUiState(
     val roadmaps: UiState<List<RoadmapOption>> = UiState.Loading,
+    val isOffline: Boolean = false,
+    val savedRoadmaps: List<RoadmapOption> = emptyList(),
     val categories: List<String> = emptyList(),
     val selectedCategory: String = "All",
     val dashboardTab: String = "All", // "All", "In Progress", "Completed", "Catalog"
@@ -70,23 +72,44 @@ data class RoadmapUiState(
     val aiTutorTopicPrompt: String? = null,
     val roadmapMainTab: String = "Roadmaps", // "Roadmaps", "Lesson Packs", "Project Ideas"
     val bookmarkedCourseNames: Set<String> = emptySet(),
+    val savedRoadmapIds: Set<String> = emptySet(),
     val selectedCourseOverview: Pair<String, String>? = null // (courseName, category)
 )
 
 class RoadmapViewModel(
-    private val repository: RoadmapRepository = AppContainer.roadmapRepository
+    private val repository: RoadmapRepository = AppContainer.roadmapRepository,
+    private val networkMonitor: com.offline_First.data.sync.NetworkMonitor? = AppContainer.networkMonitor
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(RoadmapUiState())
+    private val _uiState = MutableStateFlow(
+        RoadmapUiState(isOffline = !(networkMonitor?.isOnline?.value ?: true))
+    )
     val uiState: StateFlow<RoadmapUiState> = _uiState.asStateFlow()
 
     init {
+        observeNetworkChanges()
         loadData()
+        loadSavedRoadmaps()
         loadMyPersonalizedRoadmaps()
         loadPythonProgress()
         loadJavaProgress()
         loadMlProgress()
         loadSqlProgress()
+    }
+
+    private fun observeNetworkChanges() {
+        viewModelScope.launch {
+            networkMonitor?.isOnline?.collect { online ->
+                val wasOffline = _uiState.value.isOffline
+                val isNowOffline = !online
+                _uiState.value = _uiState.value.copy(isOffline = isNowOffline)
+                if (wasOffline != isNowOffline) {
+                    loadData()
+                    loadSavedRoadmaps()
+                    loadMyPersonalizedRoadmaps()
+                }
+            }
+        }
     }
 
     fun loadData() {
@@ -129,6 +152,57 @@ class RoadmapViewModel(
             repository.getMyPersonalizedRoadmaps().onSuccess { list ->
                 _uiState.value = _uiState.value.copy(myPersonalizedRoadmaps = list)
             }
+        }
+    }
+
+    fun loadSavedRoadmaps() {
+        viewModelScope.launch {
+            repository.getSavedRoadmaps().onSuccess { savedList ->
+                val ids = savedList.map { it.id }.toSet()
+                val bookmarked = _uiState.value.bookmarkedCourseNames.toMutableSet()
+                savedList.forEach { option ->
+                    bookmarked.add(option.title)
+                    if (option.id == "python-developer") {
+                        bookmarked.add("Python")
+                        bookmarked.add("Python Programming")
+                        bookmarked.add("Python Developer")
+                    } else if (option.id == "java-developer") {
+                        bookmarked.add("Java")
+                        bookmarked.add("Java Programming")
+                        bookmarked.add("Java Developer")
+                    } else if (option.id == "machine-learning") {
+                        bookmarked.add("Machine Learning")
+                        bookmarked.add("Machine Learning Engineer")
+                    } else if (option.id == "sql-databases") {
+                        bookmarked.add("SQL")
+                        bookmarked.add("SQL & Database Management")
+                        bookmarked.add("SQL Roadmap")
+                    }
+                }
+                _uiState.value = _uiState.value.copy(
+                    savedRoadmaps = savedList,
+                    savedRoadmapIds = ids,
+                    bookmarkedCourseNames = bookmarked
+                )
+            }
+        }
+    }
+
+    fun toggleSaveRoadmap(roadmapId: String) {
+        val currentSaved = _uiState.value.savedRoadmapIds.contains(roadmapId)
+        viewModelScope.launch {
+            if (currentSaved) {
+                repository.unsaveRoadmap(roadmapId)
+                _uiState.value = _uiState.value.copy(
+                    savedRoadmapIds = _uiState.value.savedRoadmapIds - roadmapId
+                )
+            } else {
+                repository.saveRoadmap(roadmapId)
+                _uiState.value = _uiState.value.copy(
+                    savedRoadmapIds = _uiState.value.savedRoadmapIds + roadmapId
+                )
+            }
+            loadSavedRoadmaps()
         }
     }
 
@@ -267,6 +341,14 @@ class RoadmapViewModel(
     // --- Interactive Assessment Advisor Actions ---
 
     fun startOrResumeAssessment(forceNew: Boolean = false) {
+        if (_uiState.value.isOffline) {
+            _uiState.value = _uiState.value.copy(
+                isAssessmentLoading = false,
+                errorMessage = "Creating custom roadmaps with AI requires an internet connection."
+            )
+            return
+        }
+
         if (!forceNew && _uiState.value.assessmentSession != null && _uiState.value.assessmentSession?.state != "COMPLETED") {
             _uiState.value = _uiState.value.copy(
                 isAssessmentLoading = false,
@@ -585,27 +667,75 @@ class RoadmapViewModel(
         _uiState.value = _uiState.value.copy(roadmapMainTab = tab)
     }
 
+    fun roadmapIdForCourseName(courseName: String): String {
+        return when (courseName.trim().lowercase()) {
+            "python", "python programming", "python developer" -> "python-developer"
+            "java", "java programming", "java developer" -> "java-developer"
+            "machine learning", "machine learning engineer" -> "machine-learning"
+            "sql", "sql roadmap", "sql & database management", "sql databases" -> "sql-databases"
+            else -> courseName.trim().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        }
+    }
+
     fun toggleBookmarkCourse(courseName: String) {
-        val current = _uiState.value.bookmarkedCourseNames
-        val updated = if (current.contains(courseName)) current - courseName else current + courseName
-        _uiState.value = _uiState.value.copy(bookmarkedCourseNames = updated)
+        val roadmapId = roadmapIdForCourseName(courseName)
+        val isCurrentlySaved = _uiState.value.savedRoadmapIds.contains(roadmapId) || _uiState.value.bookmarkedCourseNames.contains(courseName)
+        viewModelScope.launch {
+            if (isCurrentlySaved) {
+                repository.unsaveRoadmap(roadmapId)
+                _uiState.value = _uiState.value.copy(
+                    bookmarkedCourseNames = _uiState.value.bookmarkedCourseNames - courseName,
+                    savedRoadmapIds = _uiState.value.savedRoadmapIds - roadmapId
+                )
+            } else {
+                repository.saveRoadmap(roadmapId)
+                _uiState.value = _uiState.value.copy(
+                    bookmarkedCourseNames = _uiState.value.bookmarkedCourseNames + courseName,
+                    savedRoadmapIds = _uiState.value.savedRoadmapIds + roadmapId
+                )
+            }
+            loadSavedRoadmaps()
+        }
     }
 
     fun selectCourseByName(courseName: String, category: String) {
+        val roadmapId = roadmapIdForCourseName(courseName)
+        val isSaved = _uiState.value.savedRoadmapIds.contains(roadmapId) || _uiState.value.bookmarkedCourseNames.contains(courseName)
+
         if (courseName.equals("Python", ignoreCase = true) || courseName.equals("Python Programming", ignoreCase = true) || courseName.equals("Python Developer", ignoreCase = true)) {
+            if (_uiState.value.isOffline && !isSaved) {
+                _uiState.value = _uiState.value.copy(errorMessage = "This roadmap isn't available offline. Connect to the internet and save it first.")
+                return
+            }
             openPythonDeveloperScreen()
             return
         }
         if (courseName.equals("Java", ignoreCase = true) || courseName.equals("Java Developer", ignoreCase = true) || courseName.equals("Java Programming", ignoreCase = true)) {
+            if (_uiState.value.isOffline && !isSaved) {
+                _uiState.value = _uiState.value.copy(errorMessage = "This roadmap isn't available offline. Connect to the internet and save it first.")
+                return
+            }
             openJavaDeveloperScreen()
             return
         }
         if (courseName.equals("Machine Learning", ignoreCase = true) || courseName.equals("Machine Learning Engineer", ignoreCase = true)) {
+            if (_uiState.value.isOffline && !isSaved) {
+                _uiState.value = _uiState.value.copy(errorMessage = "This roadmap isn't available offline. Connect to the internet and save it first.")
+                return
+            }
             openMachineLearningScreen()
             return
         }
         if (courseName.equals("SQL", ignoreCase = true) || courseName.equals("SQL & Database Management", ignoreCase = true) || courseName.equals("SQL Roadmap", ignoreCase = true)) {
+            if (_uiState.value.isOffline && !isSaved) {
+                _uiState.value = _uiState.value.copy(errorMessage = "This roadmap isn't available offline. Connect to the internet and save it first.")
+                return
+            }
             openSqlScreen()
+            return
+        }
+        if (_uiState.value.isOffline && !isSaved) {
+            _uiState.value = _uiState.value.copy(errorMessage = "This roadmap isn't available offline. Connect to the internet and save it first.")
             return
         }
         _uiState.value = _uiState.value.copy(selectedCourseOverview = Pair(courseName, category))

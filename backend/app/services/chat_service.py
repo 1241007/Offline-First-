@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.profile_repository import ProfileRepository
-from app.services.openrouter_service import openrouter_service
+from app.services.openrouter_service import openrouter_service, clean_fallback_title
 gemini_service = openrouter_service  # Backwards compatibility alias
 from app.services.memory_service import MemoryService
 from app.services.routing_service import routing_service
@@ -16,14 +16,19 @@ from app.schemas.rag import RAGRequestContext, RouteDecision, EvidenceOutcome, A
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.core.config import settings
+from app.core.query_normalizer import normalize_query
 
 logger = logging.getLogger(__name__)
 
 
-def _generate_title(first_message: str) -> str:
-    """Lightweight title from first user message: trim + truncate."""
-    title = " ".join(first_message.split())  # normalize whitespace
-    return title[:50].strip() if len(title) > 50 else title
+async def _generate_title(first_message: str) -> str:
+    """Generate meaningful conversation title using LLM with deterministic fallback."""
+    try:
+        return await openrouter_service.generate_title(first_message)
+    except Exception as e:
+        logger.warning(f"Error generating title via LLM, falling back: {e}")
+        return clean_fallback_title(first_message)
+
 
 
 class ChatService:
@@ -128,9 +133,10 @@ class ChatService:
         )
 
         # 3. Retrieve relevant memory context for the current prompt
+        normalized_content = normalize_query(content)
         memory_context = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
-            current_prompt=content,
+            current_prompt=normalized_content,
             limit=5,
         )
 
@@ -184,10 +190,10 @@ class ChatService:
         logger.info(f"Saved assistant message id={assistant_msg.id}")
 
         # 9. Update conversation metadata (title on first real exchange)
-        is_first_message = len(conv.messages) <= 1
+        is_first_message = len(recent) <= 1
         new_title = None
         if conv.title == "New Conversation" and is_first_message:
-            new_title = _generate_title(content)
+            new_title = await _generate_title(content)
         await self.repo.update_conversation(
             conversation_id=conversation_id,
             title=new_title,
@@ -215,6 +221,7 @@ class ChatService:
         Handles client disconnection / Stop generation gracefully by saving partial text.
         """
         conv = await self.get_or_create_conversation(conversation_id, user_id)
+        initial_title = conv.title
 
         # 1. Resolve Profile Context (no placeholder assumptions)
         profile_repo = ProfileRepository(self.db)
@@ -248,9 +255,10 @@ class ChatService:
         )
 
         # 3. Get relevant memory context
+        normalized_content = normalize_query(content)
         memory_context = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
-            current_prompt=content,
+            current_prompt=normalized_content,
             limit=5,
         )
 
@@ -293,14 +301,15 @@ class ChatService:
         )
 
         # 7. Evaluate Route
-        route_decision, standalone_query = await routing_service.route_query(content, rag_context)
+        route_decision, standalone_query = await routing_service.route_query(normalized_content, rag_context)
         yield f"data: {json.dumps({'type': 'route', 'decision': route_decision.value, 'query': standalone_query})}\n\n"
 
         accumulated_chunks = []
+        stream_interrupted = False
         try:
             if route_decision == RouteDecision.RAG:
                 retrieval_service = SupabaseRetrievalService(self.db)
-                retrieval_query = standalone_query or content
+                retrieval_query = normalize_query(standalone_query) if standalone_query else normalized_content
                 retrieval_resp = await retrieval_service.retrieve(retrieval_query, rag_context, top_k=5)
 
                 if retrieval_resp.evidence_outcome == EvidenceOutcome.CORPUS_NOT_CONFIGURED:
@@ -367,6 +376,7 @@ class ChatService:
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
         except Exception as exc:
+            stream_interrupted = True
             logger.warning(f"Stream interrupted or cancelled for conv={conversation_id}: {exc}")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
         finally:
@@ -382,16 +392,19 @@ class ChatService:
                 )
 
             # Update title if first message
-            is_first_message = len(conv.messages) <= 1
+            is_first_message = len(recent) <= 1
             new_title = None
-            if conv.title == "New Conversation" and is_first_message:
-                new_title = _generate_title(content)
+            if initial_title == "New Conversation" and is_first_message:
+                new_title = await _generate_title(content)
             await self.repo.update_conversation(
                 conversation_id=conversation_id,
                 title=new_title,
             )
 
-            yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or conv.title})}\n\n"
+            if not stream_interrupted:
+                finish_reason = getattr(openrouter_service, "last_finish_reason", "stop")
+                is_truncated = (finish_reason == "length")
+                yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or initial_title, 'finish_reason': finish_reason, 'truncated': is_truncated})}\n\n"
 
     async def update_conversation(
         self,

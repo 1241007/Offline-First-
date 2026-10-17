@@ -8,10 +8,13 @@ import com.offline_First.domain.model.*
 
 class OnlineRoadmapRepository(
     context: Context? = null,
-    private val userIdProvider: () -> String = { "default_user" }
+    private val userIdProvider: () -> String = { "default_user" },
+    val cacheDb: ChatCacheDatabase? = context?.let { ChatCacheDatabase(it.applicationContext) },
+    private val isOnlineProvider: () -> Boolean = { true }
 ) : RoadmapRepository {
 
-    val cacheDb: ChatCacheDatabase? = context?.let { ChatCacheDatabase(it.applicationContext) }
+    val isOnline: Boolean
+        get() = isOnlineProvider()
 
     private val currentUserId: String
         get() = userIdProvider().ifBlank { "default_user" }
@@ -281,6 +284,17 @@ class OnlineRoadmapRepository(
         offset: Int,
         category: String?
     ): Result<List<RoadmapOption>> {
+        val uId = currentUserId
+        if (!isOnline) {
+            val offlineRoadmaps = cacheDb?.getSavedRoadmaps(uId).orEmpty()
+            val filtered = if (category != null) {
+                offlineRoadmaps.filter { it.category.equals(category, ignoreCase = true) }
+            } else {
+                offlineRoadmaps
+            }
+            return Result.success(if (offset == 0) filtered else emptyList())
+        }
+
         val db = cacheDb
         val cached = db?.getSystemRoadmaps(currentUserId, category) ?: emptyList()
 
@@ -293,15 +307,13 @@ class OnlineRoadmapRepository(
                 list
             }
             .recoverCatching { error ->
-                if (cached.isNotEmpty()) {
-                    if (category != null) {
-                        cached.filter { it.category.equals(category, ignoreCase = true) }
-                    } else {
-                        cached
-                    }
+                val offlineRoadmaps = db?.getSavedRoadmaps(uId).orEmpty()
+                val filtered = if (category != null) {
+                    offlineRoadmaps.filter { it.category.equals(category, ignoreCase = true) }
                 } else {
-                    throw error
+                    offlineRoadmaps
                 }
+                if (offset == 0) filtered else emptyList()
             }
     }
 
@@ -675,6 +687,19 @@ class OnlineRoadmapRepository(
         return Result.success(Unit)
     }
 
+    suspend fun syncUnsyncedPersonalizedRoadmaps(): Result<Unit> {
+        val db = cacheDb ?: return Result.success(Unit)
+        val unsynced = db.getUnsyncedPersonalizedRoadmaps(currentUserId)
+        for (roadmap in unsynced) {
+            val req = roadmap.toSaveRequestDto()
+            val res = ChatApiClient.savePersonalizedRoadmap(req)
+            if (res.isSuccess) {
+                db.markPersonalizedRoadmapSynced(roadmap.id, currentUserId)
+            }
+        }
+        return Result.success(Unit)
+    }
+
     // -----------------------------------------------------------------------
     // Legacy single-overload (kept for RoadmapBuilderScreen compatibility)
     // -----------------------------------------------------------------------
@@ -858,6 +883,141 @@ class OnlineRoadmapRepository(
             accentTheme = accentTheme.name.lowercase(),
             structure = structureDto
         )
+    }
+
+    // -----------------------------------------------------------------------
+    // Saved Roadmaps (System & Personalized)
+    // -----------------------------------------------------------------------
+
+    override suspend fun saveRoadmap(roadmapId: String): Result<Boolean> {
+        val uId = currentUserId
+        val isPersonalized = _roadmapCache.any { it.id == roadmapId } || cacheDb?.getPersonalizedRoadmapById(roadmapId, uId) != null
+        val type = if (isPersonalized) "personalized" else "system"
+
+        // Ensure local_system_roadmaps has metadata for system roadmaps
+        if (type == "system" && cacheDb != null) {
+            val existing = cacheDb.getSystemRoadmaps(uId).find { it.id == roadmapId }
+            if (existing == null) {
+                val staging = com.offline_First.data.staging.PythonRoadmapStagingData.LEARNING_PATHS.find { it.id == roadmapId }
+                val title = staging?.title ?: roadmapId.split("-", "_").joinToString(" ") { part ->
+                    part.replaceFirstChar { c -> c.uppercase() }
+                }
+                val option = RoadmapOption(
+                    id = roadmapId,
+                    title = title,
+                    category = staging?.category ?: "Skill-based",
+                    description = staging?.description ?: "$title Learning Path",
+                    skills = listOf(title),
+                    level = staging?.level ?: "Beginner to Advanced",
+                    duration = staging?.duration ?: "8 weeks",
+                    stages = staging?.totalModules ?: 6,
+                    icon = staging?.iconKey ?: "school",
+                    accentTheme = RoadmapAccentTheme.PRIMARY,
+                    isPersonalized = false
+                )
+                cacheDb.upsertSystemRoadmaps(listOf(option), uId)
+            }
+        }
+
+        // 1. Send remote save request if online
+        val remoteResult = if (isOnline) {
+            ChatApiClient.saveRoadmap(roadmapId)
+        } else {
+            Result.failure(java.io.IOException("Offline"))
+        }
+
+        // 2. Persist locally in SQLite
+        cacheDb?.saveRoadmap(
+            userId = uId,
+            roadmapId = roadmapId,
+            roadmapType = type,
+            downloadStatus = "completed",
+            isOfflineReady = true,
+            syncStatus = if (remoteResult.isSuccess) "synced" else "pending_sync"
+        )
+
+        return Result.success(true)
+    }
+
+    override suspend fun unsaveRoadmap(roadmapId: String): Result<Boolean> {
+        val uId = currentUserId
+        val remoteResult = if (isOnline) ChatApiClient.unsaveRoadmap(roadmapId) else Result.failure(java.io.IOException("Offline"))
+        if (remoteResult.isSuccess) {
+            cacheDb?.deleteSavedRoadmap(uId, roadmapId)
+            cacheDb?.unsaveRoadmap(uId, roadmapId)
+        } else {
+            cacheDb?.queueUnsaveRoadmap(uId, roadmapId)
+        }
+        return Result.success(true)
+    }
+
+    override suspend fun isRoadmapSaved(roadmapId: String): Boolean {
+        return cacheDb?.isRoadmapSaved(currentUserId, roadmapId) ?: false
+    }
+
+    override suspend fun isRoadmapOfflineReady(roadmapId: String): Boolean {
+        return cacheDb?.isRoadmapOfflineReady(currentUserId, roadmapId) ?: false
+    }
+
+    override suspend fun getSavedRoadmaps(): Result<List<RoadmapOption>> {
+        val uId = currentUserId
+        if (!isOnline) {
+            val offlineSaved = cacheDb?.getSavedRoadmaps(uId) ?: emptyList()
+            return Result.success(offlineSaved)
+        }
+
+        // 1. Try remote fetch
+        val remoteResult = ChatApiClient.getSavedRoadmaps()
+        if (remoteResult.isSuccess) {
+            val dtoList = remoteResult.getOrThrow()
+            val domainList = dtoList.map { dto ->
+                // Cache roadmap saved state in SQLite
+                cacheDb?.saveRoadmap(
+                    userId = uId,
+                    roadmapId = dto.roadmapId,
+                    roadmapType = dto.roadmapType,
+                    downloadStatus = "completed",
+                    isOfflineReady = true,
+                    syncStatus = "synced"
+                )
+                // Cache system roadmap details if type is system
+                if (dto.roadmapType == "system" && cacheDb != null) {
+                    val sysOption = RoadmapOption(
+                        id = dto.roadmapId,
+                        title = dto.title,
+                        category = dto.category,
+                        description = dto.description,
+                        skills = dto.skills,
+                        level = dto.level,
+                        duration = dto.duration,
+                        stages = dto.stages,
+                        icon = dto.icon,
+                        accentTheme = mapAccentTheme(dto.accentTheme),
+                        isPersonalized = false
+                    )
+                    cacheDb.upsertSystemRoadmaps(listOf(sysOption), uId)
+                }
+
+                RoadmapOption(
+                    id = dto.roadmapId,
+                    title = dto.title,
+                    category = dto.category,
+                    description = dto.description,
+                    skills = dto.skills,
+                    level = dto.level,
+                    duration = dto.duration,
+                    stages = dto.stages,
+                    icon = dto.icon,
+                    accentTheme = mapAccentTheme(dto.accentTheme),
+                    isPersonalized = dto.roadmapType.equals("personalized", ignoreCase = true)
+                )
+            }
+            return Result.success(domainList)
+        }
+
+        // 2. Offline fallback: load strictly user-saved roadmaps from SQLite
+        val offlineSaved = cacheDb?.getSavedRoadmaps(uId) ?: emptyList()
+        return Result.success(offlineSaved)
     }
 }
 

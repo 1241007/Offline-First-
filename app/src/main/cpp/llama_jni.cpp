@@ -127,6 +127,7 @@ jstring native_generate_stream(
     }
 
     std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
+    handle->cancelled.store(false);
 
     using clock = std::chrono::steady_clock;
 
@@ -159,8 +160,10 @@ jstring native_generate_stream(
     }
 
     constexpr int32_t context_size = 2048;
-    const int32_t prediction_limit = std::clamp(static_cast<int32_t>(max_tokens), 1, 512);
-    if (token_count >= context_size - prediction_limit) {
+    const int32_t max_allowed_tokens = std::max(1, context_size - token_count - 1);
+    const int32_t requested_limit = max_tokens > 0 ? static_cast<int32_t>(max_tokens) : 1024;
+    const int32_t prediction_limit = std::clamp(requested_limit, 1, std::min(1024, max_allowed_tokens));
+    if (token_count >= context_size - 1) {
         throw_java(env, "java/lang/IllegalArgumentException", "The conversation is too long for the local model context.");
         return nullptr;
     }
@@ -171,6 +174,16 @@ jstring native_generate_stream(
            common_prefix < tokens.size() &&
            handle->cached_tokens[common_prefix] == tokens[common_prefix]) {
         common_prefix++;
+    }
+
+    // Deterministic generation guard:
+    // If the entire prompt was previously evaluated (identical prompt repeated),
+    // common_prefix equals tokens.size(). If common_prefix == tokens.size(), the prompt evaluation
+    // loop below would evaluate 0 tokens, failing to compute fresh logits for the final prompt position.
+    // By ensuring at least the final token is re-evaluated (common_prefix <= tokens.size() - 1),
+    // we guarantee llama_process executes with output_logits=true, producing fresh, deterministic logits.
+    if (common_prefix >= tokens.size() && !tokens.empty()) {
+        common_prefix = tokens.size() - 1;
     }
 
     if (common_prefix < handle->cached_tokens.size()) {
@@ -222,9 +235,11 @@ jstring native_generate_stream(
     auto t_gen_start = clock::now();
     std::string generated_text;
     int32_t generated_tokens_count = 0;
+    bool generation_aborted = false;
 
     for (int32_t generated = 0; generated < prediction_limit; ++generated) {
         if (handle->cancelled.load()) {
+            generation_aborted = true;
             break;
         }
 
@@ -272,14 +287,24 @@ jstring native_generate_stream(
             jboolean keep_going = env->CallBooleanMethod(callback, on_token_method, piece_jstr);
             env->DeleteLocalRef(piece_jstr);
             if (!keep_going) {
+                generation_aborted = true;
                 break;
             }
         }
 
         batch_set_tokens(batch.get(), &token, 1, position++);
         if (llama_process(handle->context, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            llama_memory_clear(llama_get_memory(handle->context), true);
+            handle->cached_tokens.clear();
             throw_java(env, "java/lang/IllegalStateException", "llama.cpp failed during text generation.");
             return nullptr;
+        }
+    }
+
+    if (generation_aborted || handle->cancelled.load()) {
+        if (handle->cached_tokens.size() > tokens.size()) {
+            llama_memory_seq_rm(llama_get_memory(handle->context), 0, static_cast<llama_pos>(tokens.size()), -1);
+            handle->cached_tokens.resize(tokens.size());
         }
     }
 

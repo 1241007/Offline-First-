@@ -195,11 +195,11 @@ class ChatRepository:
         )
         await self.db.commit()
 
-    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+    async def delete_conversation(self, conversation_id: str, user_id: Optional[str] = None) -> bool:
         conv = await self.get_conversation(conversation_id)
         if not conv:
             return False
-        if conv.user_id is not None and conv.user_id != user_id:
+        if user_id is not None and conv.user_id is not None and conv.user_id != user_id:
             return False
         await self.db.execute(
             delete(Conversation).where(Conversation.id == conversation_id)
