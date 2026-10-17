@@ -383,6 +383,10 @@ fun RoadmapScreen(
                                         roadmapPrimary = roadmapPrimary,
                                         onContinueLearning = {
                                             viewModel.selectPersonalizedRoadmap(roadmap)
+                                            onOpenSavedRoadmap(roadmap)
+                                        },
+                                        onViewProfile = {
+                                            viewModel.selectPersonalizedRoadmap(roadmap)
                                             selectedPersonalizedRoadmap = roadmap
                                         },
                                         onRename = {
@@ -440,6 +444,10 @@ fun RoadmapScreen(
                                         nextMilestone = nextMilestone,
                                         roadmapPrimary = roadmapPrimary,
                                         onContinueLearning = {
+                                            viewModel.selectPersonalizedRoadmap(roadmap)
+                                            onOpenSavedRoadmap(roadmap)
+                                        },
+                                        onViewProfile = {
                                             viewModel.selectPersonalizedRoadmap(roadmap)
                                             selectedPersonalizedRoadmap = roadmap
                                         },
@@ -1296,6 +1304,7 @@ private fun PersonalizedRoadmapCard(
     onContinueLearning: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onViewProfile: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1312,7 +1321,9 @@ private fun PersonalizedRoadmapCard(
     }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onContinueLearning),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, if (isCompleted) EduNovaSuccess.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
         shape = RoundedCornerShape(20.dp)
@@ -1362,6 +1373,14 @@ private fun PersonalizedRoadmapCard(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("View Assessment Profile") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = {
+                                showMenu = false
+                                onViewProfile()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Rename") },
                             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },

@@ -474,10 +474,29 @@ object ChatApiClient {
 
     // --- Personalized Roadmap Assessment & Generation API ---
 
-    suspend fun startPersonalizedAssessment(): Result<AssessmentSessionResponseDto> = runCatching {
-        val (code, body) = post("/roadmaps/personalized/start", "{}")
+    suspend fun startPersonalizedAssessment(domain: String = "Python"): Result<AssessmentSessionResponseDto> = runCatching {
+        val payload = json.encodeToString(StartAssessmentRequestDto(domain = domain))
+        val (code, body) = post("/roadmaps/personalized/start", payload)
         if (code !in 200..299) error("HTTP $code: $body")
         json.decodeFromString<AssessmentSessionResponseDto>(body)
+    }
+
+    suspend fun validateSubject(subject: String): Result<ValidateSubjectResponseDto> = runCatching {
+        val payload = json.encodeToString(ValidateSubjectRequestDto(subject = subject))
+        val (code, body) = post("/roadmaps/personalized/validate-subject", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<ValidateSubjectResponseDto>(body)
+    }
+
+    suspend fun completeTopic(
+        roadmapId: String,
+        topicId: String,
+        quizPassed: Boolean = true
+    ): Result<CompleteTopicResponseDto> = runCatching {
+        val payload = json.encodeToString(CompleteTopicRequestDto(quizPassed = quizPassed))
+        val (code, body) = post("/roadmaps/personalized/$roadmapId/topics/$topicId/complete", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<CompleteTopicResponseDto>(body)
     }
 
     suspend fun getActiveAssessmentSession(): Result<AssessmentSessionResponseDto?> = runCatching {

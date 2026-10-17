@@ -72,7 +72,13 @@ class OnlineRoadmapRepository(
             resources = resources,
             completionCriteria = completionCriteria,
             isCompleted = isCompleted,
-            dependencies = dependencies
+            dependencies = dependencies,
+            topicId = topicId,
+            status = status,
+            subtopics = subtopics,
+            learningObjectives = learningObjectives,
+            codeExample = codeExample,
+            skipReason = skipReason
         )
     }
 
@@ -118,7 +124,9 @@ class OnlineRoadmapRepository(
                 AssessmentPhase.PROFILE_COLLECTION
         }
 
-        val domainName = goal?.takeIf { it.isNotBlank() } ?: "Python"
+        val domainName = this.domain.takeIf { it.isNotBlank() }
+            ?: goal?.takeIf { it.isNotBlank() }
+            ?: "Python"
 
         val effectivePrompt = quiz?.question
             ?: latestMessage
@@ -221,6 +229,28 @@ class OnlineRoadmapRepository(
     }
 
     private fun PersonalizedRoadmapDetailResponseDto.toDomain(): PersonalizedRoadmapDetail {
+        val mappedTopics = structure.topics.map { dto ->
+            PersonalizedRoadmapTopic(
+                id = dto.id,
+                topicTag = dto.id,
+                title = dto.title,
+                shortDescription = dto.description,
+                estimatedMinutes = (dto.estimatedHours * 60).toInt().coerceAtLeast(15),
+                prerequisiteTopicIds = dto.prerequisiteTopicIds,
+                status = when (dto.status.uppercase()) {
+                    "COMPLETED" -> PersonalizedTopicStatus.COMPLETED
+                    "SKIPPED" -> PersonalizedTopicStatus.SKIPPED
+                    "IN_PROGRESS" -> PersonalizedTopicStatus.IN_PROGRESS
+                    "UNLOCKED" -> PersonalizedTopicStatus.UNLOCKED
+                    else -> PersonalizedTopicStatus.LOCKED
+                },
+                explanation = dto.skipReason ?: dto.description
+            )
+        }
+        val mappedEdges = structure.edges.map { dto ->
+            PersonalizedRoadmapEdge(fromTopicId = dto.fromTopicId, toTopicId = dto.toTopicId)
+        }
+
         return PersonalizedRoadmapDetail(
             id = id,
             title = title,
@@ -239,7 +269,10 @@ class OnlineRoadmapRepository(
             capstoneProject = structure.capstoneProject,
             nextAction = structure.nextAction,
             completedMilestones = structure.completedMilestones,
-            createdAt = createdAt
+            createdAt = createdAt,
+            domain = structure.domain ?: (goal.ifBlank { title }),
+            topics = mappedTopics,
+            edges = mappedEdges
         ).withSynthesizedTopicsIfEmpty()
     }
 
@@ -288,11 +321,14 @@ class OnlineRoadmapRepository(
             }
     }
 
-    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> =
-        Result.success(Pair(true, subject.trim()))
+    override suspend fun validateSubject(subject: String): Result<Pair<Boolean, String>> {
+        return ChatApiClient.validateSubject(subject)
+            .map { Pair(it.isValid, it.standardizedName) }
+            .recoverCatching { Pair(true, subject.trim()) }
+    }
 
     override suspend fun startPersonalizedAssessment(domain: String): Result<AssessmentSessionState> {
-        return ChatApiClient.startPersonalizedAssessment()
+        return ChatApiClient.startPersonalizedAssessment(domain)
             .map { it.toDomain() }
     }
 

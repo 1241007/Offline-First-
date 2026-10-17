@@ -17,6 +17,12 @@ from app.schemas.personalized_roadmap import (
     RoadmapMilestonesSyncRequest,
     RoadmapMilestonesSyncResponse,
     RenamePersonalizedRoadmapRequest,
+    StartAssessmentRequest,
+    ValidateSubjectRequest,
+    ValidateSubjectResponse,
+    TopicLearningContentResponse,
+    CompleteTopicRequest,
+    CompleteTopicResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["roadmaps"])
@@ -55,6 +61,8 @@ async def get_roadmap_categories(db: AsyncSession = Depends(get_db)):
     status_code=status.HTTP_201_CREATED,
 )
 async def start_personalized_assessment(
+    payload: Optional[StartAssessmentRequest] = None,
+    domain: Optional[str] = Query(None),
     current_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -62,8 +70,9 @@ async def start_personalized_assessment(
     Start a stateful personalized roadmap assessment session for the authenticated user.
     Gathers authentic user context and returns the mentor's greeting and first question.
     """
+    target_domain = (payload.domain if payload and payload.domain else domain) or "Python"
     service = PersonalizedRoadmapService(db)
-    return await service.start_assessment_session(user_id=current_user_id)
+    return await service.start_assessment_session(user_id=current_user_id, domain=target_domain)
 
 
 @router.get(
@@ -334,6 +343,68 @@ async def rename_personalized_roadmap(
         raise HTTPException(status_code=404, detail="Personalized roadmap not found or unauthorized")
     return updated
 
+
+@router.post(
+    "/roadmaps/personalized/validate-subject",
+    response_model=ValidateSubjectResponse,
+)
+async def validate_personalized_subject(
+    payload: ValidateSubjectRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Validate and standardize user-entered course/domain before assessment.
+    """
+    service = PersonalizedRoadmapService(db)
+    return service.validate_subject(payload.subject)
+
+
+@router.get(
+    "/roadmaps/personalized/{roadmap_id}/topics/{topic_id}/content",
+    response_model=TopicLearningContentResponse,
+)
+async def get_topic_learning_content(
+    roadmap_id: str,
+    topic_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get rich structured learning content, objectives, code examples, common mistakes, and quiz for a topic.
+    """
+    service = PersonalizedRoadmapService(db)
+    content = await service.get_topic_learning_content(
+        roadmap_id=roadmap_id, topic_id=topic_id, user_id=current_user_id
+    )
+    if not content:
+        raise HTTPException(status_code=404, detail="Topic learning content not found")
+    return content
+
+
+@router.post(
+    "/roadmaps/personalized/{roadmap_id}/topics/{topic_id}/complete",
+    response_model=CompleteTopicResponse,
+)
+async def complete_topic(
+    roadmap_id: str,
+    topic_id: str,
+    payload: CompleteTopicRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mark a topic complete, unlock downstream dependencies, and update progress percentage.
+    """
+    service = PersonalizedRoadmapService(db)
+    try:
+        return await service.complete_topic(
+            roadmap_id=roadmap_id,
+            topic_id=topic_id,
+            user_id=current_user_id,
+            quiz_passed=payload.quiz_passed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # --- General Roadmap Detail (System & User) ---

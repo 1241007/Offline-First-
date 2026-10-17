@@ -241,15 +241,7 @@ fun PersonalizedRoadmapDetailDto.toDomain(): PersonalizedRoadmapDetail = Persona
 // Dynamic Subject & Topic Learning DTOs
 // ---------------------------------------------------------------------------
 
-@Serializable
-data class ValidateSubjectRequestDto(val subject: String)
 
-@Serializable
-data class ValidateSubjectResponseDto(
-    @SerialName("is_valid") val isValid: Boolean,
-    @SerialName("standardized_name") val standardizedName: String,
-    val message: String
-)
 
 @Serializable
 data class TopicLearningResourceDto(
@@ -297,21 +289,7 @@ data class TopicLearningContentDto(
     val resources: List<TopicLearningResourceDto> = emptyList()
 )
 
-@Serializable
-data class CompleteTopicRequestDto(
-    @SerialName("quiz_score") val quizScore: Int? = 100,
-    @SerialName("quiz_passed") val quizPassed: Boolean = true
-)
 
-@Serializable
-data class CompleteTopicResponseDto(
-    @SerialName("roadmap_id") val roadmapId: String,
-    @SerialName("completed_topic_id") val completedTopicId: String,
-    @SerialName("unlocked_topic_ids") val unlockedTopicIds: List<String> = emptyList(),
-    @SerialName("next_recommended_topic_id") val nextRecommendedTopicId: String? = null,
-    @SerialName("overall_progress_percent") val overallProgressPercent: Int = 0,
-    val roadmap: PersonalizedRoadmapDetailDto
-)
 
 fun TopicLearningResourceDto.toDomain(): TopicLearningResource = TopicLearningResource(
     title = title,

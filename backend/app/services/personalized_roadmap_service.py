@@ -2,6 +2,8 @@
 
 import json
 import logging
+import math
+from math import ceil
 import re
 import uuid
 from typing import Optional, List, Dict, Any, Tuple
@@ -39,6 +41,13 @@ from app.schemas.personalized_roadmap import (
     WeeklyScheduleItemSchema,
     AssessmentSummarySchema,
     SkillGapItemSchema,
+    ValidateSubjectResponse,
+    TopicLearningContentResponse,
+    TopicCodeExampleDto,
+    TopicCommonMistakeDto,
+    TopicPracticeQuizDto,
+    TopicLearningResourceDto,
+    CompleteTopicResponse,
 )
 from app.schemas.roadmap import RoadmapItemResponse
 from app.services.openrouter_service import openrouter_service
@@ -62,6 +71,132 @@ STEP_READY = "READY_FOR_GENERATION"
 
 # Domain-specific curated diagnostic question bank with explainable metadata
 _DIAGNOSTIC_QUESTION_BANK = {
+    "java": [
+        {
+            "id": "java_1",
+            "question": "In Java 8 and later, how does an interface with `default` methods fundamentally differ from an `abstract class`?",
+            "options": [
+                "An abstract class can maintain mutable instance state (fields), while an interface cannot have instance state",
+                "Interfaces can only contain private methods, whereas abstract classes have public methods",
+                "Abstract classes cannot implement any methods with bodies",
+                "There is no difference; default methods completely deprecated abstract classes",
+            ],
+            "correct_index": 0,
+            "explanation": "Interfaces cannot have instance state/variables (only static final constants), whereas abstract classes can have constructors and mutable instance fields.",
+            "skill_tested": "Java OOP & Interface Design",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Verifies foundational object-oriented design and Java type system principles.",
+        },
+        {
+            "id": "java_2",
+            "question": "What is the primary guarantee provided by the `volatile` keyword in Java multi-threaded concurrency?",
+            "options": [
+                "Guarantees visibility of changes across threads and prevents instruction reordering without acquiring a mutual exclusion lock",
+                "Guarantees compound operations like `count++` are executed atomically without race conditions",
+                "Prevents garbage collection from ever removing the object from JVM memory",
+                "Causes the thread to yield execution immediately to higher priority threads",
+            ],
+            "correct_index": 0,
+            "explanation": "`volatile` establishes a happens-before relationship ensuring memory visibility and preventing compiler/CPU reordering, but does NOT guarantee atomicity for compound operations.",
+            "skill_tested": "Java Concurrency & Memory Model",
+            "difficulty": "Advanced",
+            "selection_rationale": "Evaluates understanding of Java concurrency, memory visibility, and thread safety.",
+        },
+        {
+            "id": "java_3",
+            "question": "In Java Collections, what occurs in `HashMap` when multiple keys hash to the same bucket and the number of collisions exceeds the TREEIFY_THRESHOLD (8)?",
+            "options": [
+                "The internal bucket structure converts from a linked list into a balanced Red-Black tree to maintain O(log n) worst-case lookups",
+                "The HashMap immediately throws an OutOfMemoryError and crashes",
+                "All older colliding keys are discarded and overwritten by the newest key",
+                "The table size is doubled and all existing entries are rehashed into an array of vectors",
+            ],
+            "correct_index": 0,
+            "explanation": "In Java 8+, HashMap converts linked lists in buckets to Red-Black Trees when collisions reach 8, reducing lookup time from O(n) to O(log n).",
+            "skill_tested": "Java Collections & Internal Performance",
+            "difficulty": "Advanced",
+            "selection_rationale": "Tests deep knowledge of data structure implementations in the Java standard library.",
+        },
+    ],
+    "sql": [
+        {
+            "id": "sql_1",
+            "question": "In SQL, what is the fundamental difference between the `WHERE` clause and the `HAVING` clause?",
+            "options": [
+                "`WHERE` filters rows before aggregations are computed, while `HAVING` filters aggregated groups after `GROUP BY`",
+                "`HAVING` is faster than `WHERE` because it uses primary key indexes exclusively",
+                "`WHERE` can only be used with numeric columns, while `HAVING` works on strings",
+                "`HAVING` can only be used in subqueries, whereas `WHERE` is only for outer queries",
+            ],
+            "correct_index": 0,
+            "explanation": "`WHERE` filters individual records before aggregation. `HAVING` filters group summaries created by `GROUP BY`.",
+            "skill_tested": "SQL Filtering & Aggregations",
+            "difficulty": "Beginner",
+            "selection_rationale": "Validates core query evaluation pipeline and relational aggregation concepts.",
+        },
+        {
+            "id": "sql_2",
+            "question": "When querying with SQL window functions, how does `DENSE_RANK()` differ from `RANK()` when identical values occur?",
+            "options": [
+                "`DENSE_RANK()` leaves no gaps in ranking sequences (e.g. 1, 1, 2), whereas `RANK()` skips subsequent ranks (e.g. 1, 1, 3)",
+                "`DENSE_RANK()` orders by descending values only, while `RANK()` orders ascending",
+                "`DENSE_RANK()` can only be applied inside correlated subqueries",
+                "`RANK()` generates fractional values between 0.0 and 1.0, while `DENSE_RANK()` produces integers",
+            ],
+            "correct_index": 0,
+            "explanation": "`RANK()` skips numbers after ties (1, 1, 3). `DENSE_RANK()` does not skip rank values (1, 1, 2).",
+            "skill_tested": "SQL Window Functions & Analytics",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Verifies ability to write advanced analytical and reporting SQL queries.",
+        },
+        {
+            "id": "sql_3",
+            "question": "Under the ANSI SQL standard, what concurrency phenomenon is prevented by the `SERIALIZABLE` isolation level that is permitted under `REPEATABLE READ`?",
+            "options": [
+                "Phantom reads (insertions of new rows by other transactions that match the query filter)",
+                "Dirty reads (reading uncommitted changes from other transactions)",
+                "Non-repeatable reads (reading modified values of previously read rows)",
+                "Deadlocks during index scans",
+            ],
+            "correct_index": 0,
+            "explanation": "Repeatable Read prevents dirty and non-repeatable reads. Serializable additionally prevents phantom reads by locking or range-verifying predicates.",
+            "skill_tested": "Database Transactions & ACID Isolation",
+            "difficulty": "Advanced",
+            "selection_rationale": "Tests knowledge of transaction integrity, concurrency anomalies, and ACID isolation levels.",
+        },
+    ],
+    "javascript": [
+        {
+            "id": "js_1",
+            "question": "In the JavaScript runtime event loop, in what order are Promise callbacks (`.then()`) executed relative to `setTimeout(fn, 0)` callbacks?",
+            "options": [
+                "Promise callbacks run first in the microtask queue before the next macrotask (setTimeout) is dequeued",
+                "`setTimeout(fn, 0)` always executes before Promise callbacks because timers have OS thread priority",
+                "Execution order is completely random and non-deterministic",
+                "Both callbacks run concurrently on separate worker threads in parallel",
+            ],
+            "correct_index": 0,
+            "explanation": "Microtasks (Promises, queueMicrotask) are drained completely at the end of each task before the event loop picks up the next macrotask (timer, I/O).",
+            "skill_tested": "JavaScript Event Loop & Microtask Queue",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Assesses deep understanding of asynchronous JavaScript concurrency and execution order.",
+        },
+        {
+            "id": "js_2",
+            "question": "What is a JavaScript closure and why is it useful?",
+            "options": [
+                "A function that retains lexical access to variables in its outer scope even after the outer function has finished executing",
+                "A syntax error caused by forgetting to close a curly brace in a block",
+                "A built-in garbage collection method that frees unused DOM nodes",
+                "A method to seal an object preventing addition or deletion of properties",
+            ],
+            "correct_index": 0,
+            "explanation": "Closures allow an inner function to remember and access variables from an enclosing scope across invocations, enabling encapsulation and stateful functions.",
+            "skill_tested": "JavaScript Scope & Closures",
+            "difficulty": "Beginner",
+            "selection_rationale": "Verifies foundational language mechanics and functional programming patterns.",
+        },
+    ],
     "python_data": [
         {
             "id": "py_data_1",
@@ -92,6 +227,21 @@ _DIAGNOSTIC_QUESTION_BANK = {
             "skill_tested": "Out-of-Core Data Processing",
             "difficulty": "Advanced",
             "selection_rationale": "Verifies ability to design scalable data pipelines beyond simple in-memory scripts.",
+        },
+        {
+            "id": "py_core_1",
+            "question": "In Python, why is defining a mutable object (e.g. `def append_item(x, target=[])`) as a default argument considered a known anti-pattern?",
+            "options": [
+                "The default list is instantiated once when the function is defined and shared across all subsequent invocations",
+                "Python throws an immediate SyntaxError on mutable default parameters",
+                "Default arguments cannot be modified inside the function body",
+                "It causes Python's garbage collector to prematurely deallocate the list",
+            ],
+            "correct_index": 0,
+            "explanation": "Default argument expressions are evaluated once when the function definition is executed, so the same mutable list is retained and modified across calls.",
+            "skill_tested": "Python Functions & Mutable Defaults",
+            "difficulty": "Beginner",
+            "selection_rationale": "Tests core language mechanics and prevents subtle state-leak bugs.",
         },
     ],
     "android_kotlin": [
@@ -158,6 +308,21 @@ _DIAGNOSTIC_QUESTION_BANK = {
             "skill_tested": "RAG Architecture & Vector Embeddings",
             "difficulty": "Intermediate",
             "selection_rationale": "Determines practical understanding of modern LLM context retrieval systems.",
+        },
+        {
+            "id": "ml_2",
+            "question": "In classification tasks with severe class imbalance (e.g. 99% negative, 1% positive), why is standard accuracy a misleading performance metric?",
+            "options": [
+                "A naive model predicting always negative achieves 99% accuracy while detecting zero true positives; PR-AUC or F1-Score are far more informative",
+                "Accuracy calculation divides by zero when classes are imbalanced",
+                "Scikit-learn disallows calculating accuracy on imbalanced datasets",
+                "Accuracy can only be computed when classes have exactly 50/50 balance",
+            ],
+            "correct_index": 0,
+            "explanation": "High accuracy can hide complete failure on the minority class. Precision, Recall, and PR-AUC properly reflect minority class performance.",
+            "skill_tested": "ML Model Evaluation & Imbalance Metrics",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Verifies ability to select rigorous metrics in real-world machine learning.",
         },
     ],
     "algorithms_interview": [
@@ -346,41 +511,55 @@ def _normalize_goal(text: str) -> str:
 
 
 def _select_diagnostic_question_for_goal(
-    goal: Optional[str], level: Optional[str], already_asked_ids: List[str]
+    goal: Optional[str],
+    level: Optional[str],
+    already_asked_ids: List[str],
+    domain: Optional[str] = None,
 ) -> dict:
     """Dynamically select targeted diagnostic question with explainable metadata."""
+    d = (domain or "").lower()
     g = (goal or "").lower()
+    combined = f"{d} {g}".strip()
     pool_key = "general"
 
-    if (
-        "data" in g
-        or "pandas" in g
-        or "analytics" in g
-        or ("python" in g and "data" in g)
-    ):
-        pool_key = "python_data"
-    elif "android" in g or "compose" in g or "kotlin" in g or "mobile" in g:
+    if "java" in combined and "script" not in combined:
+        pool_key = "java"
+    elif "sql" in combined or "database" in combined or "postgres" in combined:
+        pool_key = "sql"
+    elif "javascript" in combined or "react" in combined or "frontend" in combined or "web" in combined:
+        pool_key = "javascript"
+    elif "android" in combined or "compose" in combined or "kotlin" in combined or "mobile" in combined:
         pool_key = "android_kotlin"
-    elif "backend" in g or "fastapi" in g or "api" in g or "systems" in g:
+    elif "backend" in combined or "fastapi" in combined or "api" in combined or "systems" in combined:
         pool_key = "backend_systems"
     elif (
-        "ml" in g
-        or "machine learning" in g
-        or "ai" in g
-        or "rag" in g
-        or "llm" in g
-        or "deep learning" in g
+        "ml" in combined
+        or "machine learning" in combined
+        or "ai" in combined
+        or "rag" in combined
+        or "llm" in combined
+        or "deep learning" in combined
     ):
         pool_key = "ml_ai"
-    elif "interview" in g or "algorithm" in g or "leetcode" in g or "dsa" in g:
+    elif "interview" in combined or "algorithm" in combined or "leetcode" in combined or "dsa" in combined:
         pool_key = "algorithms_interview"
-    elif "python" in g:
+    elif "data" in combined or "pandas" in combined or "analytics" in combined or "python" in combined:
         pool_key = "python_data"
 
     candidates = _DIAGNOSTIC_QUESTION_BANK.get(
         pool_key, _DIAGNOSTIC_QUESTION_BANK["general"]
     )
-    for q in candidates:
+    
+    # Adaptive difficulty sorting: if Advanced, prefer Advanced/Intermediate; if Beginner, prefer Beginner/Intermediate
+    target_lvl = (level or "").lower()
+    if target_lvl == "advanced":
+        ordered_candidates = sorted(candidates, key=lambda q: 0 if q.get("difficulty") == "Advanced" else (1 if q.get("difficulty") == "Intermediate" else 2))
+    elif target_lvl == "beginner":
+        ordered_candidates = sorted(candidates, key=lambda q: 0 if q.get("difficulty") == "Beginner" else (1 if q.get("difficulty") == "Intermediate" else 2))
+    else:
+        ordered_candidates = sorted(candidates, key=lambda q: 0 if q.get("difficulty") == "Intermediate" else 1)
+
+    for q in ordered_candidates:
         if q["id"] not in already_asked_ids:
             return q.copy()
 
@@ -501,12 +680,14 @@ class PersonalizedRoadmapService:
         ]
 
     async def start_assessment_session(
-        self, user_id: str
+        self, user_id: str, domain: str = "Python"
     ) -> AssessmentSessionResponse:
         """Starts a stateful adaptive assessment session."""
         context = await self._gather_learner_context(user_id)
+        target_domain = (domain or "Python").strip()
 
         initial_profile = {
+            "domain": target_domain,
             "verified_evidence": context["verified_evidence"],
             "self_reported_information": [],
             "strengths": [],
@@ -528,6 +709,63 @@ class PersonalizedRoadmapService:
             "asked_quiz_ids": [],
         }
 
+        dom_lower = target_domain.lower()
+        if "java" in dom_lower and "script" not in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact Java learning roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific skill, project, or career milestone do you want to achieve with Java?"
+            )
+            quick_opts = [
+                "Enterprise Java & Spring Boot Microservices",
+                "Core Java OOP & High-Performance Collections",
+                "Android Development with Java & Kotlin",
+                "Java Backend Systems & Distributed Architecture",
+            ]
+        elif "sql" in dom_lower or "database" in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact SQL & Database learning roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific database skill or data engineering outcome do you want to achieve?"
+            )
+            quick_opts = [
+                "PostgreSQL & Relational Database Design",
+                "Advanced SQL Analytics & Window Functions",
+                "Database Performance Tuning & Indexing",
+                "Backend SQL & ORM Integration",
+            ]
+        elif "ml" in dom_lower or "machine learning" in dom_lower or "ai" in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a modern AI & Machine Learning roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific AI or ML milestone do you want to build towards?"
+            )
+            quick_opts = [
+                "Machine Learning & Predictive Modeling",
+                "Deep Learning & PyTorch Architectures",
+                "LLMs, RAG & Generative AI Systems",
+                "Production ML Pipelines & Model Serving",
+            ]
+        elif "android" in dom_lower or "compose" in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design an Android & Kotlin roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What kind of mobile applications do you want to build?"
+            )
+            quick_opts = [
+                "Modern Android App with Kotlin & Compose",
+                "Offline-First Mobile Architecture with Room",
+                "Android App Performance & Multi-Module Clean Architecture",
+                "Android Portfolio Capstone Application",
+            ]
+        else:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific skill, project, or career milestone do you want to achieve?"
+            )
+            quick_opts = [
+                "Python Data Analysis & Visualization",
+                "Modern Android App with Kotlin & Compose",
+                "FastAPI Backend & Distributed Systems",
+                "Machine Learning & AI Engineering",
+            ]
+
         system_prompt = (
             "You are EduNova's AI Learning Advisor. Your goal is to guide learners to a tailored roadmap.\n"
             "You ask ONE focused question at a time. Do not overwhelm the learner.\n"
@@ -544,24 +782,15 @@ class PersonalizedRoadmapService:
         user_prompt = (
             f"Learner Context:\n"
             f"- Name: {context['name']}\n"
+            f"- Domain: {target_domain}\n"
             f"- Mode: {context['education_mode']}\n"
             f"- Level: {context['stated_level']}\n"
             f"- Interests: {context['interests']}\n"
             f"- Verified Progress:\n" + "\n".join(f"  * {e}" for e in context["verified_evidence"]) + "\n"
             f"- Known Memories:\n" + "\n".join(f"  * {m}" for m in context["memories"]) + "\n\n"
-            "Initiate the assessment session with a concise, warm message and ask the first question."
+            f"Initiate the assessment session for domain '{target_domain}' with a concise, warm message and ask the first question."
         )
 
-        mentor_text = (
-            f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact roadmap tailored to your exact goal and baseline skills.\n\n"
-            "What specific skill, project, or career milestone do you want to achieve?"
-        )
-        quick_opts = [
-            "Python Data Analysis & Visualization",
-            "Modern Android App with Kotlin & Compose",
-            "FastAPI Backend & Distributed Systems",
-            "Machine Learning & AI Engineering",
-        ]
         state = "COLLECTING_GOALS"
         completeness = 20
 
@@ -594,6 +823,7 @@ class PersonalizedRoadmapService:
         session = await self.assessment_repo.create_session(
             user_id=user_id,
             state=state,
+            domain=target_domain,
             collected_profile=initial_profile,
             messages=initial_messages,
             pending_quiz=None,
@@ -601,8 +831,9 @@ class PersonalizedRoadmapService:
         await self.db.commit()
 
         logger.info(
-            "ASSESSMENT_TRANSITION: session_id=%s step=%s state=%s completeness=%s",
+            "ASSESSMENT_TRANSITION: session_id=%s domain=%s step=%s state=%s completeness=%s",
             session.id,
+            target_domain,
             STEP_GOAL,
             state,
             completeness,
@@ -722,10 +953,11 @@ class PersonalizedRoadmapService:
             if is_correct:
                 quiz_feedback_note = f"Verified: {tested_skill} (Demonstrated solid proficiency)."
                 collected_profile.setdefault("strengths", []).append(tested_skill)
+                collected_profile.setdefault("verified_mastery", []).append(tested_skill)
                 skill_breakdown.append(
                     {
                         "skill": tested_skill,
-                        "status": "demonstrated",
+                        "status": "verified_mastery",
                         "source": "diagnostic_verified",
                         "confidence": 0.95,
                         "rationale": "Correctly answered targeted diagnostic question.",
@@ -735,10 +967,11 @@ class PersonalizedRoadmapService:
                 exp = pending_quiz.get("explanation", "")
                 quiz_feedback_note = f"Focus Area: {tested_skill}. Concept insight: {exp}"
                 collected_profile.setdefault("skill_gaps", []).append(tested_skill)
+                collected_profile.setdefault("needs_learning", []).append(tested_skill)
                 skill_breakdown.append(
                     {
                         "skill": tested_skill,
-                        "status": "developing",
+                        "status": "needs_learning",
                         "source": "diagnostic_verified",
                         "confidence": 0.85,
                         "rationale": f"Needs reinforcement in {tested_skill}.",
@@ -779,6 +1012,15 @@ class PersonalizedRoadmapService:
                         completed_steps.append(STAGE_BASELINE)
                     collected_profile.setdefault("self_reported_information", []).append(
                         f"Declared Baseline Level: {norm_level}"
+                    )
+                    skill_breakdown.append(
+                        {
+                            "skill": f"{norm_level} Foundations",
+                            "status": "partial_mastery",
+                            "source": "self_reported",
+                            "confidence": 0.60,
+                            "rationale": f"Self-reported baseline proficiency: {norm_level}.",
+                        }
                     )
 
             elif current_step in (STEP_AVAILABILITY, STAGE_CONSTRAINTS) or (norm_hours and session.weekly_hours is None):
@@ -856,10 +1098,12 @@ class PersonalizedRoadmapService:
             next_state = "ASSESSING_AVAILABILITY"
 
         elif next_step in (STEP_SKILLS, STAGE_SKILLS):
+            domain_val = getattr(session, "domain", None) or collected_profile.get("domain") or "Python"
             diag = _select_diagnostic_question_for_goal(
                 goal=session.goal,
                 level=session.target_level,
                 already_asked_ids=asked_quiz_ids,
+                domain=domain_val,
             )
             asked_quiz_ids.append(diag["id"])
             new_pending_quiz = diag
@@ -1117,148 +1361,408 @@ class PersonalizedRoadmapService:
         strengths = profile.get("strengths", [])
         gaps = profile.get("skill_gaps", [])
         level = profile.get("starting_level", "Beginner")
+        breakdown = profile.get("skill_gap_breakdown", [])
 
-        demonstrated = list(strengths)
-        developing = list(gaps)
-        not_yet_demonstrated = []
+        verified_mastery = [
+            item["skill"] for item in breakdown if item.get("status") in ("verified_mastery", "demonstrated")
+        ]
+        if not verified_mastery and strengths:
+            verified_mastery = list(strengths)
 
-        if level == "Beginner" and not developing:
-            developing.append(f"{profile['goal']} Foundations")
-        elif level == "Advanced" and not demonstrated:
-            demonstrated.append(f"{profile['goal']} Core Competence")
+        partial_mastery = [
+            item["skill"] for item in breakdown if item.get("status") in ("partial_mastery", "familiar")
+        ]
+        needs_learning = [
+            item["skill"] for item in breakdown if item.get("status") in ("needs_learning", "developing")
+        ]
+        if not needs_learning and gaps:
+            needs_learning = list(gaps)
+
+        if level == "Beginner" and not needs_learning:
+            needs_learning.append(f"{profile['goal']} Foundations")
+        elif level == "Advanced" and not verified_mastery:
+            verified_mastery.append(f"{profile['goal']} Core Competence")
+
+        demonstrated = list(verified_mastery)
+        developing = list(needs_learning) + list(partial_mastery)
 
         return {
+            "verified_mastery": verified_mastery,
+            "partial_mastery": partial_mastery,
+            "needs_learning": needs_learning,
+            "not_assessed": [],
             "demonstrated_skills": demonstrated,
             "developing_skills": developing,
-            "not_yet_demonstrated": not_yet_demonstrated,
+            "not_yet_demonstrated": [],
         }
 
-    def _step3_design_curriculum_phases(
-        self, profile: Dict[str, Any], gap_model: Dict[str, Any], catalog: List[Dict[str, Any]]
+    def _get_standard_curriculum_for_domain(
+        self, domain: str, goal: str = "", level: str = "Beginner"
     ) -> List[Dict[str, Any]]:
-        """Stage 3: Design ordered dependency-aware curriculum phases."""
-        goal = profile["goal"]
-        level = profile["starting_level"]
-        hours = profile["weekly_hours"]
+        """Retrieve authentic, curriculum-grounded standard roadmap phases for supported domains."""
+        combined = f"{domain} {goal}".lower()
 
-        rec_c1 = [catalog[0]["id"]] if catalog else []
-        rec_c2 = [catalog[1]["id"]] if len(catalog) > 1 else rec_c1
+        if "java" in combined and "script" not in combined:
+            return [
+                {
+                    "title": "Phase 1: Java Foundations & Object-Oriented Architecture" if level != "Advanced" else "Phase 1: Deep Java Architecture & JVM Concurrency",
+                    "objective": "Master Java language mechanics, type systems, and object-oriented encapsulation" if level != "Advanced" else "Master enterprise JVM architecture, memory profiling, and high-throughput concurrency",
+                    "durationWeeks": 3,
+                    "topics": ["Java Core & Syntax", "OOP & Interfaces", "Collections & Memory"],
+                    "tasks": [
+                        {
+                            "id": "java_t1_1" if level != "Advanced" else "t1_1",
+                            "title": "Set Up Workspace & Core Java Syntax Lab" if level != "Advanced" else "Benchmark and Profile Core Systems",
+                            "description": "Initialize JDK and master Java syntax" if level != "Advanced" else "Analyze memory allocations and CPU bottlenecks under high concurrency",
+                            "instructions": "Install OpenJDK 17+, configure build tool, and complete foundational syntax exercises." if level != "Advanced" else "Set up automated benchmark test suite and measure memory allocations under stress.",
+                            "estimatedHours": 2.5,
+                            "resources": ["Official Oracle Java Documentation", "Java SE Specifications"],
+                            "completionCriteria": "Java workspace compiles cleanly and passes all basic syntax tests",
+                            "isCompleted": False,
+                            "dependencies": [],
+                            "topicId": "java_syntax" if level != "Advanced" else "t1_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["JVM & Bytecode", "Statements & Identifiers", "Primitive vs Reference Types"],
+                            "learningObjectives": ["Configure JDK development environment", "Write type-safe Java programs"],
+                            "codeExample": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Java Ready\");\n    }\n}",
+                        },
+                        {
+                            "id": "java_t1_2" if level != "Advanced" else "t1_2",
+                            "title": "Build OOP Practice Exercise & Interface Contracts" if level != "Advanced" else "Implement Production Concurrency Pattern",
+                            "description": "Apply inheritance, encapsulation, and interface contracts" if level != "Advanced" else "Construct thread-safe asynchronous pipeline with volatile visibility",
+                            "instructions": "Implement domain models with interface default methods and private fields." if level != "Advanced" else "Implement thread-safe queue with volatile state and atomic operators.",
+                            "estimatedHours": 3.0,
+                            "resources": ["Effective Java (Joshua Bloch)", "Clean Architecture Guide"],
+                            "completionCriteria": "Passes all verification test cases with proper interface decoupling",
+                            "isCompleted": False,
+                            "dependencies": ["java_t1_1" if level != "Advanced" else "t1_1"],
+                            "topicId": "java_oop" if level != "Advanced" else "t1_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Encapsulation", "Interface Default Methods", "Polymorphism"],
+                            "learningObjectives": ["Design decoupled class hierarchies", "Prevent mutation leaks"],
+                            "codeExample": "public interface Service<T> {\n    T execute(String id);\n    default boolean validate(T item) { return item != null; }\n}",
+                        },
+                    ],
+                    "activities": ["Set up OpenJDK workspace", "Build OOP Domain Model"],
+                    "resources": ["Oracle Java Documentation", "Effective Java Reference"],
+                    "milestones": [
+                        {
+                            "title": "Java Core & Architecture Milestone",
+                            "completionCriteria": ["Complete syntax lab", "Pass OOP unit test suite"],
+                            "assessment": "Practical coding lab & unit tests",
+                            "passingCriteria": "Score >= 80% on concepts and all tests green",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+                {
+                    "title": "Phase 2: Applied Projects & Enterprise Microservices",
+                    "objective": "Build production-grade Java applications with persistence and REST APIs",
+                    "durationWeeks": 4,
+                    "topics": ["Spring Boot & REST", "Spring Data JPA & Persistence", "Capstone Delivery"],
+                    "tasks": [
+                        {
+                            "id": "java_t2_1" if level != "Advanced" else "t2_1",
+                            "title": "Implement Data Persistence & Architecture",
+                            "description": "Connect relational database using Spring Data JPA and repository pattern",
+                            "instructions": "Define JPA entity models, repositories, and transactional boundary services.",
+                            "estimatedHours": 3.5,
+                            "resources": ["Spring Boot Reference Documentation", "Hibernate ORM Guide"],
+                            "completionCriteria": "Entities persist reliably with ACID rollback guarantees on failure",
+                            "isCompleted": False,
+                            "dependencies": ["java_t1_2" if level != "Advanced" else "t1_2"],
+                            "topicId": "java_persistence" if level != "Advanced" else "t2_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["JPA Entity Mapping", "Spring Data Repositories", "Transaction Management"],
+                            "learningObjectives": ["Persist domain entities with ACID safety", "Structure repository layer"],
+                            "codeExample": "@Entity\npublic class Task {\n    @Id @GeneratedValue private Long id;\n    private String title;\n}",
+                        },
+                        {
+                            "id": "java_t2_2" if level != "Advanced" else "t2_2",
+                            "title": "Complete Capstone Portfolio Project",
+                            "description": "Deliver a complete, tested production-ready Java service",
+                            "instructions": "Implement end-to-end REST API, add unit tests with JUnit 5, and containerize.",
+                            "estimatedHours": 4.5,
+                            "resources": ["Production Microservices Checklist", "JUnit 5 User Guide"],
+                            "completionCriteria": "All end-to-end integration tests pass with clean code review rubric",
+                            "isCompleted": False,
+                            "dependencies": ["java_t2_1" if level != "Advanced" else "t2_1"],
+                            "topicId": "java_capstone" if level != "Advanced" else "t2_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["REST Controller Endpoints", "JUnit 5 Testing", "Docker Packaging"],
+                            "learningObjectives": ["Ship full-stack Java service", "Automate unit and integration tests"],
+                            "codeExample": "@RestController\n@RequestMapping(\"/api\")\npublic class ApiController { ... }",
+                        },
+                    ],
+                    "activities": ["Build Spring Data Persistence Layer", "Ship Capstone Service"],
+                    "resources": ["Spring Guide", "REST Best Practices"],
+                    "milestones": [
+                        {
+                            "title": "Java Enterprise Capstone Delivery",
+                            "completionCriteria": ["Implement JPA persistence", "Pass integration tests"],
+                            "assessment": "Capstone code review",
+                            "passingCriteria": "Complete user journeys pass automated tests",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+            ]
 
+        if "sql" in combined or "database" in combined or "postgres" in combined:
+            return [
+                {
+                    "title": "Phase 1: Foundations & Core Concepts",
+                    "objective": "Master relational schema design, DDL definitions, and fundamental SELECT queries",
+                    "durationWeeks": 3,
+                    "topics": ["RDBMS Modeling", "DDL & Constraints", "Query Syntax & WHERE Filtering"],
+                    "tasks": [
+                        {
+                            "id": "t1_1",
+                            "title": "Set Up Workspace & Core Syntax Lab",
+                            "description": "Initialize database client and master foundational SQL queries",
+                            "instructions": "Set up PostgreSQL/SQLite, write DDL schemas with primary and foreign keys, and run basic queries.",
+                            "estimatedHours": 2.5,
+                            "resources": ["PostgreSQL Documentation", "SQL Antipatterns Guide"],
+                            "completionCriteria": "Relational schema creates cleanly with validated primary and foreign key constraints",
+                            "isCompleted": False,
+                            "dependencies": [],
+                            "topicId": "sql_syntax",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Relational Schemas", "SELECT & FROM", "WHERE vs HAVING"],
+                            "learningObjectives": ["Understand relational table structures", "Filter rows with compound predicates"],
+                            "codeExample": "SELECT first_name, email FROM users WHERE is_active = TRUE;",
+                        },
+                        {
+                            "id": "t1_2",
+                            "title": "Build Interactive Practice Exercise",
+                            "description": "Execute multi-table relational JOINs and grouped aggregations",
+                            "instructions": "Write queries with INNER/LEFT JOINs and aggregate summaries using GROUP BY and HAVING.",
+                            "estimatedHours": 3.0,
+                            "resources": ["Modern SQL Guide", "EduNova Practice Hub"],
+                            "completionCriteria": "Queries return correct joined datasets without Cartesian products",
+                            "isCompleted": False,
+                            "dependencies": ["t1_1"],
+                            "topicId": "sql_joins",
+                            "status": "UNLOCKED",
+                            "subtopics": ["INNER vs LEFT JOIN", "GROUP BY & Aggregations", "HAVING Predicates"],
+                            "learningObjectives": ["Join relational tables safely", "Compute aggregate business metrics"],
+                            "codeExample": "SELECT d.name, COUNT(e.id) FROM depts d JOIN emps e ON d.id = e.dept_id GROUP BY d.name HAVING COUNT(e.id) > 2;",
+                        },
+                    ],
+                    "activities": ["Design 3NF Relational Schema", "Run Multi-Table Analytical Queries"],
+                    "resources": ["PostgreSQL Official Manual", "Modern SQL Guide"],
+                    "milestones": [
+                        {
+                            "title": "SQL Relational Competency Milestone",
+                            "completionCriteria": ["Design normalized schema", "Pass query assessment"],
+                            "assessment": "SQL Query Evaluation",
+                            "passingCriteria": "All analytical queries produce exact expected results",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+                {
+                    "title": "Phase 2: Applied Projects & Advanced Skills",
+                    "objective": "Build advanced analytics with window functions and optimize transaction performance",
+                    "durationWeeks": 4,
+                    "topics": ["Window Functions & CTEs", "Indexing & Transactions", "Analytics Capstone"],
+                    "tasks": [
+                        {
+                            "id": "t2_1",
+                            "title": "Implement Data Persistence & Architecture",
+                            "description": "Optimize query execution plans and configure ACID transactions",
+                            "instructions": "Create B-Tree indexes, analyze EXPLAIN ANALYZE execution plans, and enforce transaction isolation levels.",
+                            "estimatedHours": 3.5,
+                            "resources": ["Use The Index, Luke!", "Database Internals Book"],
+                            "completionCriteria": "Query latency reduced by >= 70% with verified index scans and zero concurrency anomalies",
+                            "isCompleted": False,
+                            "dependencies": ["t1_2"],
+                            "topicId": "sql_indexes",
+                            "status": "UNLOCKED",
+                            "subtopics": ["B-Tree Indexes", "EXPLAIN ANALYZE", "ACID Transaction Isolation"],
+                            "learningObjectives": ["Diagnose slow query plans", "Prevent transaction concurrency anomalies"],
+                            "codeExample": "EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 42;",
+                        },
+                        {
+                            "id": "t2_2",
+                            "title": "Complete Capstone Portfolio Project",
+                            "description": "Deliver a comprehensive relational analytics warehouse",
+                            "instructions": "Implement complex analytical reports using DENSE_RANK(), CTEs, and cumulative window frames.",
+                            "estimatedHours": 4.5,
+                            "resources": ["Data Warehouse Architecture Guide"],
+                            "completionCriteria": "End-to-end analytical warehouse schema and reporting suite completed and validated",
+                            "isCompleted": False,
+                            "dependencies": ["t2_1"],
+                            "topicId": "sql_capstone",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Window Functions (RANK, DENSE_RANK)", "Common Table Expressions (CTEs)", "Warehouse Schema"],
+                            "learningObjectives": ["Author advanced analytical window queries", "Build production reporting warehouse"],
+                            "codeExample": "SELECT id, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) as rank FROM emp;",
+                        },
+                    ],
+                    "activities": ["Optimize B-Tree Indexes", "Deliver Analytics Warehouse Capstone"],
+                    "resources": ["Indexing Reference", "Analytics Rubric"],
+                    "milestones": [
+                        {
+                            "title": "Database Engineering Capstone Delivery",
+                            "completionCriteria": ["Implement analytical warehouse", "Validate query performance"],
+                            "assessment": "Project evaluation against rubric",
+                            "passingCriteria": "All analytical queries executed and benchmarked",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+            ]
+
+        # General / Python / Android / ML baseline (backward-compatible with quality tests)
         if level == "Advanced":
-            phase1_title = "Phase 1: Deep Architecture & Performance Engineering"
-            phase1_obj = f"Master enterprise architecture, internal performance optimization, and concurrency for {goal}"
-            phase1_tasks = [
+            return [
                 {
-                    "id": "t1_1",
-                    "title": "Benchmark and Profile Core Systems",
-                    "description": "Analyze memory and CPU bottlenecks under heavy concurrency",
-                    "instructions": "Set up automated benchmark test suite and measure memory allocations under stress.",
-                    "estimatedHours": max(2.0, hours * 0.4),
-                    "resources": ["Official Performance Guide", "Profiling Tools Documentation"],
-                    "completionCriteria": "Produce benchmark report with latency graphs and allocation flame charts",
-                    "isCompleted": False,
-                    "dependencies": [],
+                    "title": "Phase 1: Deep Architecture & Performance Engineering",
+                    "objective": f"Master enterprise architecture, internal performance optimization, and concurrency for {goal}",
+                    "durationWeeks": 3,
+                    "topics": ["System Profiling", "Concurrency Architecture", "Memory Optimization"],
+                    "tasks": [
+                        {
+                            "id": "t1_1",
+                            "title": "Benchmark and Profile Core Systems",
+                            "description": "Analyze memory and CPU bottlenecks under heavy concurrency",
+                            "instructions": "Set up automated benchmark test suite and measure memory allocations under stress.",
+                            "estimatedHours": 3.0,
+                            "resources": ["Official Performance Guide", "Profiling Tools Documentation"],
+                            "completionCriteria": "Produce benchmark report with latency graphs and allocation flame charts",
+                            "isCompleted": False,
+                            "dependencies": [],
+                            "topicId": "t1_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Benchmarking", "Memory Flame Graphs", "Profiling"],
+                            "learningObjectives": ["Measure memory allocations", "Profile CPU bottlenecks"],
+                            "codeExample": "# Benchmark profile\nimport time\nt0 = time.perf_counter()",
+                        },
+                        {
+                            "id": "t1_2",
+                            "title": "Implement Production Concurrency Pattern",
+                            "description": "Construct thread-safe asynchronous pipeline",
+                            "instructions": "Implement mutex-free asynchronous queue or reactive flow with backpressure handling.",
+                            "estimatedHours": 3.5,
+                            "resources": ["Concurrency Best Practices", "Architecture Blueprint"],
+                            "completionCriteria": "All concurrent integration tests pass with zero race conditions",
+                            "isCompleted": False,
+                            "dependencies": ["t1_1"],
+                            "topicId": "t1_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Reactive Streams", "Backpressure", "Thread Safety"],
+                            "learningObjectives": ["Build concurrent pipeline", "Eliminate race conditions"],
+                            "codeExample": "# Concurrency pipeline\nimport asyncio",
+                        },
+                    ],
+                    "activities": ["Benchmark Core Systems", "Implement Concurrency Architecture"],
+                    "resources": ["Official Performance Guide", "Profiling Documentation"],
+                    "milestones": [
+                        {
+                            "title": "Core Architecture Milestone",
+                            "completionCriteria": ["Complete benchmark report", "Pass concurrency tests"],
+                            "assessment": "Practical performance assessment",
+                            "passingCriteria": "Latency P99 < 50ms under stress",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
                 },
                 {
-                    "id": "t1_2",
-                    "title": "Implement Production Concurrency Pattern",
-                    "description": "Construct thread-safe asynchronous pipeline",
-                    "instructions": "Implement mutex-free asynchronous queue or reactive flow with backpressure handling.",
-                    "estimatedHours": max(2.0, hours * 0.6),
-                    "resources": ["Concurrency Best Practices", "Architecture Blueprint"],
-                    "completionCriteria": "All concurrent integration tests pass with zero race conditions",
-                    "isCompleted": False,
-                    "dependencies": ["t1_1"],
-                },
-            ]
-            phase2_title = "Phase 2: End-to-End Capstone Delivery & Production Hardening"
-            phase2_obj = f"Design, build, and deploy an end-to-end production-ready {goal} showcase project"
-            phase2_tasks = [
-                {
-                    "id": "t2_1",
-                    "title": "Build Modular Domain Architecture",
-                    "description": "Implement clean domain boundary with dependency inversion",
-                    "instructions": "Structure application into independent modules with comprehensive interface contracts.",
-                    "estimatedHours": max(3.0, hours * 0.5),
-                    "resources": ["Clean Architecture Specification"],
-                    "completionCriteria": "Module boundaries validated with automated architecture tests",
-                    "isCompleted": False,
-                    "dependencies": ["t1_2"],
-                },
-                {
-                    "id": "t2_2",
-                    "title": "Deploy & Automate CI/CD Pipeline",
-                    "description": "Ship automated verification and deployment workflow",
-                    "instructions": "Configure automated CI test runner with regression quality gates.",
-                    "estimatedHours": max(3.0, hours * 0.5),
-                    "resources": ["Deployment & Release Checklist"],
-                    "completionCriteria": "Automated build pipeline achieves 100% test pass rate on clean repository",
-                    "isCompleted": False,
-                    "dependencies": ["t2_1"],
-                },
-            ]
-        else:
-            phase1_title = "Phase 1: Foundations & Core Concepts"
-            phase1_obj = f"Establish core proficiency in {goal}"
-            phase1_tasks = [
-                {
-                    "id": "t1_1",
-                    "title": "Set Up Workspace & Core Syntax Lab",
-                    "description": "Initialize development environment and master foundational building blocks",
-                    "instructions": "Install required SDKs, configure formatting/linting, and complete foundational exercises.",
-                    "estimatedHours": max(2.0, hours * 0.5),
-                    "resources": ["EduNova Getting Started Guide", "Official Documentation"],
-                    "completionCriteria": "Starter workspace runs cleanly with all basic lint checks passing",
-                    "isCompleted": False,
-                    "dependencies": [],
-                },
-                {
-                    "id": "t1_2",
-                    "title": "Build Interactive Practice Exercise",
-                    "description": "Apply core concepts to build a working standalone utility",
-                    "instructions": "Write clean, modular code to solve domain exercises with automated input validation.",
-                    "estimatedHours": max(2.0, hours * 0.5),
-                    "resources": ["Core Practice Workbook"],
-                    "completionCriteria": "Passes all verification test cases and handles invalid input safely",
-                    "isCompleted": False,
-                    "dependencies": ["t1_1"],
-                },
-            ]
-            phase2_title = "Phase 2: Applied Projects & Advanced Skills"
-            phase2_obj = "Build end-to-end practical projects demonstrating mastery"
-            phase2_tasks = [
-                {
-                    "id": "t2_1",
-                    "title": "Implement Data Persistence & Architecture",
-                    "description": "Connect durable local storage and REST/API synchronization",
-                    "instructions": "Implement repository layer with local cache and resilient error handling.",
-                    "estimatedHours": max(3.0, hours * 0.5),
-                    "resources": ["API Integration Guide", "Persistence Patterns"],
-                    "completionCriteria": "Application persists state across restarts and functions gracefully offline",
-                    "isCompleted": False,
-                    "dependencies": ["t1_2"],
-                },
-                {
-                    "id": "t2_2",
-                    "title": "Complete Capstone Portfolio Project",
-                    "description": "Deliver polished, tested showcase application",
-                    "instructions": "Integrate all feature modules, write unit tests, and document architecture in README.",
-                    "estimatedHours": max(3.0, hours * 0.5),
-                    "resources": ["Capstone Project Rubric"],
-                    "completionCriteria": "Complete end-to-end user workflow validated with automated unit tests",
-                    "isCompleted": False,
-                    "dependencies": ["t2_1"],
+                    "title": "Phase 2: End-to-End Capstone Delivery & Production Hardening",
+                    "objective": f"Design, build, and deploy an end-to-end production-ready {goal} showcase project",
+                    "durationWeeks": 5,
+                    "topics": ["Modular Architecture", "CI/CD & Hardening", "Capstone Showcase"],
+                    "tasks": [
+                        {
+                            "id": "t2_1",
+                            "title": "Build Modular Domain Architecture",
+                            "description": "Implement clean domain boundary with dependency inversion",
+                            "instructions": "Structure application into independent modules with comprehensive interface contracts.",
+                            "estimatedHours": 4.0,
+                            "resources": ["Clean Architecture Specification"],
+                            "completionCriteria": "Module boundaries validated with automated architecture tests",
+                            "isCompleted": False,
+                            "dependencies": ["t1_2"],
+                            "topicId": "t2_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Clean Architecture", "Interface Decoupling", "Boundary Testing"],
+                            "learningObjectives": ["Structure modular code", "Enforce boundary rules"],
+                            "codeExample": "# Modular boundary\nclass DomainRepository: pass",
+                        },
+                        {
+                            "id": "t2_2",
+                            "title": "Deploy & Automate CI/CD Pipeline",
+                            "description": "Ship automated verification and deployment workflow",
+                            "instructions": "Configure automated CI test runner with regression quality gates.",
+                            "estimatedHours": 4.0,
+                            "resources": ["Deployment & Release Checklist"],
+                            "completionCriteria": "Automated build pipeline achieves 100% test pass rate on clean repository",
+                            "isCompleted": False,
+                            "dependencies": ["t2_1"],
+                            "topicId": "t2_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["CI/CD Automation", "Quality Gates", "Deployment"],
+                            "learningObjectives": ["Configure automated verification", "Ship production build"],
+                            "codeExample": "# CI workflow\nsteps:\n  - run: pytest",
+                        },
+                    ],
+                    "activities": ["Build Domain Architecture", "Deploy Pipeline"],
+                    "resources": ["Clean Architecture Spec", "Release Checklist"],
+                    "milestones": [
+                        {
+                            "title": "Capstone Project Delivery",
+                            "completionCriteria": ["Build and test functional project", "Code review"],
+                            "assessment": "Project evaluation against rubric",
+                            "passingCriteria": "All user stories completed and tested",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
                 },
             ]
 
+        # Standard Foundations & Applied Projects
         return [
             {
-                "title": phase1_title,
-                "objective": phase1_obj,
+                "title": "Phase 1: Foundations & Core Concepts",
+                "objective": f"Establish core proficiency in {goal}",
                 "durationWeeks": 3,
                 "topics": ["Foundations & Setup", "Core Architecture", "Hands-on Practice"],
-                "tasks": phase1_tasks,
-                "activities": [t["title"] for t in phase1_tasks],
+                "tasks": [
+                    {
+                        "id": "t1_1",
+                        "title": "Set Up Workspace & Core Syntax Lab",
+                        "description": "Initialize development environment and master foundational building blocks",
+                        "instructions": "Install required SDKs, configure formatting/linting, and complete foundational exercises.",
+                        "estimatedHours": 2.5,
+                        "resources": ["EduNova Getting Started Guide", "Official Documentation"],
+                        "completionCriteria": "Starter workspace runs cleanly with all basic lint checks passing",
+                        "isCompleted": False,
+                        "dependencies": [],
+                        "topicId": "t1_1",
+                        "status": "UNLOCKED",
+                        "subtopics": ["Setup", "Syntax", "Environment"],
+                        "learningObjectives": ["Configure development tools", "Run basic syntax exercises"],
+                        "codeExample": "# Core lab\nprint('Workspace initialized')",
+                    },
+                    {
+                        "id": "t1_2",
+                        "title": "Build Interactive Practice Exercise",
+                        "description": "Apply core concepts to build a working standalone utility",
+                        "instructions": "Write clean, modular code to solve domain exercises with automated input validation.",
+                        "estimatedHours": 3.0,
+                        "resources": ["Core Practice Workbook"],
+                        "completionCriteria": "Passes all verification test cases and handles invalid input safely",
+                        "isCompleted": False,
+                        "dependencies": ["t1_1"],
+                        "topicId": "t1_2",
+                        "status": "UNLOCKED",
+                        "subtopics": ["Practice Lab", "Input Validation", "Core Logic"],
+                        "learningObjectives": ["Implement modular code", "Handle edge cases safely"],
+                        "codeExample": "# Exercise\ndef run_task(): return True",
+                    },
+                ],
+                "activities": ["Set Up Workspace", "Build Interactive Practice"],
                 "resources": ["Official Documentation", "EduNova Practice Hub"],
                 "milestones": [
                     {
@@ -1268,15 +1772,48 @@ class PersonalizedRoadmapService:
                         "passingCriteria": "Score >= 80% on concepts",
                     }
                 ],
-                "recommendedCourseIds": rec_c1,
+                "recommendedCourseIds": [],
             },
             {
-                "title": phase2_title,
-                "objective": phase2_obj,
+                "title": "Phase 2: Applied Projects & Advanced Skills",
+                "objective": "Build end-to-end practical projects demonstrating mastery",
                 "durationWeeks": 5,
                 "topics": ["Integration & Storage", "Capstone Implementation", "Testing & Optimization"],
-                "tasks": phase2_tasks,
-                "activities": [t["title"] for t in phase2_tasks],
+                "tasks": [
+                    {
+                        "id": "t2_1",
+                        "title": "Implement Data Persistence & Architecture",
+                        "description": "Connect durable local storage and REST/API synchronization",
+                        "instructions": "Implement repository layer with local cache and resilient error handling.",
+                        "estimatedHours": 3.5,
+                        "resources": ["API Integration Guide", "Persistence Patterns"],
+                        "completionCriteria": "Application persists state across restarts and functions gracefully offline",
+                        "isCompleted": False,
+                        "dependencies": ["t1_2"],
+                        "topicId": "t2_1",
+                        "status": "UNLOCKED",
+                        "subtopics": ["Persistence", "Offline Storage", "Repository Pattern"],
+                        "learningObjectives": ["Implement durable storage", "Handle network sync"],
+                        "codeExample": "# Persistence layer\nclass LocalRepository: pass",
+                    },
+                    {
+                        "id": "t2_2",
+                        "title": "Complete Capstone Portfolio Project",
+                        "description": "Deliver polished, tested showcase application",
+                        "instructions": "Integrate all feature modules, write unit tests, and document architecture in README.",
+                        "estimatedHours": 4.0,
+                        "resources": ["Capstone Project Rubric"],
+                        "completionCriteria": "Complete end-to-end user workflow validated with automated unit tests",
+                        "isCompleted": False,
+                        "dependencies": ["t2_1"],
+                        "topicId": "t2_2",
+                        "status": "UNLOCKED",
+                        "subtopics": ["Testing", "Documentation", "Deployment"],
+                        "learningObjectives": ["Integrate complete workflow", "Ship tested application"],
+                        "codeExample": "# Capstone\ndef main(): print('Shipped')",
+                    },
+                ],
+                "activities": ["Implement Persistence", "Complete Capstone Project"],
                 "resources": ["Architecture Guidelines", "Capstone Project Rubric"],
                 "milestones": [
                     {
@@ -1286,9 +1823,95 @@ class PersonalizedRoadmapService:
                         "passingCriteria": "All user stories completed and tested",
                     }
                 ],
-                "recommendedCourseIds": rec_c2,
+                "recommendedCourseIds": [],
             },
         ]
+
+    def _step3_design_curriculum_phases(
+        self,
+        profile: Dict[str, Any],
+        gap_model: Dict[str, Any],
+        catalog: List[Dict[str, Any]],
+        domain: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Stage 3: Design ordered dependency-aware curriculum phases grounded in verified domain curriculum."""
+        dom = domain or profile.get("domain") or "Python"
+        goal = profile.get("goal", "")
+        level = profile.get("starting_level", "Beginner")
+        hours = max(1.0, float(profile.get("weekly_hours", 6.0)))
+
+        # 1. Fetch domain-grounded template
+        phases = self._get_standard_curriculum_for_domain(domain=dom, goal=goal, level=level)
+
+        # 2. Attach recommended course IDs if available
+        rec_c1 = [catalog[0]["id"]] if catalog else []
+        rec_c2 = [catalog[1]["id"]] if len(catalog) > 1 else rec_c1
+        if len(phases) > 0 and not phases[0]["recommendedCourseIds"]:
+            phases[0]["recommendedCourseIds"] = rec_c1
+        if len(phases) > 1 and not phases[1]["recommendedCourseIds"]:
+            phases[1]["recommendedCourseIds"] = rec_c2
+
+        # 3. Adapt tasks based on verified mastery vs skill gaps
+        verified_skills = [s.lower() for s in gap_model.get("verified_mastery", [])]
+        demonstrated_skills = [s.lower() for s in gap_model.get("demonstrated_skills", [])]
+        mastered_set = set(verified_skills + demonstrated_skills)
+
+        needs_learning_skills = [s.lower() for s in gap_model.get("needs_learning", [])]
+
+        skipped_task_ids = set()
+
+        for p_idx, phase in enumerate(phases):
+            for t_idx, task in enumerate(phase["tasks"]):
+                t_title = task["title"].lower()
+                t_skills = [s.lower() for s in task.get("subtopics", [])]
+                
+                # Check for verified mastery match
+                is_mastered = any(
+                    ms in t_title or any(ms in sk for sk in t_skills)
+                    for ms in mastered_set
+                    if len(ms) > 2
+                )
+                
+                # Never skip capstone or final production milestones
+                if is_mastered and "capstone" not in t_title and "ci/cd" not in t_title:
+                    task["status"] = "SKIPPED"
+                    task["skipReason"] = "Demonstrated mastery in diagnostic assessment"
+                    task["isCompleted"] = False
+                    skipped_task_ids.add(task["id"])
+                else:
+                    # Check if targeted review needed
+                    is_gap = any(
+                        gs in t_title or any(gs in sk for sk in t_skills)
+                        for gs in needs_learning_skills
+                        if len(gs) > 2
+                    )
+                    if is_gap:
+                        task["instructions"] = f"Targeted review module: Reinforced based on diagnostic assessment. {task['instructions']}"
+
+        # 4. Resolve prerequisite statuses: downstream tasks treat skipped prerequisites as met
+        for phase in phases:
+            for task in phase["tasks"]:
+                if task.get("status") == "SKIPPED":
+                    continue
+                deps = task.get("dependencies", [])
+                if not deps or all(d in skipped_task_ids for d in deps):
+                    task["status"] = "UNLOCKED"
+                else:
+                    task["status"] = "LOCKED"
+
+        # 5. Calculate realistic duration from remaining (non-skipped) hours
+        remaining_hours = sum(
+            t["estimatedHours"]
+            for p in phases
+            for t in p["tasks"]
+            if t.get("status") != "SKIPPED"
+        )
+        total_weeks = max(2, int(ceil(remaining_hours / hours)))
+        weeks_per_phase = max(1, total_weeks // len(phases))
+        for p in phases:
+            p["durationWeeks"] = weeks_per_phase
+
+        return phases
 
     def _validate_roadmap_quality(
         self, roadmap_data: Dict[str, Any], profile: Dict[str, Any]
@@ -1437,13 +2060,31 @@ class PersonalizedRoadmapService:
 
         # If LLM generation failed or was invalid, construct guaranteed valid schema grounded in profile
         if not roadmap_json:
+            total_weeks = sum(p.get("durationWeeks", 2) for p in curriculum_phases)
+            sched = []
+            curr_w = 1
+            for p in curriculum_phases:
+                w_cnt = p.get("durationWeeks", 2)
+                end_w = curr_w + w_cnt - 1
+                w_label = f"Week {curr_w}-{end_w}" if w_cnt > 1 else f"Week {curr_w}"
+                sched.append(
+                    WeeklyScheduleItemSchema(
+                        day_or_week=w_label,
+                        focusTopic=p["title"],
+                        estimated_hours=profile["weekly_hours"],
+                        tasks=[t["title"] for t in p.get("tasks", []) if t.get("status") != "SKIPPED"],
+                    )
+                )
+                curr_w = end_w + 1
+
             fallback_schema = PersonalizedRoadmapSchema(
                 title=f"{profile['goal']} - Personalized Roadmap",
                 goal=profile["goal"],
                 starting_level=profile["starting_level"],
                 category="General",
-                estimated_duration="8 weeks",
+                estimated_duration=f"{total_weeks} weeks",
                 weekly_hours=profile["weekly_hours"],
+                domain=getattr(session, "domain", None) or profile.get("domain") or "Python",
                 assessment_summary=AssessmentSummarySchema(
                     strengths=gap_model["demonstrated_skills"],
                     skill_gaps=gap_model["developing_skills"],
@@ -1485,8 +2126,14 @@ class PersonalizedRoadmapService:
                                 estimated_hours=float(t.get("estimatedHours", 2.0)),
                                 resources=t.get("resources", []),
                                 completion_criteria=t.get("completionCriteria", ""),
-                                is_completed=False,
+                                is_completed=t.get("isCompleted", False),
                                 dependencies=t.get("dependencies", []),
+                                topic_id=t.get("topicId") or t["id"],
+                                status=t.get("status", "UNLOCKED"),
+                                subtopics=t.get("subtopics", []),
+                                learning_objectives=t.get("learningObjectives", []),
+                                code_example=t.get("codeExample"),
+                                skip_reason=t.get("skipReason"),
                             )
                             for t in p.get("tasks", [])
                         ],
@@ -1505,20 +2152,7 @@ class PersonalizedRoadmapService:
                     )
                     for p in curriculum_phases
                 ],
-                weekly_schedule=[
-                    WeeklyScheduleItemSchema(
-                        day_or_week="Week 1-3",
-                        focusTopic=curriculum_phases[0]["title"],
-                        estimated_hours=profile["weekly_hours"],
-                        tasks=[t["title"] for t in curriculum_phases[0].get("tasks", [])],
-                    ),
-                    WeeklyScheduleItemSchema(
-                        day_or_week="Week 4-8",
-                        focusTopic=curriculum_phases[1]["title"],
-                        estimated_hours=profile["weekly_hours"],
-                        tasks=[t["title"] for t in curriculum_phases[1].get("tasks", [])],
-                    ),
-                ],
+                weekly_schedule=sched,
                 assumptions=["Regular weekly study schedule and access to development environment"],
                 capstone_project=f"Complete production-ready {profile['goal']} showcase application",
                 next_action=f"Start {curriculum_phases[0]['title']}: {curriculum_phases[0]['tasks'][0]['title']}",
@@ -1540,6 +2174,38 @@ class PersonalizedRoadmapService:
             roadmap_json["title"] = f"{profile['goal']} - Personalized Roadmap"
         else:
             roadmap_json["title"] = gen_title
+
+        # Populate domain, topics, and edges for full-screen interactive roadmap viewer
+        domain_name = getattr(session, "domain", None) or profile.get("domain") or "Python"
+        roadmap_json["domain"] = domain_name
+
+        all_topics = []
+        all_edges = []
+        for phase in roadmap_json.get("phases", []):
+            phase_title = phase.get("title", "")
+            for task in phase.get("tasks", []):
+                t_id = task.get("topicId") or task.get("id")
+                all_topics.append({
+                    "id": t_id,
+                    "title": task.get("title", ""),
+                    "description": task.get("description", ""),
+                    "status": task.get("status", "UNLOCKED"),
+                    "phaseTitle": phase_title,
+                    "subtopics": task.get("subtopics", []),
+                    "learningObjectives": task.get("learningObjectives", []),
+                    "codeExample": task.get("codeExample", ""),
+                    "prerequisiteTopicIds": task.get("dependencies", []),
+                    "estimatedHours": float(task.get("estimatedHours", 2.0)),
+                    "skipReason": task.get("skipReason"),
+                })
+                for dep in task.get("dependencies", []):
+                    all_edges.append({
+                        "fromTopicId": dep,
+                        "toTopicId": t_id,
+                    })
+
+        roadmap_json["topics"] = all_topics
+        roadmap_json["edges"] = all_edges
 
         # Step 6: Persist validated roadmap
         items = []
@@ -1772,6 +2438,7 @@ class PersonalizedRoadmapService:
         return AssessmentSessionResponse(
             id=session.id,
             state=session.state,
+            domain=getattr(session, "domain", None) or collected.get("domain") or "Python",
             current_step_id=current_step,
             completed_steps=completed_steps,
             goal=session.goal,
@@ -1815,4 +2482,219 @@ class PersonalizedRoadmapService:
             structure=structure_obj,
             items=items,
             createdAt=roadmap.created_at.isoformat() if roadmap.created_at else None,
+        )
+
+    def validate_subject(self, subject: str) -> ValidateSubjectResponse:
+        """Validates and standardizes a user-specified domain or subject."""
+        sub = (subject or "").strip().lower()
+        if not sub:
+            return ValidateSubjectResponse(
+                isValid=False,
+                standardizedName="General",
+                suggestions=["Python", "Java", "SQL", "Android / Kotlin", "Machine Learning", "Web Development"]
+            )
+
+        if "python" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="Python",
+                suggestions=["Data Analysis with Pandas", "FastAPI Microservices", "Machine Learning Foundations"]
+            )
+        elif "java" in sub or "spring" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="Java",
+                suggestions=["Spring Boot Microservices", "Core Java & OOP", "Java Concurrency & Multithreading"]
+            )
+        elif "sql" in sub or "data" in sub or "postgres" in sub or "relational" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="SQL",
+                suggestions=["Relational Schema Design & 3NF", "PostgreSQL Performance Optimization", "Advanced Window Functions"]
+            )
+        elif "android" in sub or "kotlin" in sub or "compose" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="Android / Kotlin",
+                suggestions=["Jetpack Compose Declarative UI", "Offline-First Room Persistence", "Kotlin Coroutines & Flow"]
+            )
+        elif "ml" in sub or "ai" in sub or "deep" in sub or "machine" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="Machine Learning",
+                suggestions=["PyTorch Deep Learning", "Model Evaluation & Tuning", "ML Engineering Interviews"]
+            )
+        elif "web" in sub or "js" in sub or "javascript" in sub or "react" in sub:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName="Web Development / JavaScript",
+                suggestions=["Modern React & State Management", "Node.js & Express API Design", "TypeScript Fundamentals"]
+            )
+        else:
+            return ValidateSubjectResponse(
+                isValid=True,
+                standardizedName=subject.strip().title(),
+                suggestions=["Foundational Syntax Lab", "Architecture & Design", "Capstone Portfolio Project"]
+            )
+
+    async def get_topic_learning_content(
+        self, roadmap_id: str, topic_id: str, user_id: str
+    ) -> Optional[TopicLearningContentResponse]:
+        """Retrieves rich structured educational content for a specific roadmap topic."""
+        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or not roadmap.structure:
+            return None
+
+        structure = roadmap.structure
+        phases = structure.get("phases", [])
+        matched_task = None
+        for p in phases:
+            for t in p.get("tasks", []):
+                if t.get("topicId") == topic_id or t.get("id") == topic_id:
+                    matched_task = t
+                    break
+            if matched_task:
+                break
+
+        title = matched_task.get("title", f"Topic {topic_id}") if matched_task else f"Topic {topic_id}"
+        desc = matched_task.get("description", "") if matched_task else ""
+        subtopics = matched_task.get("subtopics", []) if matched_task else ["Concept Fundamentals", "Implementation", "Best Practices"]
+        learning_objectives = matched_task.get("learningObjectives", []) if matched_task else [f"Master {title}", "Apply core techniques in code"]
+        code_example = matched_task.get("codeExample", "") if matched_task else ""
+        domain = structure.get("domain") or "Python"
+
+        code_examples = []
+        if code_example:
+            code_examples.append(
+                TopicCodeExampleDto(
+                    title=f"Sample: {title}",
+                    code=code_example,
+                    explanation="Production implementation demonstrating correct idioms and patterns.",
+                    expectedOutput="Executes successfully without warnings."
+                )
+            )
+
+        common_mistakes = [
+            TopicCommonMistakeDto(
+                mistake="Ignoring edge cases and null / empty inputs",
+                whyItHappens="Assuming standard happy-path test data in early development.",
+                howToFix="Add defensive validation checks and comprehensive boundary test cases."
+            )
+        ]
+
+        practice_quiz = TopicPracticeQuizDto(
+            question=f"What is the primary best practice when implementing {title}?",
+            options=[
+                "Enforce modular boundary separation and validate inputs",
+                "Hardcode configuration directly in source files",
+                "Disable automated unit tests to speed up builds",
+                "Catch all exceptions silently without logging"
+            ],
+            correctOptionIndex=0,
+            explanation="Modular separation and input validation prevent runtime regression and security vulnerabilities."
+        )
+
+        resources = [
+            TopicLearningResourceDto(
+                title=f"{domain} Documentation: {title}",
+                url=f"https://docs.edunova.app/{domain.lower().replace(' ', '-')}/{topic_id}",
+                sourceName="EduNova Curriculum Guide",
+                description=desc or f"Official learning documentation and reference for {title}.",
+                isVerified=True
+            )
+        ]
+
+        return TopicLearningContentResponse(
+            topicId=topic_id,
+            topicTitle=title,
+            domain=domain,
+            learningObjectives=learning_objectives,
+            beginnerExplanation=desc or f"Learn foundational and practical patterns for {title}.",
+            syntaxAndConcepts="\n".join([f"• {st}" for st in subtopics]),
+            codeExamples=code_examples,
+            commonMistakes=common_mistakes,
+            practiceQuiz=practice_quiz,
+            resources=resources,
+        )
+
+    async def complete_topic(
+        self, roadmap_id: str, topic_id: str, user_id: str, quiz_passed: bool = True
+    ) -> CompleteTopicResponse:
+        """Marks a topic complete, unlocks downstream prerequisites, and recalculates progress."""
+        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap or not roadmap.structure:
+            raise ValueError("Personalized roadmap not found or unauthorized")
+
+        current_structure = dict(roadmap.structure)
+        phases = current_structure.get("phases", [])
+        topics = current_structure.get("topics", [])
+
+        completed_set = set(current_structure.get("completedMilestones", []))
+        skipped_set = set()
+
+        # Update phases and tasks
+        for p in phases:
+            for t in p.get("tasks", []):
+                tid = t.get("topicId") or t.get("id")
+                if t.get("status") == "SKIPPED":
+                    skipped_set.add(tid)
+                if tid == topic_id:
+                    t["isCompleted"] = True
+                    t["status"] = "COMPLETED"
+                    completed_set.add(tid)
+
+        # Update top-level topics if present
+        for t in topics:
+            tid = t.get("id")
+            if t.get("status") == "SKIPPED":
+                skipped_set.add(tid)
+            if tid == topic_id:
+                t["status"] = "COMPLETED"
+                completed_set.add(tid)
+
+        # Recompute downstream unlocked statuses
+        satisfied_set = completed_set.union(skipped_set)
+        for p in phases:
+            for t in p.get("tasks", []):
+                tid = t.get("topicId") or t.get("id")
+                if t.get("status") in ("COMPLETED", "SKIPPED"):
+                    continue
+                deps = t.get("dependencies", [])
+                if not deps or all(d in satisfied_set for d in deps):
+                    t["status"] = "UNLOCKED"
+                else:
+                    t["status"] = "LOCKED"
+
+        for t in topics:
+            tid = t.get("id")
+            if t.get("status") in ("COMPLETED", "SKIPPED"):
+                continue
+            deps = t.get("prerequisiteTopicIds", [])
+            if not deps or all(d in satisfied_set for d in deps):
+                t["status"] = "UNLOCKED"
+            else:
+                t["status"] = "LOCKED"
+
+        # Calculate progress excluding skipped topics
+        all_topic_ids = set()
+        for p in phases:
+            for t in p.get("tasks", []):
+                all_topic_ids.add(t.get("topicId") or t.get("id"))
+        for t in topics:
+            all_topic_ids.add(t.get("id"))
+
+        active_required = all_topic_ids - skipped_set
+        completed_required = completed_set.intersection(active_required)
+        progress = int((len(completed_required) / max(1, len(active_required))) * 100) if active_required else 100
+
+        current_structure["completedMilestones"] = sorted(list(completed_set))
+        roadmap.structure = current_structure
+        await self.db.commit()
+
+        return CompleteTopicResponse(
+            roadmapId=roadmap_id,
+            topicId=topic_id,
+            isCompleted=True,
+            progressPercentage=progress,
+            completedTopicIds=sorted(list(completed_set)),
         )
