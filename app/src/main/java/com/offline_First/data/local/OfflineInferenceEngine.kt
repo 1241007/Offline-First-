@@ -104,7 +104,7 @@ class LlamaCppInferenceEngine : OfflineInferenceEngine {
                 append("<|im_start|>system\n")
                 append(systemPrompt.trim())
                 append("<|im_end|>\n<|im_start|>user\n")
-                append(userPrompt.trim())
+                append(QueryNormalizer.normalize(userPrompt))
                 append("<|im_end|>\n<|im_start|>assistant\n")
             }
         }
@@ -317,7 +317,7 @@ fun buildChatMlPrompt(
     history.takeLast(12).forEach { msg ->
         if (msg.fromUser) {
             append("<|im_start|>user\n")
-            append(msg.text.trim())
+            append(QueryNormalizer.normalize(msg.text))
             append("<|im_end|>\n")
         } else {
             append("<|im_start|>assistant\n")
@@ -326,7 +326,7 @@ fun buildChatMlPrompt(
         }
     }
     append("<|im_start|>user\n")
-    append(newPrompt.trim())
+    append(QueryNormalizer.normalize(newPrompt))
     append("<|im_end|>\n<|im_start|>assistant\n")
 }
 

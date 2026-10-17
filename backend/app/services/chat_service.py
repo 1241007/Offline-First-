@@ -16,6 +16,7 @@ from app.schemas.rag import RAGRequestContext, RouteDecision, EvidenceOutcome, A
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.core.config import settings
+from app.core.query_normalizer import normalize_query
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +133,10 @@ class ChatService:
         )
 
         # 3. Retrieve relevant memory context for the current prompt
+        normalized_content = normalize_query(content)
         memory_context = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
-            current_prompt=content,
+            current_prompt=normalized_content,
             limit=5,
         )
 
@@ -253,9 +255,10 @@ class ChatService:
         )
 
         # 3. Get relevant memory context
+        normalized_content = normalize_query(content)
         memory_context = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
-            current_prompt=content,
+            current_prompt=normalized_content,
             limit=5,
         )
 
@@ -298,7 +301,7 @@ class ChatService:
         )
 
         # 7. Evaluate Route
-        route_decision, standalone_query = await routing_service.route_query(content, rag_context)
+        route_decision, standalone_query = await routing_service.route_query(normalized_content, rag_context)
         yield f"data: {json.dumps({'type': 'route', 'decision': route_decision.value, 'query': standalone_query})}\n\n"
 
         accumulated_chunks = []
@@ -306,7 +309,7 @@ class ChatService:
         try:
             if route_decision == RouteDecision.RAG:
                 retrieval_service = SupabaseRetrievalService(self.db)
-                retrieval_query = standalone_query or content
+                retrieval_query = normalize_query(standalone_query) if standalone_query else normalized_content
                 retrieval_resp = await retrieval_service.retrieve(retrieval_query, rag_context, top_k=5)
 
                 if retrieval_resp.evidence_outcome == EvidenceOutcome.CORPUS_NOT_CONFIGURED:

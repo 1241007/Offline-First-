@@ -26,7 +26,7 @@ def test_payload_contains_deterministic_parameters():
     assert len(payload["messages"]) == 2
     assert payload["messages"][0]["role"] == "system"
     assert "patient, encouraging teacher" in payload["messages"][0]["content"]
-    assert payload["messages"][1]["content"] == "What is photosynthesis?"
+    assert payload["messages"][1]["content"] == "what is photosynthesis?"
 
 
 def test_openrouter_is_configured_property():

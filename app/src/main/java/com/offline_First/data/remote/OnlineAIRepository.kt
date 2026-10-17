@@ -418,9 +418,11 @@ class OnlineAIRepository(
             }
         }
 
+        val normalizedPrompt = com.offline_First.data.local.QueryNormalizer.normalize(prompt)
+
         // 3. Extract top relevant memories for prompt context
         val relevantMemories = try {
-            cacheDb.getRelevantMemories(currentUserId, prompt, limit = 5)
+            cacheDb.getRelevantMemories(currentUserId, normalizedPrompt, limit = 5)
         } catch (_: Throwable) {
             emptyList()
         }
@@ -444,9 +446,9 @@ class OnlineAIRepository(
             )
 
             val (chunks, outcome) = if (e5EmbeddingService.isModelReady()) {
-                val queryEmb = e5EmbeddingService.embedQuery(prompt)
+                val queryEmb = e5EmbeddingService.embedQuery(normalizedPrompt)
                 offlineSyllabusRepository.retrieve(
-                    query = prompt,
+                    query = normalizedPrompt,
                     context = ragContext,
                     topK = 3,
                     queryEmbedding = queryEmb
@@ -454,7 +456,7 @@ class OnlineAIRepository(
             } else {
                 // Graceful keyword fallback when E5 model artifact is not ready
                 offlineSyllabusRepository.retrieve(
-                    query = prompt,
+                    query = normalizedPrompt,
                     context = ragContext,
                     topK = 3,
                     queryEmbedding = null

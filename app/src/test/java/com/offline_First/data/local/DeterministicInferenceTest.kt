@@ -138,7 +138,7 @@ class DeterministicInferenceTest {
 
         assertEquals(prompt1, prompt2)
         assertTrue(prompt1.startsWith("<|im_start|>system\nYou are EduNova teacher.<|im_end|>\n"))
-        assertTrue(prompt1.endsWith("<|im_start|>user\nQuestion 2<|im_end|>\n<|im_start|>assistant\n"))
+        assertTrue(prompt1.endsWith("<|im_start|>user\nquestion 2<|im_end|>\n<|im_start|>assistant\n"))
     }
 
     @Test
@@ -160,5 +160,54 @@ class DeterministicInferenceTest {
             listOf("chunk-ch2-001", "chunk-ch1-001", "chunk-ch1-002", "chunk-ch1-003"),
             sortedKeys
         )
+    }
+
+    @Test
+    fun test6_queryNormalizationProducesIdenticalChatMlPrompts() {
+        val systemPrompt = "You are EduNova."
+        val variants = listOf(
+            "WHAT IS DEEP LEARNING?",
+            "What is Deep Learning?",
+            "  what   is deep learning?  ",
+            "What is\nDeep Learning?",
+            "What is\t\tDeep   Learning?\n"
+        )
+
+        val prompts = variants.map { buildChatMlPrompt(systemPrompt, emptyList(), it) }
+        val first = prompts.first()
+        val expectedSuffix = "<|im_start|>user\nwhat is deep learning?<|im_end|>\n<|im_start|>assistant\n"
+
+        assertTrue("Prompt must contain normalized query", first.endsWith(expectedSuffix))
+
+        for (p in prompts) {
+            assertEquals("All query variants must serialize to 100% byte-for-byte identical ChatML prompt", first, p)
+        }
+    }
+
+    @Test
+    fun test7_queryNormalizerRulesAndPreservations() {
+        // Unicode NFC
+        val decomposed = "What is cafe\u0301?"
+        assertEquals("what is café?", QueryNormalizer.normalize(decomposed))
+
+        // Punctuation preservation
+        assertEquals("what is e = mc^2?", QueryNormalizer.normalize("What is E = mc^2?"))
+        assertEquals("newton's 3rd law: action & reaction!", QueryNormalizer.normalize("Newton's 3rd Law: action & reaction!"))
+
+        // Distinct wording remains distinct
+        val q1 = "what is mean by Deep Learning"
+        val q2 = "what s mean by Deep Learning"
+        assertNotEquals(QueryNormalizer.normalize(q1), QueryNormalizer.normalize(q2))
+        assertEquals("what is mean by deep learning", QueryNormalizer.normalize(q1))
+        assertEquals("what s mean by deep learning", QueryNormalizer.normalize(q2))
+
+        // Structured code preservation
+        val code = "def calculate_loss(y_true, y_pred):\n    return np.mean((y_true - y_pred) ** 2)"
+        val normalizedCode = QueryNormalizer.normalize(code)
+        assertTrue(normalizedCode.contains("def calculate_loss"))
+        assertTrue(normalizedCode.contains("    return"))
+
+        val sql = "SELECT UserName FROM UserAccounts WHERE IsActive = 1;"
+        assertEquals(sql, QueryNormalizer.normalize(sql))
     }
 }

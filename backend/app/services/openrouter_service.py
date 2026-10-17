@@ -5,6 +5,7 @@ import logging
 from typing import Optional, AsyncIterator
 import httpx
 from app.core.config import settings
+from app.core.query_normalizer import normalize_query
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ def _format_messages_for_openrouter(
             content = "\n\n".join(parts_str).strip()
 
         if content:
+            if role == "user":
+                content = normalize_query(content)
             messages.append({"role": role, "content": content})
 
     return messages

@@ -18,6 +18,7 @@ from app.services.openrouter_service import (
     _SYSTEM_INSTRUCTIONS,
 )
 from app.core.config import settings
+from app.core.query_normalizer import normalize_query
 
 
 def test_format_messages_preserves_system_instruction():
@@ -30,7 +31,7 @@ def test_format_messages_preserves_system_instruction():
     assert messages[0]["role"] == "system"
     assert messages[0]["content"] == system_inst
     assert messages[1]["role"] == "user"
-    assert messages[1]["content"] == "What is an atom?"
+    assert messages[1]["content"] == "what is an atom?"
 
 
 def test_format_messages_maps_roles_correctly():
@@ -59,7 +60,7 @@ def test_format_messages_handles_legacy_gemini_parts_format():
 
     assert len(messages) == 3
     assert messages[1]["role"] == "user"
-    assert "Part 1 of query\n\nPart 2 of query" == messages[1]["content"]
+    assert "part 1 of query part 2 of query" == messages[1]["content"]
     assert messages[2]["role"] == "assistant"
     assert "Response line 1" == messages[2]["content"]
 
@@ -79,8 +80,8 @@ def test_prompt_construction_long_context_truncation():
     # 1 system message + limit recent messages
     assert len(messages) == limit + 1
     assert messages[0]["role"] == "system"
-    assert messages[1]["content"] == long_history[-limit]["content"]
-    assert messages[-1]["content"] == "Message 24"
+    assert messages[1]["content"] == long_history[-limit]["content"].lower()
+    assert messages[-1]["content"] == "message 24"
 
 
 def test_prompt_construction_context_isolation_between_students():
@@ -132,7 +133,7 @@ def test_prompt_injection_resistance_in_evidence():
     assert "SYSTEM OVERRIDE" not in system_msg
     # Adversarial payload is safely quarantined inside user message content
     user_msg = payload["messages"][1]["content"]
-    assert "SYSTEM OVERRIDE" in user_msg
+    assert "system override" in user_msg
 
 
 def test_empty_query_boundary_handling():
@@ -145,3 +146,69 @@ def test_empty_query_boundary_handling():
     # Empty message content is discarded or preserved safely without None errors
     assert len(payload["messages"]) >= 1
     assert payload["messages"][0]["role"] == "system"
+
+
+def test_query_normalization_produces_identical_model_payloads():
+    """
+    Verify that queries differing only in casing, tabs, newlines, or whitespace
+    produce 100% byte-for-byte identical model request payloads.
+    """
+    service = OpenRouterService()
+    variants = [
+        "WHAT IS DEEP LEARNING?",
+        "What is Deep Learning?",
+        "  what   is deep learning?  ",
+        "What is\nDeep Learning?",
+        "What is\t\tDeep   Learning?\n",
+    ]
+
+    payloads = []
+    for q in variants:
+        _, payload = service._build_payload(
+            history=[{"role": "user", "content": q}],
+            explanation_mode="general",
+        )
+        payloads.append(payload)
+
+    # All payloads must be byte-for-byte identical
+    first_payload = payloads[0]
+    expected_content = "what is deep learning?"
+    assert first_payload["messages"][1]["content"] == expected_content
+
+    for p in payloads[1:]:
+        assert p["messages"][1]["content"] == expected_content
+        assert p == first_payload
+
+
+def test_query_normalization_unicode_nfc_and_punctuation():
+    """Verify Unicode decomposed characters are normalized to NFC and punctuation is preserved."""
+    # Decomposed e + combining acute accent -> precomposed é
+    decomposed = "What is cafe\u0301?"
+    normalized = normalize_query(decomposed)
+    assert normalized == "what is café?"
+    assert "\u0301" not in normalized
+
+    # Punctuation and symbols must be preserved
+    assert normalize_query("What is E = mc^2?") == "what is e = mc^2?"
+    assert normalize_query("Newton's 3rd Law: action & reaction!") == "newton's 3rd law: action & reaction!"
+
+
+def test_query_normalization_preserves_meaningful_differences():
+    """Verify distinct queries with different words or spelling are NOT altered or conflated."""
+    q1 = "what is mean by Deep Learning"
+    q2 = "what s mean by Deep Learning"
+    assert normalize_query(q1) != normalize_query(q2)
+    assert normalize_query(q1) == "what is mean by deep learning"
+    assert normalize_query(q2) == "what s mean by deep learning"
+
+
+def test_query_normalization_preserves_code_and_structured_input():
+    """Verify code blocks, file paths, and SQL constructs are not lowercased or collapsed."""
+    code_snippet = "def calculate_loss(y_true, y_pred):\n    return np.mean((y_true - y_pred) ** 2)"
+    normalized_code = normalize_query(code_snippet)
+    assert "def calculate_loss" in normalized_code
+    assert "    return" in normalized_code
+
+    sql_query = "SELECT UserName FROM UserAccounts WHERE IsActive = 1;"
+    assert normalize_query(sql_query) == sql_query.strip()
+
