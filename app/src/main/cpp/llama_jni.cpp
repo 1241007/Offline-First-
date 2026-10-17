@@ -173,6 +173,16 @@ jstring native_generate_stream(
         common_prefix++;
     }
 
+    // Deterministic generation guard:
+    // If the entire prompt was previously evaluated (identical prompt repeated),
+    // common_prefix equals tokens.size(). If common_prefix == tokens.size(), the prompt evaluation
+    // loop below would evaluate 0 tokens, failing to compute fresh logits for the final prompt position.
+    // By ensuring at least the final token is re-evaluated (common_prefix <= tokens.size() - 1),
+    // we guarantee llama_process executes with output_logits=true, producing fresh, deterministic logits.
+    if (common_prefix >= tokens.size() && !tokens.empty()) {
+        common_prefix = tokens.size() - 1;
+    }
+
     if (common_prefix < handle->cached_tokens.size()) {
         if (common_prefix == 0) {
             llama_memory_clear(llama_get_memory(handle->context), true);

@@ -19,6 +19,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
+from app.services.embedding_service import embedding_service
 from app.schemas.rag import (
     AppMode,
     ChunkResult,
@@ -323,3 +324,98 @@ def test_dense_only_valid_paraphrase_with_corroboration_evaluates_to_sufficient(
     assert outcome == EvidenceOutcome.SUFFICIENT, (
         f"Valid in-syllabus query with domain keyword corroboration must evaluate to SUFFICIENT, got {outcome}"
     )
+
+
+# --- 15. RRF Dense-Only 0.500 Ceiling Resolution Contract ---
+def test_dense_only_0_50_ceiling_reaches_sufficient_without_lowering_thresholds():
+    """
+    Confirms that the theoretical single-retriever RRF score ceiling of 0.500 does NOT prevent
+    valid semantic matches from being classified as SUFFICIENT.
+    
+    Verifies:
+    1. Hybrid threshold remains 0.70 (not lowered).
+    2. Dense-only threshold is calibrated at 0.50 (matching single-retriever Rank 1 theoretical ceiling).
+    3. Dual-condition gate (score >= 0.50 AND similarity >= 0.75 AND lexical corroboration)
+       enables valid semantic matches to achieve SUFFICIENT without diluting gating rigor.
+    4. Irrelevant chunks with similarity < 0.75 remain UNCERTAIN (not SUFFICIENT).
+    """
+    # Invariant: thresholds are intact
+    assert SUFFICIENT_NORMALIZED_THRESHOLD == 0.70
+    assert DENSE_ONLY_SUFFICIENT_NORMALIZED_THRESHOLD == 0.50
+    assert DENSE_ONLY_MIN_SIMILARITY == 0.75
+
+    # Compute raw RRF and normalized score for single dense retriever at Rank 1
+    raw_rrf, normalized = compute_rrf_score(vector_rank=1, sparse_rank=None)
+    assert raw_rrf == pytest.approx(1.0 / 61, abs=1e-6)
+    assert normalized == pytest.approx(0.50, abs=1e-6)
+
+    # Valid semantic match at exactly 0.500 ceiling
+    valid_semantic_chunk = _make_chunk(
+        content="Bleaching powder is produced by the action of chlorine on dry slaked lime Ca(OH)2 + Cl2 -> CaOCl2 + H2O.",
+        normalized_score=normalized,
+        similarity_score=0.842,
+        vector_rank=1,
+        sparse_rank=None,
+    )
+    query = "What is the preparation of bleaching powder?"
+    outcome = assess_evidence_outcome([valid_semantic_chunk], query=query)
+    assert outcome == EvidenceOutcome.SUFFICIENT, (
+        f"Valid semantic match at 0.500 ceiling must evaluate to SUFFICIENT, got {outcome}"
+    )
+
+    # Irrelevant chunk with high RRF (0.50) but low similarity (0.71 < 0.75) must NOT be SUFFICIENT
+    low_sim_chunk = _make_chunk(
+        content=valid_semantic_chunk.content,
+        normalized_score=normalized,
+        similarity_score=0.71,
+        vector_rank=1,
+        sparse_rank=None,
+    )
+    assert assess_evidence_outcome([low_sim_chunk], query=query) == EvidenceOutcome.UNCERTAIN
+
+
+# --- 16. Chunks Emptied on MISSING Outcome Contract ---
+@pytest.mark.asyncio
+async def test_retrieve_clears_chunks_on_missing_outcome():
+    """
+    Verifies that when assess_evidence_outcome evaluates to MISSING,
+    SupabaseRetrievalService.retrieve() returns chunks=[] so downstream prompt assembly
+    and evaluation metrics observe zero evidence.
+    """
+    mock_row = MagicMock()
+    mock_row.id = "distractor_chunk_1"
+    mock_row.content = "Plant hormones or phytohormones are chemical substances which coordinate plant growth."
+    mock_row.board = "CBSE"
+    mock_row.class_grade = "10"
+    mock_row.subject = "Science"
+    mock_row.chapter = "Control and Coordination"
+    mock_row.section = "7.2"
+    mock_row.textbook_title = "Science Class 10"
+    mock_row.page_reference = "120"
+    mock_row.source_id = "doc_1"
+    mock_row.corpus_version = "1.0"
+    mock_row.vector_rank = 1
+    mock_row.keyword_rank = None
+    mock_row.similarity_score = 0.82
+
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [mock_row]
+    mock_db.execute.return_value = mock_result
+
+    svc = SupabaseRetrievalService(db=mock_db)
+
+    ctx = RAGRequestContext(
+        app_mode=AppMode.STUDENT,
+        board="CBSE",
+        class_grade="10",
+        subject="Science",
+    )
+
+    with patch.object(embedding_service, "embed_query", return_value=[0.1] * 384):
+        # Query has no lexical corroboration with plant hormones -> assess_evidence_outcome evaluates to MISSING
+        res = await svc.retrieve("Explain quantum chromodynamics and gluon flux tubes.", context=ctx)
+        assert res.evidence_outcome == EvidenceOutcome.MISSING
+        assert res.chunks == [], "Candidate chunks must be emptied when evidence_outcome is MISSING."
+
+

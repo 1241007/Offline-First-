@@ -627,7 +627,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
                    ($scoreExpr) AS match_score
             FROM $TABLE_CHUNKS c
             WHERE ${whereClauses.joinToString(" AND ")}
-            ORDER BY match_score DESC
+            ORDER BY match_score DESC, c.chunk_id ASC
             LIMIT ?
         """.trimIndent()
 
@@ -768,7 +768,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
             Log.e(TAG, "Vector search failed: ${e.message}", e)
         }
 
-        scoredList.sortByDescending { it.similarity }
+        scoredList.sortWith(compareByDescending<ScoredItem> { it.similarity }.thenBy { it.chunk.chunkId })
         return scoredList.take(limit).mapIndexed { idx, item ->
             item.chunk.copy(vectorRank = idx + 1)
         }
@@ -825,7 +825,7 @@ open class SyllabusDatabase(context: Context) : SQLiteOpenHelper(
             chunkMap.putIfAbsent(chunk.chunkId, chunk)
         }
 
-        val sorted = scores.entries.sortedByDescending { it.value }
+        val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<String, Float>> { it.value }.thenBy { it.key })
         return sorted.take(limit).mapNotNull { entry ->
             val baseChunk = chunkMap[entry.key] ?: return@mapNotNull null
             val rawRrf = entry.value

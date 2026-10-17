@@ -195,6 +195,7 @@ class RoutingService:
         async for chunk in openrouter_service.generate_response_stream(
             messages=messages,
             temperature=0.0,
+            seed=42,
             max_tokens=64,
         ):
             parser.feed(chunk)

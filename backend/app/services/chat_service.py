@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.profile_repository import ProfileRepository
-from app.services.openrouter_service import openrouter_service
+from app.services.openrouter_service import openrouter_service, clean_fallback_title
 gemini_service = openrouter_service  # Backwards compatibility alias
 from app.services.memory_service import MemoryService
 from app.services.routing_service import routing_service
@@ -20,10 +20,14 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _generate_title(first_message: str) -> str:
-    """Lightweight title from first user message: trim + truncate."""
-    title = " ".join(first_message.split())  # normalize whitespace
-    return title[:50].strip() if len(title) > 50 else title
+async def _generate_title(first_message: str) -> str:
+    """Generate meaningful conversation title using LLM with deterministic fallback."""
+    try:
+        return await openrouter_service.generate_title(first_message)
+    except Exception as e:
+        logger.warning(f"Error generating title via LLM, falling back: {e}")
+        return clean_fallback_title(first_message)
+
 
 
 class ChatService:
@@ -184,10 +188,10 @@ class ChatService:
         logger.info(f"Saved assistant message id={assistant_msg.id}")
 
         # 9. Update conversation metadata (title on first real exchange)
-        is_first_message = len(conv.messages) <= 1
+        is_first_message = len(recent) <= 1
         new_title = None
         if conv.title == "New Conversation" and is_first_message:
-            new_title = _generate_title(content)
+            new_title = await _generate_title(content)
         await self.repo.update_conversation(
             conversation_id=conversation_id,
             title=new_title,
@@ -215,6 +219,7 @@ class ChatService:
         Handles client disconnection / Stop generation gracefully by saving partial text.
         """
         conv = await self.get_or_create_conversation(conversation_id, user_id)
+        initial_title = conv.title
 
         # 1. Resolve Profile Context (no placeholder assumptions)
         profile_repo = ProfileRepository(self.db)
@@ -382,16 +387,16 @@ class ChatService:
                 )
 
             # Update title if first message
-            is_first_message = len(conv.messages) <= 1
+            is_first_message = len(recent) <= 1
             new_title = None
-            if conv.title == "New Conversation" and is_first_message:
-                new_title = _generate_title(content)
+            if initial_title == "New Conversation" and is_first_message:
+                new_title = await _generate_title(content)
             await self.repo.update_conversation(
                 conversation_id=conversation_id,
                 title=new_title,
             )
 
-            yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or conv.title})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'assistant_message_id': assistant_id, 'title': new_title or initial_title})}\n\n"
 
     async def update_conversation(
         self,

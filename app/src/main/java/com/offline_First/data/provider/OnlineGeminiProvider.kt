@@ -22,8 +22,10 @@ class OnlineGeminiProvider(
     override val name: String = "Online"
     private var activeJob: Job? = null
     private var capturedCitations: List<com.offline_First.domain.model.SourceCitation> = emptyList()
+    private var capturedTitle: String? = null
 
     override fun getLastCitations(): List<com.offline_First.domain.model.SourceCitation> = capturedCitations
+    override fun getLastTitle(): String? = capturedTitle
 
     override fun streamInference(
         prompt: String,
@@ -35,6 +37,7 @@ class OnlineGeminiProvider(
         systemPrompt: String
     ): Flow<String> = flow {
         capturedCitations = emptyList()
+        capturedTitle = null
         val modeStr = when (explanationMode) {
             ExplanationMode.TEACHER -> "teacher"
             ExplanationMode.EXPLAINABLE -> "explainable"
@@ -85,6 +88,9 @@ class OnlineGeminiProvider(
                     }
                 }
                 "done" -> {
+                    if (!chunk.title.isNullOrBlank()) {
+                        capturedTitle = chunk.title
+                    }
                     bufferedCitations?.let { list ->
                         if (list.isNotEmpty()) {
                             val formatted = buildString {

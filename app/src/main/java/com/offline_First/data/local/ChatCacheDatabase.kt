@@ -310,9 +310,14 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
             put("draft_text", draftText)
             put("sync_status", syncStatus)
         }
-        writableDatabase.insertWithOnConflict(
-            "local_conversations", null, values, SQLiteDatabase.CONFLICT_REPLACE
+        val rowsUpdated = writableDatabase.update(
+            "local_conversations", values, "id = ? AND user_id = ?", arrayOf(id, userId)
         )
+        if (rowsUpdated == 0) {
+            writableDatabase.insertWithOnConflict(
+                "local_conversations", null, values, SQLiteDatabase.CONFLICT_IGNORE
+            )
+        }
     }
 
     fun getConversations(
@@ -583,20 +588,33 @@ class ChatCacheDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, n
 
     fun upsertMemory(memory: UserMemoryItem, userId: String, sourceConvId: String? = null) {
         val now = System.currentTimeMillis()
+        val cursor = readableDatabase.rawQuery(
+            "SELECT id FROM local_memories WHERE user_id = ? AND category = ? AND content = ? LIMIT 1",
+            arrayOf(userId, memory.category, memory.content.trim())
+        )
+        val existingId: String? = cursor.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+
         val values = ContentValues().apply {
-            put("id", memory.id)
             put("user_id", userId)
             put("category", memory.category)
-            put("content", memory.content)
+            put("content", memory.content.trim())
             put("importance", memory.importance)
             put("confidence", memory.confidence)
-            put("source_conversation_id", sourceConvId)
-            put("created_at", now)
+            if (sourceConvId != null) put("source_conversation_id", sourceConvId)
             put("updated_at", now)
             put("active", if (memory.active) 1 else 0)
             put("sync_status", "synced")
         }
-        writableDatabase.insertWithOnConflict("local_memories", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+        if (existingId != null) {
+            writableDatabase.update("local_memories", values, "id = ?", arrayOf(existingId))
+        } else {
+            values.put("id", memory.id)
+            values.put("created_at", now)
+            writableDatabase.insertWithOnConflict("local_memories", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
     }
 
     fun getMemories(userId: String): List<UserMemoryItem> {

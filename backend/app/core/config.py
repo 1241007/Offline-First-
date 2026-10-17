@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     openrouter_roadmap_model: str = "anthropic/claude-sonnet-4.5"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_max_tokens: int = 1024
+    openrouter_temperature: float = 0.0
+    openrouter_seed: int = 42
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.5-flash"
     chat_context_messages: int = 12

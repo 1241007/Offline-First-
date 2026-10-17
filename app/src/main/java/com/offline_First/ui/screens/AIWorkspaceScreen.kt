@@ -170,7 +170,7 @@ fun AIWorkspaceScreen(
 
     val handleExitToHome: () -> Unit = {
         if (uiState.currentScreen == AIScreen.DOWNLOAD_STATE || uiState.currentScreen == AIScreen.SETTINGS) {
-            viewModel.setScreen(if (uiState.currentSession?.messages?.isNotEmpty() == true) AIScreen.CHAT else AIScreen.LANDING)
+            viewModel.setScreen(if (uiState.currentSession != null) AIScreen.CHAT else AIScreen.LANDING)
         }
         onBack()
     }
@@ -178,7 +178,7 @@ fun AIWorkspaceScreen(
     LaunchedEffect(Unit) {
         viewModel.refreshConversations()
         if (uiState.currentScreen == AIScreen.DOWNLOAD_STATE) {
-            viewModel.setScreen(if (uiState.currentSession?.messages?.isNotEmpty() == true) AIScreen.CHAT else AIScreen.LANDING)
+            viewModel.setScreen(if (uiState.currentSession != null) AIScreen.CHAT else AIScreen.LANDING)
         }
     }
 
@@ -215,17 +215,17 @@ fun AIWorkspaceScreen(
             uiState.activeToolName != null -> viewModel.closeActiveTool()
             uiState.currentScreen == AIScreen.DOWNLOAD_STATE -> viewModel.setScreen(AIScreen.SETTINGS)
             uiState.currentScreen == AIScreen.SETTINGS -> {
-                val destination = if (uiState.previousScreen == AIScreen.CHAT) AIScreen.CHAT else AIScreen.LANDING
+                val destination = if (uiState.previousScreen == AIScreen.CHAT || uiState.currentSession != null) AIScreen.CHAT else AIScreen.LANDING
                 viewModel.setScreen(destination)
             }
-            uiState.currentScreen == AIScreen.CHAT -> handleExitToHome()
+            uiState.currentScreen == AIScreen.CHAT -> viewModel.setScreen(AIScreen.LANDING)
             else -> handleExitToHome()
         }
     }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = uiState.currentScreen == AIScreen.CHAT,
+        gesturesEnabled = uiState.currentScreen in listOf(AIScreen.CHAT, AIScreen.LANDING),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = EduNovaSurface,
@@ -280,6 +280,10 @@ fun AIWorkspaceScreen(
                             onStartChat = { viewModel.setScreen(AIScreen.CHAT) },
                             onOpenTool = { toolName -> viewModel.openTool(toolName) },
                             onOpenAttachments = { viewModel.setAttachmentsSheetVisible(true) },
+                            onOpenHistory = {
+                                coroutineScope.launch { drawerState.open() }
+                                viewModel.setDrawerOpen(true)
+                            },
                             onOpenSettings = { viewModel.setScreen(AIScreen.SETTINGS) },
                             onBack = handleExitToHome
                         )
@@ -305,7 +309,7 @@ fun AIWorkspaceScreen(
                             },
                             onOpenSettings = { viewModel.setScreen(AIScreen.SETTINGS) },
                             onOpenAttachments = { viewModel.setAttachmentsSheetVisible(true) },
-                            onBack = handleExitToHome
+                            onBack = { viewModel.setScreen(AIScreen.LANDING) }
                         )
                     }
                     AIScreen.SETTINGS -> {
@@ -317,7 +321,7 @@ fun AIWorkspaceScreen(
                             downloadSize = uiState.downloadSize,
                             estimatedTimeRemaining = uiState.estimatedTimeRemaining,
                             onBack = {
-                                val destination = if (uiState.previousScreen == AIScreen.CHAT) AIScreen.CHAT else AIScreen.LANDING
+                                val destination = if (uiState.previousScreen == AIScreen.CHAT || uiState.currentSession != null) AIScreen.CHAT else AIScreen.LANDING
                                 viewModel.setScreen(destination)
                             },
                             onSelectConnectionMode = { mode ->
@@ -449,6 +453,7 @@ private fun AILandingScreenView(
     onStartChat: () -> Unit,
     onOpenTool: (String) -> Unit,
     onOpenAttachments: () -> Unit,
+    onOpenHistory: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -491,6 +496,16 @@ private fun AILandingScreenView(
                         Icon(Icons.Default.Lightbulb, null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("AI Tools", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    IconButton(
+                        onClick = onOpenHistory,
+                        modifier = Modifier.semantics { contentDescription = "Chat History" }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Chat History",
+                            tint = EduNovaTextPrimary
+                        )
                     }
                     IconButton(
                         onClick = onOpenSettings,
@@ -1269,11 +1284,11 @@ private fun CleanChatScreenView(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier.semantics { contentDescription = "Back to Homepage" }
+                        modifier = Modifier.semantics { contentDescription = "Back" }
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to Homepage",
+                            contentDescription = "Back",
                             tint = EduNovaTextPrimary
                         )
                     }
@@ -1397,7 +1412,8 @@ private fun CleanChatScreenView(
                         }
                     }
                 } else {
-                    items(messages, key = { it.id }) { message ->
+                    val distinctMessages = messages.distinctBy { it.id }
+                    items(distinctMessages, key = { it.id }) { message ->
                         ChatBubbleItem(
                             message = message,
                             onEdit = { onEditMessage(message.id, message.text) },
@@ -1773,6 +1789,7 @@ private fun ChatHistoryDrawerContent(
     }
 
     val (todayChats, yesterdayChats, last7DaysChats, olderChats) = remember(sessions) {
+        val unique = sessions.distinctBy { it.id }
         val now = Calendar.getInstance()
         val todayStart = (now.clone() as Calendar).apply {
             set(Calendar.HOUR_OF_DAY, 0)
@@ -1784,10 +1801,10 @@ private fun ChatHistoryDrawerContent(
         val yesterdayStart = todayStart - (24L * 60 * 60 * 1000)
         val sevenDaysAgo = todayStart - (7L * 24 * 60 * 60 * 1000)
 
-        val today = sessions.filter { it.lastUpdated >= todayStart }
-        val yesterday = sessions.filter { it.lastUpdated in yesterdayStart until todayStart }
-        val last7Days = sessions.filter { it.lastUpdated in sevenDaysAgo until yesterdayStart }
-        val older = sessions.filter { it.lastUpdated < sevenDaysAgo }
+        val today = unique.filter { it.lastUpdated >= todayStart }
+        val yesterday = unique.filter { it.lastUpdated in yesterdayStart until todayStart }
+        val last7Days = unique.filter { it.lastUpdated in sevenDaysAgo until yesterdayStart }
+        val older = unique.filter { it.lastUpdated < sevenDaysAgo }
         listOf(today, yesterday, last7Days, older)
     }
 
@@ -1814,7 +1831,7 @@ private fun ChatHistoryDrawerContent(
         ) {
             Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("+ New Chat", fontWeight = FontWeight.SemiBold)
+            Text("New Chat", fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(Modifier.height(16.dp))
