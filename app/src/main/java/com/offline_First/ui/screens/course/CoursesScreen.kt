@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -551,8 +552,6 @@ fun CoursesContent(
                 }
             }
         }
-
-        SupportSection(onSupportAction = onSupportAction)
     }
 }
 
@@ -712,7 +711,7 @@ fun CourseCard(course: Course, modifier: Modifier, onClick: () -> Unit) {
 
     Card(
         onClick = onClick,
-        modifier = modifier.height(180.dp),
+        modifier = modifier.heightIn(min = 180.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, EduNovaBorder),
@@ -837,133 +836,3 @@ fun CourseIcon(course: Course, large: Boolean = false) {
     }
 }
 
-@Composable
-fun SupportSection(onSupportAction: (String) -> Unit) {
-    val ink = MaterialTheme.colorScheme.onBackground
-    val mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
-
-    Column(
-        modifier = Modifier.padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text("Help & Support", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Need a hand? We're here to help.", color = mutedInk, fontSize = 14.sp)
-        Spacer(Modifier.height(2.dp))
-        SupportRow(
-            icon = SupportIcon.Help,
-            title = "Help Center",
-            description = "Find answers to common learning questions.",
-            onClick = { onSupportAction("Help resources are being prepared.") }
-        )
-        SupportRow(
-            icon = SupportIcon.Contact,
-            title = "Contact Support",
-            description = "Need help? Get in touch with our support team.",
-            onClick = { onSupportAction("Support contact will be available soon.") }
-        )
-        SupportRow(
-            icon = SupportIcon.About,
-            title = "About EduNova",
-            description = "Learn more about EduNova and its learning experience.",
-            onClick = { onSupportAction("More about EduNova will be available soon.") }
-        )
-    }
-}
-
-@Composable
-fun SupportRow(
-    icon: SupportIcon,
-    title: String,
-    description: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "Open $title" },
-        shape = RoundedCornerShape(15.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, EduNovaBorder)
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(icon.containerColor),
-                contentAlignment = Alignment.Center
-            ) {
-                SupportIcon(icon)
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(title, color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
-            }
-            ChevronRight()
-        }
-    }
-}
-
-enum class SupportIcon(val containerColor: Color) {
-    Help(EduNovaPrimaryContainer),
-    Contact(EduNovaSurface),
-    About(EduNovaSurface)
-}
-
-@Composable
-fun SupportIcon(icon: SupportIcon) {
-    Canvas(Modifier.size(22.dp)) {
-        val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        when (icon) {
-            SupportIcon.Help -> {
-                val questionMark = Path().apply {
-                    moveTo(size.width * .3f, size.height * .36f)
-                    cubicTo(
-                        size.width * .32f, size.height * .12f,
-                        size.width * .7f, size.height * .12f,
-                        size.width * .72f, size.height * .36f
-                    )
-                    cubicTo(
-                        size.width * .73f, size.height * .56f,
-                        size.width * .52f, size.height * .58f,
-                        size.width * .5f, size.height * .75f
-                    )
-                }
-                drawPath(questionMark, EduNovaPrimary, style = stroke)
-                drawCircle(EduNovaPrimary, 1.2.dp.toPx(), center.copy(y = size.height * .9f))
-            }
-            SupportIcon.Contact -> {
-                drawRoundRect(
-                    color = EduNovaAccent,
-                    topLeft = androidx.compose.ui.geometry.Offset(size.width * .12f, size.height * .24f),
-                    size = androidx.compose.ui.geometry.Size(size.width * .76f, size.height * .52f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    style = stroke
-                )
-                drawLine(EduNovaAccent, androidx.compose.ui.geometry.Offset(size.width * .16f, size.height * .3f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .56f), stroke.width)
-                drawLine(EduNovaAccent, androidx.compose.ui.geometry.Offset(size.width * .84f, size.height * .3f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .56f), stroke.width)
-            }
-            SupportIcon.About -> {
-                drawCircle(EduNovaBorder, size.minDimension * .36f, style = stroke)
-                drawCircle(EduNovaBorder, 1.2.dp.toPx(), center.copy(y = size.height * .36f))
-                drawLine(EduNovaBorder, center.copy(y = size.height * .49f), center.copy(y = size.height * .7f), stroke.width)
-            }
-        }
-    }
-}
-
-@Composable
-fun ChevronRight() {
-    Canvas(Modifier.size(20.dp)) {
-        drawLine(EduNovaBorder, androidx.compose.ui.geometry.Offset(size.width * .38f, size.height * .2f), androidx.compose.ui.geometry.Offset(size.width * .66f, size.height * .5f), 2.dp.toPx(), StrokeCap.Round)
-        drawLine(EduNovaBorder, androidx.compose.ui.geometry.Offset(size.width * .66f, size.height * .5f), androidx.compose.ui.geometry.Offset(size.width * .38f, size.height * .8f), 2.dp.toPx(), StrokeCap.Round)
-    }
-}

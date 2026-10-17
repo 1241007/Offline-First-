@@ -1001,7 +1001,9 @@ private fun ModuleCard(
             AnimatedVisibility(visible = isExpanded) {
                 val sortedLessons = remember(module) { module.lessons.sortedBy { it.displayOrder } }
                 Column(
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     sortedLessons.forEachIndexed { index, lesson ->
@@ -1019,6 +1021,7 @@ private fun ModuleCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LessonRow(
     lesson: LessonItem,
@@ -1036,20 +1039,23 @@ private fun LessonRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "Lesson ${orderIndex}: ${lesson.title}. Status: ${if (isDone) "Completed" else "Incomplete"}" },
+            .semantics {
+                contentDescription = "Lesson ${orderIndex}: ${lesson.title}. Status: ${if (isDone) "Completed" else "Incomplete"}"
+            },
         shape = RoundedCornerShape(12.dp),
-        color = if (isDone) EduNovaSuccess.copy(alpha = 0.05f) else MaterialTheme.colorScheme.background,
+        color = if (isDone) EduNovaSuccess.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, if (isDone) EduNovaSuccess.copy(alpha = 0.35f) else EduNovaBorder)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
-            // Icon / Completion indicator button
+            // Icon / Completion indicator button (fixed touch target)
             Box(
                 modifier = Modifier
+                    .padding(top = 2.dp)
                     .size(34.dp)
                     .clip(CircleShape)
                     .background(if (isDone) EduNovaSuccess.copy(alpha = 0.15f) else EduNovaPrimaryContainer)
@@ -1082,7 +1088,11 @@ private fun LessonRow(
 
             Spacer(Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Title and Completed badge row
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1093,9 +1103,11 @@ private fun LessonRow(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = ink,
-                        modifier = Modifier.weight(1f)
+                        lineHeight = 19.sp,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (isDone) {
+                        Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = EduNovaSuccess.copy(alpha = 0.15f)
@@ -1111,70 +1123,65 @@ private fun LessonRow(
                     }
                 }
 
-                lesson.description?.let { desc ->
-                    Spacer(Modifier.height(2.dp))
+                // Description
+                lesson.description?.takeIf { it.isNotBlank() }?.let { desc ->
                     Text(
                         text = desc,
                         fontSize = 12.sp,
                         color = mutedInk,
-                        maxLines = 2
+                        lineHeight = 16.5.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(Modifier.height(4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Responsive Metadata FlowRow (wraps tags gracefully, never breaking single letters vertically)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
                 ) {
                     lesson.durationMinutes?.let { mins ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Timer,
-                                contentDescription = null,
-                                tint = mutedInk,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(Modifier.width(3.dp))
-                            Text(
-                                text = "$mins min",
-                                fontSize = 11.sp,
-                                color = mutedInk
-                            )
-                        }
+                        EduNovaBadge(
+                            text = "$mins min",
+                            icon = Icons.Default.Timer,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = mutedInk
+                        )
                     }
 
                     lesson.resourceProvider?.let { provider ->
-                        Text(
-                            text = "•  $provider",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
+                        EduNovaBadge(
+                            text = provider,
+                            containerColor = EduNovaPrimaryContainer.copy(alpha = 0.6f),
+                            contentColor = MaterialTheme.colorScheme.primary
                         )
                     }
 
                     if (lesson.quiz != null) {
-                        Text(
-                            text = "•  Quiz included",
-                            fontSize = 11.sp,
-                            color = EduNovaSuccess,
-                            fontWeight = FontWeight.Medium
+                        EduNovaBadge(
+                            text = "Quiz included",
+                            icon = Icons.Default.Quiz,
+                            containerColor = EduNovaSuccess.copy(alpha = 0.15f),
+                            contentColor = EduNovaSuccess
                         )
                     }
 
                     if (lesson.contentType.equals("video", ignoreCase = true) || !lesson.videoUrl.isNullOrBlank()) {
-                        Text(
-                            text = "•  Video (Requires Internet)",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Medium
+                        EduNovaBadge(
+                            text = "Video (Internet)",
+                            icon = Icons.Default.PlayCircleOutline,
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            contentColor = MaterialTheme.colorScheme.error
                         )
                     } else if (!lesson.resourceUrl.isNullOrBlank()) {
-                        Text(
-                            text = "•  External Link (Requires Internet)",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
+                        EduNovaBadge(
+                            text = "Link (Internet)",
+                            icon = Icons.AutoMirrored.Filled.Article,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = mutedInk
                         )
                     }
                 }
@@ -1182,12 +1189,19 @@ private fun LessonRow(
 
             Spacer(Modifier.width(8.dp))
 
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Open lesson",
-                tint = if (isDone) EduNovaSuccess else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .padding(top = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Open lesson",
+                    tint = if (isDone) EduNovaSuccess else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.offline_First.ui.theme.EduNovaBorder
+import com.offline_First.ui.theme.EduNovaDimensions
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaPrimaryContainer
 import com.offline_First.ui.theme.EduNovaSecondary
@@ -120,7 +122,7 @@ fun EduNovaButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.heightIn(min = EduNovaDimensions.buttonHeight),
         enabled = enabled && !isLoading,
         shape = RoundedCornerShape(EduNovaShapes.button),
         colors = ButtonDefaults.buttonColors(
@@ -171,7 +173,7 @@ fun EduNovaOutlinedButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.heightIn(min = EduNovaDimensions.buttonHeight),
         enabled = enabled,
         shape = RoundedCornerShape(EduNovaShapes.button),
         colors = ButtonDefaults.outlinedButtonColors(

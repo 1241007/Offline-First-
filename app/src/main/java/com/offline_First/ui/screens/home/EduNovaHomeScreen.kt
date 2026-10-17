@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -88,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import com.offline_First.R
 import com.offline_First.ui.components.EduNovaBottomNavItem
 import com.offline_First.ui.components.EduNovaBottomNavigation
+import com.offline_First.ui.components.SupportSection
 import com.offline_First.ui.navigation.AppDestination
 import com.offline_First.ui.theme.EduNovaBackground
 import com.offline_First.ui.theme.EduNovaBorder
@@ -188,6 +190,12 @@ fun EduNovaHomeScreen(
 
             // 4. Six Compact Feature Cards in 2x3 Grid (non-clickable showcase cards)
             FeatureGridSection()
+
+            // 5. Help & Support Section (Moved from Courses screen to Main Landing Page)
+            SupportSection(
+                onSupportAction = showMessage,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 
@@ -878,7 +886,7 @@ private fun FeatureCard(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.height(132.dp),
+        modifier = modifier.heightIn(min = 132.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = EduNovaSurface),
         border = BorderStroke(1.dp, EduNovaBorder),
