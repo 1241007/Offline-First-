@@ -342,6 +342,53 @@ _DIAGNOSTIC_QUESTION_BANK = {
             "selection_rationale": "Establishes baseline algorithmic knowledge and complexity analysis.",
         },
     ],
+    "go": [
+        {
+            "id": "go_1",
+            "question": "In Go concurrency, what occurs when a goroutine sends a value into an unbuffered channel (`ch <- val`) when no receiver is ready?",
+            "options": [
+                "The sending goroutine blocks execution until another goroutine executes a receive operation (`<-ch`) on that channel",
+                "The value is silently dropped and execution continues immediately",
+                "The runtime immediately panics with a deadlock exception",
+                "The unbuffered channel automatically expands its internal buffer to store the value",
+            ],
+            "correct_index": 0,
+            "explanation": "Unbuffered channels provide synchronous communication; a send blocks until a receiver is ready to receive the value, synchronizing both goroutines.",
+            "skill_tested": "Go Concurrency & Channel Synchronization",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Verifies foundational understanding of CSP concurrency patterns and channel blocking semantics in Go.",
+        },
+        {
+            "id": "go_2",
+            "question": "How are interfaces satisfied in Go compared to languages like Java or C#?",
+            "options": [
+                "Implicitly (structural typing): a type implements an interface simply by implementing all of the interface's method signatures, without an explicit `implements` declaration",
+                "Explicitly: a type must declare `type MyStruct struct implements MyInterface`",
+                "Only through pointer receivers; value receivers cannot satisfy any interface",
+                "Interfaces can only be satisfied by embedding the `io.Reader` interface",
+            ],
+            "correct_index": 0,
+            "explanation": "Go uses structural subtyping (duck typing at compile-time); any type that defines all methods declared in an interface automatically implements that interface.",
+            "skill_tested": "Go Type System & Interfaces",
+            "difficulty": "Beginner",
+            "selection_rationale": "Validates core design principles of Go's structural type system and interface composition.",
+        },
+        {
+            "id": "go_3",
+            "question": "In Go, what is the execution order of multiple deferred function calls (`defer f()`) within the same enclosing function?",
+            "options": [
+                "Last-In, First-Out (LIFO): deferred calls are executed in reverse order of their registration when the surrounding function returns",
+                "First-In, First-Out (FIFO): deferred calls execute in the exact order they were declared",
+                "Concurrent: all deferred functions are launched in parallel goroutines",
+                "Arbitrary: the Go runtime executes them in random hash-map order",
+            ],
+            "correct_index": 0,
+            "explanation": "Deferred calls are pushed onto a per-goroutine call stack and popped/evaluated in LIFO (reverse) order upon function exit.",
+            "skill_tested": "Go Defer Semantics & Resource Cleanup",
+            "difficulty": "Beginner",
+            "selection_rationale": "Ensures proper understanding of resource cleanup patterns (closing files, releasing locks).",
+        },
+    ],
     "general": [
         {
             "id": "gen_1",
@@ -543,6 +590,8 @@ def _select_diagnostic_question_for_goal(
         pool_key = "ml_ai"
     elif "interview" in combined or "algorithm" in combined or "leetcode" in combined or "dsa" in combined:
         pool_key = "algorithms_interview"
+    elif "go" in combined or "golang" in combined:
+        pool_key = "go"
     elif "data" in combined or "pandas" in combined or "analytics" in combined or "python" in combined:
         pool_key = "python_data"
 
@@ -753,6 +802,17 @@ class PersonalizedRoadmapService:
                 "Offline-First Mobile Architecture with Room",
                 "Android App Performance & Multi-Module Clean Architecture",
                 "Android Portfolio Capstone Application",
+            ]
+        elif "go" in dom_lower or "golang" in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact Go (Golang) roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific systems, backend services, or cloud projects do you want to build with Go?"
+            )
+            quick_opts = [
+                "High-Throughput Concurrent Microservices",
+                "Cloud-Native Tooling & Kubernetes Operators",
+                "Distributed Systems & gRPC Services",
+                "Core Go Mechanics & CLI Tools",
             ]
         else:
             mentor_text = (
@@ -1608,6 +1668,112 @@ class PersonalizedRoadmapService:
                             "completionCriteria": ["Implement analytical warehouse", "Validate query performance"],
                             "assessment": "Project evaluation against rubric",
                             "passingCriteria": "All analytical queries executed and benchmarked",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+            ]
+
+        if "go" in combined or "golang" in combined:
+            return [
+                {
+                    "title": "Phase 1: Go Systems Fundamentals & Concurrency" if level != "Advanced" else "Phase 1: Advanced Go Runtime & Low-Latency Systems",
+                    "objective": "Master Go syntax, type composition with interfaces, and goroutine/channel concurrency" if level != "Advanced" else "Master Go memory allocation, runtime scheduler internals, and lockless concurrency",
+                    "durationWeeks": 3,
+                    "topics": ["Go Core Syntax & Tooling", "Structs & Interfaces", "Goroutines & Channels"],
+                    "tasks": [
+                        {
+                            "id": "go_t1_1" if level != "Advanced" else "t1_1",
+                            "title": "Set Up Go Toolchain & Core Syntax Lab" if level != "Advanced" else "Benchmark and Profile Go Services",
+                            "description": "Configure Go modules, workspace, and master idiomatic Go syntax" if level != "Advanced" else "Profile CPU and heap allocations using pprof under high throughput",
+                            "instructions": "Install Go toolchain, initialize go.mod, write CLI utilities with standard library packages." if level != "Advanced" else "Instrument service with pprof and benchmark concurrent endpoints.",
+                            "estimatedHours": 2.5,
+                            "resources": ["Official Go Tour & Documentation", "Effective Go Guide"],
+                            "completionCriteria": "Go module builds cleanly and passes all unit tests with go test ./...",
+                            "isCompleted": False,
+                            "dependencies": [],
+                            "topicId": "go_syntax" if level != "Advanced" else "t1_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Go Toolchain & Modules", "Types & Structs", "Error Handling & Defer"],
+                            "learningObjectives": ["Configure Go workspace", "Write idiomatic error-checked Go code"],
+                            "codeExample": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Go Ready\")\n}",
+                        },
+                        {
+                            "id": "go_t1_2" if level != "Advanced" else "t1_2",
+                            "title": "Build Concurrent Pipeline with Goroutines & Channels" if level != "Advanced" else "Implement Mutex-Free Ring Buffer",
+                            "description": "Apply CSP concurrency using channels, select blocks, and sync primitives" if level != "Advanced" else "Construct lock-free memory ring buffer with atomic operations",
+                            "instructions": "Implement worker pool pattern with buffered channels and sync.WaitGroup." if level != "Advanced" else "Implement lockless atomic data pipeline and profile cache line contention.",
+                            "estimatedHours": 3.0,
+                            "resources": ["Concurrency in Go (Katherine Cox-Buday)", "Go Memory Model"],
+                            "completionCriteria": "Passes all concurrent tests with -race flag enabled with zero race detector warnings",
+                            "isCompleted": False,
+                            "dependencies": ["go_t1_1" if level != "Advanced" else "t1_1"],
+                            "topicId": "go_concurrency" if level != "Advanced" else "t1_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Goroutines & sync.WaitGroup", "Channels & Select", "Race Detector (-race)"],
+                            "learningObjectives": ["Design clean CSP pipelines", "Eliminate race conditions"],
+                            "codeExample": "func worker(ch <-chan int, wg *sync.WaitGroup) {\n    defer wg.Done()\n    for val := range ch { process(val) }\n}",
+                        },
+                    ],
+                    "activities": ["Configure Go Module Workspace", "Build Concurrent Worker Pool"],
+                    "resources": ["Go Documentation", "Effective Go"],
+                    "milestones": [
+                        {
+                            "title": "Go Concurrency & Toolchain Milestone",
+                            "completionCriteria": ["Build CLI utility", "Pass race detector tests"],
+                            "assessment": "Code evaluation with go test -race",
+                            "passingCriteria": "Zero race conditions and 100% test pass rate",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+                {
+                    "title": "Phase 2: Applied Microservices & Cloud-Native Delivery",
+                    "objective": "Build production-ready HTTP/gRPC microservices with persistence and Docker containerization",
+                    "durationWeeks": 4,
+                    "topics": ["REST & gRPC Microservices", "Database Persistence & Migrations", "Containerized Deployment"],
+                    "tasks": [
+                        {
+                            "id": "go_t2_1" if level != "Advanced" else "t2_1",
+                            "title": "Implement Cloud-Native REST/gRPC API Service",
+                            "description": "Build high-throughput REST or gRPC service with structured logging and middleware",
+                            "instructions": "Implement HTTP router or gRPC server, add context cancellation handling and middleware.",
+                            "estimatedHours": 3.5,
+                            "resources": ["Go net/http & gRPC Guides", "Cloud-Native Go Patterns"],
+                            "completionCriteria": "Endpoints respond within SLA and handle context timeouts cleanly",
+                            "isCompleted": False,
+                            "dependencies": ["go_t1_2" if level != "Advanced" else "t1_2"],
+                            "topicId": "go_services" if level != "Advanced" else "t2_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["net/http & Chi Router", "Context Cancellation", "Structured Logging"],
+                            "learningObjectives": ["Build resilient HTTP services", "Handle request contexts properly"],
+                            "codeExample": "func handler(w http.ResponseWriter, r *http.Request) {\n    ctx := r.Context()\n    // handle request\n}",
+                        },
+                        {
+                            "id": "go_t2_2" if level != "Advanced" else "t2_2",
+                            "title": "Complete Capstone Portfolio Service",
+                            "description": "Deliver a complete, containerized distributed Go backend service",
+                            "instructions": "Connect PostgreSQL using pgx or sqlx, write migration scripts, package with multi-stage Dockerfile.",
+                            "estimatedHours": 4.5,
+                            "resources": ["Docker Multi-Stage Build for Go", "Production Readiness Checklist"],
+                            "completionCriteria": "Automated integration test suite passes and Docker image compiles under 25MB",
+                            "isCompleted": False,
+                            "dependencies": ["go_t2_1" if level != "Advanced" else "t2_1"],
+                            "topicId": "go_capstone" if level != "Advanced" else "t2_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["PostgreSQL with pgx", "Multi-stage Dockerfile", "Healthchecks & Metrics"],
+                            "learningObjectives": ["Deploy lightweight Go containers", "Integrate SQL persistence"],
+                            "codeExample": "FROM golang:1.22-alpine AS builder\nWORKDIR /app\nRUN go build -o server .\nFROM scratch\nCOPY --from=builder /app/server /server\nENTRYPOINT [\"/server\"]",
+                        },
+                    ],
+                    "activities": ["Build Cloud REST API", "Ship Multi-Stage Docker Service"],
+                    "resources": ["Cloud-Native Go", "Production Readiness Checklist"],
+                    "milestones": [
+                        {
+                            "title": "Go Microservices Capstone Delivery",
+                            "completionCriteria": ["Implement SQL persistence", "Build minimal Docker image"],
+                            "assessment": "Capstone code review & load test",
+                            "passingCriteria": "Service passes automated tests under concurrent load",
                         }
                     ],
                     "recommendedCourseIds": [],

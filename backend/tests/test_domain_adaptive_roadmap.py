@@ -153,3 +153,52 @@ async def test_roadmap_generation_and_topic_completion_flow(client: AsyncClient,
     assert comp_data["isCompleted"] is True
     assert comp_data["progressPercentage"] > 0
     assert topic_id in comp_data["completedTopicIds"]
+
+
+@pytest.mark.asyncio
+async def test_go_domain_adaptive_assessment_and_roadmap(client: AsyncClient, setup_test_learner):
+    """Test start assessment with domain='Go' and verify Go diagnostic questions and curriculum."""
+    # 1. Start assessment for Go
+    start_resp = await client.post("/api/v1/roadmaps/personalized/start", json={"domain": "Go"})
+    assert start_resp.status_code == 201
+    data = start_resp.json()
+    session_id = data["id"]
+    assert data["domain"] == "Go"
+    assert "Go" in data["latestMessage"] or "mentor" in data["latestMessage"].lower()
+
+    # Step 1: Goal
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "High-Throughput Concurrent Microservices in Go"},
+    )
+    # Step 2: Level
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Intermediate"},
+    )
+    # Step 3: Hours -> triggers Go diagnostic question
+    resp = await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "8 hours/week"},
+    )
+    assert resp.status_code == 200
+    quiz_data = resp.json().get("quiz")
+    assert quiz_data is not None
+    assert any(
+        kw in quiz_data["skillTested"].lower()
+        for kw in ["go", "channel", "goroutine", "concurrency", "defer", "interface"]
+    )
+
+    # Submit quiz answer
+    await client.post(
+        f"/api/v1/roadmaps/personalized/session/{session_id}/message",
+        json={"answer": "Submitting Go quiz answer", "quizSelectedIndex": 0},
+    )
+
+    # Generate roadmap
+    gen_resp = await client.post(f"/api/v1/roadmaps/personalized/session/{session_id}/generate")
+    assert gen_resp.status_code in (200, 201)
+    roadmap = gen_resp.json()
+    assert roadmap["structure"]["domain"] == "Go"
+    assert len(roadmap["structure"]["phases"]) >= 2
+    assert "Go" in roadmap["structure"]["phases"][0]["title"]
