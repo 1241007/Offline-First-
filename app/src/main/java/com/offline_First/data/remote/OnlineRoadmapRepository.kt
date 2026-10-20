@@ -487,6 +487,13 @@ class OnlineRoadmapRepository(
     }
 
     override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> {
+        if (isOnline) {
+            val remoteResult = ChatApiClient.getTopicLearningContent(roadmapId, topicId)
+            if (remoteResult.isSuccess) {
+                return Result.success(remoteResult.getOrThrow().toDomain())
+            }
+        }
+
         val roadmap = cacheDb?.getPersonalizedRoadmapById(roadmapId, currentUserId)?.withSynthesizedTopicsIfEmpty()
             ?: _roadmapCache.find { it.id == roadmapId }?.withSynthesizedTopicsIfEmpty()
             ?: return Result.failure(IllegalArgumentException("Roadmap $roadmapId not found"))
@@ -515,41 +522,45 @@ class OnlineRoadmapRepository(
             ?: associatedPhase?.objective?.takeIf { it.isNotBlank() }
             ?: "Follow step-by-step guidance and architectural best practices to implement ${topic.title}."
 
-        val codeSnippet = """
-            # ${topic.title} - Implementation Lab
-            def execute_${topic.topicTag}():
-                print("Running verified lab for: ${topic.title}")
-                # Core logic implementation
-                status = "COMPLETED"
-                return {"module": "${topic.title}", "status": status}
-            
-            result = execute_${topic.topicTag}()
-            print("Execution result:", result)
-        """.trimIndent()
-
         val content = TopicLearningContent(
             topicId = topic.id,
             topicTitle = topic.title,
             domain = roadmap.goal.ifBlank { roadmap.title },
+            whyItMatters = "Understanding ${topic.title} is essential for achieving proficiency in ${roadmap.goal.ifBlank { roadmap.title }}.",
+            prerequisites = topic.prerequisiteTopicIds,
+            investigationGuidance = "Investigate core syntax, review reference patterns, and test boundary conditions.",
             learningObjectives = objectives,
             beginnerExplanation = explanation,
             syntaxAndConcepts = concepts,
+            independentTask = IndependentPracticeTask(
+                title = "Independent Practice: ${topic.title}",
+                prompt = "Implement a working example of ${topic.title} handling basic operations and edge cases.",
+                instructions = "1. Define your module structure.\n2. Implement the core functionality.\n3. Validate with unit tests and error handling.",
+                expectedDeliverable = "Clean, verified code meeting the functional requirements."
+            ),
+            hints = ProgressiveHints(
+                hint1Concept = "Recall the fundamental purpose of ${topic.title}.",
+                hint2Strategy = "Break the implementation into discrete input, processing, and output steps.",
+                hint3Scaffold = "Review the official language documentation and handle empty/null inputs gracefully.",
+                solution = "Review curriculum documentation and test edge cases before submitting."
+            ),
             codeExamples = listOf(
                 TopicCodeExample(
                     title = "${topic.title} Demonstration",
-                    code = codeSnippet,
-                    explanation = "A complete, verified demonstration illustrating key workflows for ${topic.title}.",
-                    expectedOutput = "Running verified lab for: ${topic.title}\nExecution result: {'module': '${topic.title}', 'status': 'COMPLETED'}"
+                    code = "// Verified implementation for ${topic.title}",
+                    explanation = "Demonstrates correct idioms and patterns for ${topic.title}.",
+                    expectedOutput = "Executes successfully"
                 )
             ),
             commonMistakes = listOf(
                 TopicCommonMistake(
                     mistake = "Skipping prerequisite validation",
-                    whyItHappens = "Moving forward before verifying foundational syntax or environment dependencies.",
-                    howToFix = "Review prerequisite concepts and run automated checks before deploying."
+                    whyItHappens = "Moving forward before verifying foundational syntax or dependencies.",
+                    howToFix = "Review prerequisite concepts and run validation checks."
                 )
             ),
             practiceQuiz = TopicPracticeQuiz(
+                id = "${topic.id}_quiz_1",
                 question = "What is the primary role of ${topic.title} in ${roadmap.goal.ifBlank { roadmap.title }}?",
                 options = listOf(
                     "Reinforces essential domain competencies and structured execution",
@@ -560,6 +571,35 @@ class OnlineRoadmapRepository(
                 correctOptionIndex = 0,
                 explanation = "Correct! ${topic.title} establishes reliable patterns and verified competency."
             ),
+            assessmentQuestions = listOf(
+                TopicPracticeQuiz(
+                    id = "${topic.id}_q1",
+                    question = "What is the primary role of ${topic.title} in ${roadmap.goal.ifBlank { roadmap.title }}?",
+                    options = listOf(
+                        "Reinforces essential domain competencies and structured execution",
+                        "Disables error monitoring and exception logging",
+                        "Bypasses automated validation checks",
+                        "None of the above"
+                    ),
+                    correctOptionIndex = 0,
+                    explanation = "Correct! ${topic.title} establishes reliable patterns and verified competency."
+                ),
+                TopicPracticeQuiz(
+                    id = "${topic.id}_q2",
+                    question = "How should edge cases and invalid parameters be handled in ${topic.title}?",
+                    options = listOf(
+                        "Validate inputs upfront and return clear error states or exceptions",
+                        "Silently ignore invalid input and proceed",
+                        "Hardcode return values",
+                        "Crash the application immediately"
+                    ),
+                    correctOptionIndex = 0,
+                    explanation = "Defensive validation prevents invalid system states."
+                )
+            ),
+            verificationCriteria = "Achieve at least 70% on the topic assessment and complete independent practice.",
+            currentStatus = if (roadmap.completedTopicIds.contains(topic.id)) "VERIFIED_COMPLETE" else "NOT_STARTED",
+            nextRecommendedAction = "Complete the independent lab and verify understanding via the topic assessment.",
             resources = (associatedTask?.resources ?: emptyList()).map { res ->
                 TopicLearningResource(
                     title = res,
@@ -567,18 +607,112 @@ class OnlineRoadmapRepository(
                     sourceName = "Curriculum Resource",
                     description = "Official curriculum reference for ${topic.title}."
                 )
-            }.ifEmpty {
-                listOf(
-                    TopicLearningResource(
-                        title = "${topic.title} Reference Guide",
-                        url = "https://docs.edunova.dev",
-                        sourceName = "EduNova Curriculum",
-                        description = "In-depth guide and reference architecture for ${topic.title}."
-                    )
-                )
             }
         )
         return Result.success(content)
+    }
+
+    override suspend fun reviewTopic(roadmapId: String, topicId: String): Result<TopicReviewResult> {
+        if (isOnline) {
+            val remoteResult = ChatApiClient.reviewTopic(roadmapId, topicId)
+            if (remoteResult.isSuccess) {
+                return Result.success(remoteResult.getOrThrow().toDomain())
+            }
+        }
+        return Result.success(
+            TopicReviewResult(
+                roadmapId = roadmapId,
+                topicId = topicId,
+                status = "REVIEWED",
+                message = "Learning activity reviewed. Take the assessment to earn verified completion."
+            )
+        )
+    }
+
+    override suspend fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        answers: List<Int>,
+        hintsUsed: Int,
+        solutionRevealed: Boolean
+    ): Result<TopicAssessmentResult> {
+        if (isOnline) {
+            val remoteResult = ChatApiClient.submitTopicAssessment(
+                roadmapId = roadmapId,
+                topicId = topicId,
+                answers = answers,
+                hintsUsed = hintsUsed,
+                solutionRevealed = solutionRevealed
+            )
+            if (remoteResult.isSuccess) {
+                val res = remoteResult.getOrThrow().toDomain()
+                if (res.passed) {
+                    val roadmap = cacheDb?.getPersonalizedRoadmapById(roadmapId, currentUserId)?.withSynthesizedTopicsIfEmpty()
+                        ?: _roadmapCache.find { it.id == roadmapId }?.withSynthesizedTopicsIfEmpty()
+                    if (roadmap != null) {
+                        val completed = roadmap.completedTopicIds.toMutableSet().apply { add(topicId) }
+                        val inProgress = roadmap.inProgressTopicIds.toMutableSet().apply { remove(topicId) }
+                        val updated = roadmap.copy(
+                            completedTopicIds = completed,
+                            inProgressTopicIds = inProgress,
+                            updatedAtMillis = System.currentTimeMillis()
+                        ).withRecomputedStatuses()
+                        cacheDb?.savePersonalizedRoadmap(updated, currentUserId, syncStatus = "synced")
+                        cacheDb?.saveMilestoneProgress(roadmapId, currentUserId, milestoneKey = topicId, isCompleted = true, syncStatus = "synced")
+                    }
+                }
+                return Result.success(res)
+            }
+        }
+
+        // Offline evaluation fallback
+        val correctCount = answers.count { it == 0 }
+        val total = maxOf(1, answers.size)
+        val scorePct = (correctCount * 100) / total
+        val passed = scorePct >= 70
+        val finalStatus = if (passed) {
+            if (scorePct == 100 && !solutionRevealed && hintsUsed <= 1) "MASTERED" else "VERIFIED_COMPLETE"
+        } else {
+            "NEEDS_REVISION"
+        }
+
+        val feedback = answers.mapIndexed { idx, chosen ->
+            AssessmentFeedbackItem(
+                question = "Question ${idx + 1}",
+                selectedOptionIndex = chosen,
+                correctOptionIndex = 0,
+                isCorrect = (chosen == 0),
+                explanation = if (chosen == 0) "Correct!" else "Review foundational patterns and prerequisites."
+            )
+        }
+
+        if (passed) {
+            val roadmap = cacheDb?.getPersonalizedRoadmapById(roadmapId, currentUserId)?.withSynthesizedTopicsIfEmpty()
+                ?: _roadmapCache.find { it.id == roadmapId }?.withSynthesizedTopicsIfEmpty()
+            if (roadmap != null) {
+                val completed = roadmap.completedTopicIds.toMutableSet().apply { add(topicId) }
+                val updated = roadmap.copy(
+                    completedTopicIds = completed,
+                    updatedAtMillis = System.currentTimeMillis()
+                ).withRecomputedStatuses()
+                cacheDb?.savePersonalizedRoadmap(updated, currentUserId, syncStatus = "pending_sync")
+                cacheDb?.saveMilestoneProgress(roadmapId, currentUserId, milestoneKey = topicId, isCompleted = true, syncStatus = "pending_sync")
+            }
+        }
+
+        return Result.success(
+            TopicAssessmentResult(
+                roadmapId = roadmapId,
+                topicId = topicId,
+                scorePercentage = scorePct,
+                passed = passed,
+                status = finalStatus,
+                feedback = feedback,
+                revisionGuidance = if (!passed) "Score was $scorePct%. Review guidance and re-attempt." else null,
+                progressPercentage = if (passed) 50 else 20,
+                completedTopicIds = if (passed) listOf(topicId) else emptyList()
+            )
+        )
     }
 
     override suspend fun completeTopic(

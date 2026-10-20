@@ -201,7 +201,10 @@ data class PersonalizedRoadmapDetail(
                 topic.status == PersonalizedTopicStatus.SKIPPED ->
                     topic
                 completedTopicIds.contains(topic.id) ->
-                    topic.copy(status = PersonalizedTopicStatus.COMPLETED)
+                    if (topic.status == PersonalizedTopicStatus.MASTERED) topic else topic.copy(status = PersonalizedTopicStatus.VERIFIED_COMPLETE)
+                topic.status in setOf(PersonalizedTopicStatus.REVIEWED, PersonalizedTopicStatus.NEEDS_REVISION) &&
+                    topic.prerequisiteTopicIds.all { satisfiedTopicIds.contains(it) } ->
+                    topic
                 inProgressTopicIds.contains(topic.id) ->
                     topic.copy(status = PersonalizedTopicStatus.IN_PROGRESS)
                 topic.prerequisiteTopicIds.all { prereqId ->

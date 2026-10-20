@@ -16,6 +16,11 @@ import com.offline_First.domain.model.TopicLearningResource
 import com.offline_First.domain.model.TopicCodeExample
 import com.offline_First.domain.model.TopicCommonMistake
 import com.offline_First.domain.model.TopicPracticeQuiz
+import com.offline_First.domain.model.IndependentPracticeTask
+import com.offline_First.domain.model.ProgressiveHints
+import com.offline_First.domain.model.AssessmentFeedbackItem
+import com.offline_First.domain.model.TopicAssessmentResult
+import com.offline_First.domain.model.TopicReviewResult
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -204,9 +209,14 @@ fun PersonalizedRoadmapTopicDto.toDomain(): PersonalizedRoadmapTopic = Personali
     shortDescription = shortDescription,
     estimatedMinutes = estimatedMinutes,
     prerequisiteTopicIds = prerequisiteTopicIds,
-    status = when (status) {
+    status = when (status.lowercase()) {
         "unlocked" -> PersonalizedTopicStatus.UNLOCKED
         "in_progress" -> PersonalizedTopicStatus.IN_PROGRESS
+        "reviewed" -> PersonalizedTopicStatus.REVIEWED
+        "assessment_pending" -> PersonalizedTopicStatus.ASSESSMENT_PENDING
+        "needs_revision" -> PersonalizedTopicStatus.NEEDS_REVISION
+        "verified_complete" -> PersonalizedTopicStatus.VERIFIED_COMPLETE
+        "mastered" -> PersonalizedTopicStatus.MASTERED
         "completed" -> PersonalizedTopicStatus.COMPLETED
         "skipped" -> PersonalizedTopicStatus.SKIPPED
         else -> PersonalizedTopicStatus.LOCKED
@@ -268,28 +278,92 @@ data class TopicCommonMistakeDto(
 )
 
 @Serializable
+data class IndependentPracticeTaskDto(
+    val title: String = "",
+    val prompt: String = "",
+    val instructions: String = "",
+    @SerialName("expectedDeliverable") val expectedDeliverable: String = ""
+)
+
+@Serializable
+data class ProgressiveHintsDto(
+    @SerialName("hint1Concept") val hint1Concept: String = "",
+    @SerialName("hint2Strategy") val hint2Strategy: String = "",
+    @SerialName("hint3Scaffold") val hint3Scaffold: String = "",
+    val solution: String? = null
+)
+
+@Serializable
 data class TopicPracticeQuizDto(
-    val question: String,
+    val id: String = "",
+    val question: String = "",
     val options: List<String> = emptyList(),
-    @SerialName("correct_option_index") val correctOptionIndex: Int = 0,
+    @SerialName("correctOptionIndex") val correctOptionIndex: Int? = null,
+    val explanation: String? = null,
+    @SerialName("skillTested") val skillTested: String? = null,
+    val difficulty: String? = null
+)
+
+@Serializable
+data class TopicAssessmentFeedbackItemDto(
+    val question: String = "",
+    @SerialName("selectedOptionIndex") val selectedOptionIndex: Int = -1,
+    @SerialName("correctOptionIndex") val correctOptionIndex: Int = 0,
+    @SerialName("isCorrect") val isCorrect: Boolean = false,
     val explanation: String = ""
 )
 
 @Serializable
-data class TopicLearningContentDto(
-    @SerialName("topic_id") val topicId: String,
-    @SerialName("topic_title") val topicTitle: String,
-    val domain: String,
-    @SerialName("learning_objectives") val learningObjectives: List<String> = emptyList(),
-    @SerialName("beginner_explanation") val beginnerExplanation: String = "",
-    @SerialName("syntax_and_concepts") val syntaxAndConcepts: String = "",
-    @SerialName("code_examples") val codeExamples: List<TopicCodeExampleDto> = emptyList(),
-    @SerialName("common_mistakes") val commonMistakes: List<TopicCommonMistakeDto> = emptyList(),
-    @SerialName("practice_quiz") val practiceQuiz: TopicPracticeQuizDto? = null,
-    val resources: List<TopicLearningResourceDto> = emptyList()
+data class SubmitTopicAssessmentRequestDto(
+    val answers: List<Int> = emptyList(),
+    @SerialName("hintsUsed") val hintsUsed: Int = 0,
+    @SerialName("solutionRevealed") val solutionRevealed: Boolean = false
 )
 
+@Serializable
+data class SubmitTopicAssessmentResponseDto(
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("topicId") val topicId: String,
+    @SerialName("scorePercentage") val scorePercentage: Int,
+    val passed: Boolean,
+    val status: String,
+    val feedback: List<TopicAssessmentFeedbackItemDto> = emptyList(),
+    @SerialName("revisionGuidance") val revisionGuidance: String? = null,
+    @SerialName("progressPercentage") val progressPercentage: Int = 0,
+    @SerialName("completedTopicIds") val completedTopicIds: List<String> = emptyList(),
+    @SerialName("unlockedTopicIds") val unlockedTopicIds: List<String> = emptyList()
+)
 
+@Serializable
+data class ReviewTopicResponseDto(
+    @SerialName("roadmapId") val roadmapId: String,
+    @SerialName("topicId") val topicId: String,
+    val status: String,
+    val message: String
+)
+
+@Serializable
+data class TopicLearningContentDto(
+    @SerialName("topicId") val topicId: String = "",
+    @SerialName("topicTitle") val topicTitle: String = "",
+    val domain: String = "Python",
+    @SerialName("whyItMatters") val whyItMatters: String = "",
+    val prerequisites: List<String> = emptyList(),
+    @SerialName("investigationGuidance") val investigationGuidance: String = "",
+    @SerialName("learningObjectives") val learningObjectives: List<String> = emptyList(),
+    @SerialName("beginnerExplanation") val beginnerExplanation: String = "",
+    @SerialName("syntaxAndConcepts") val syntaxAndConcepts: String = "",
+    @SerialName("independentTask") val independentTask: IndependentPracticeTaskDto? = null,
+    val hints: ProgressiveHintsDto? = null,
+    @SerialName("codeExamples") val codeExamples: List<TopicCodeExampleDto> = emptyList(),
+    @SerialName("commonMistakes") val commonMistakes: List<TopicCommonMistakeDto> = emptyList(),
+    @SerialName("practiceQuiz") val practiceQuiz: TopicPracticeQuizDto? = null,
+    @SerialName("assessmentQuestions") val assessmentQuestions: List<TopicPracticeQuizDto> = emptyList(),
+    @SerialName("verificationCriteria") val verificationCriteria: String = "",
+    @SerialName("currentStatus") val currentStatus: String = "NOT_STARTED",
+    @SerialName("nextRecommendedAction") val nextRecommendedAction: String = "",
+    val resources: List<TopicLearningResourceDto> = emptyList()
+)
 
 fun TopicLearningResourceDto.toDomain(): TopicLearningResource = TopicLearningResource(
     title = title,
@@ -312,23 +386,77 @@ fun TopicCommonMistakeDto.toDomain(): TopicCommonMistake = TopicCommonMistake(
     howToFix = howToFix
 )
 
+fun IndependentPracticeTaskDto.toDomain(): IndependentPracticeTask = IndependentPracticeTask(
+    title = title,
+    prompt = prompt,
+    instructions = instructions,
+    expectedDeliverable = expectedDeliverable
+)
+
+fun ProgressiveHintsDto.toDomain(): ProgressiveHints = ProgressiveHints(
+    hint1Concept = hint1Concept,
+    hint2Strategy = hint2Strategy,
+    hint3Scaffold = hint3Scaffold,
+    solution = solution
+)
+
 fun TopicPracticeQuizDto.toDomain(): TopicPracticeQuiz = TopicPracticeQuiz(
+    id = id,
     question = question,
     options = options,
     correctOptionIndex = correctOptionIndex,
+    explanation = explanation,
+    skillTested = skillTested,
+    difficulty = difficulty
+)
+
+fun TopicAssessmentFeedbackItemDto.toDomain(): AssessmentFeedbackItem = AssessmentFeedbackItem(
+    question = question,
+    selectedOptionIndex = selectedOptionIndex,
+    correctOptionIndex = correctOptionIndex,
+    isCorrect = isCorrect,
     explanation = explanation
+)
+
+fun SubmitTopicAssessmentResponseDto.toDomain(): TopicAssessmentResult = TopicAssessmentResult(
+    roadmapId = roadmapId,
+    topicId = topicId,
+    scorePercentage = scorePercentage,
+    passed = passed,
+    status = status,
+    feedback = feedback.map { it.toDomain() },
+    revisionGuidance = revisionGuidance,
+    progressPercentage = progressPercentage,
+    completedTopicIds = completedTopicIds,
+    unlockedTopicIds = unlockedTopicIds
+)
+
+fun ReviewTopicResponseDto.toDomain(): TopicReviewResult = TopicReviewResult(
+    roadmapId = roadmapId,
+    topicId = topicId,
+    status = status,
+    message = message
 )
 
 fun TopicLearningContentDto.toDomain(): TopicLearningContent = TopicLearningContent(
     topicId = topicId,
     topicTitle = topicTitle,
     domain = domain,
+    whyItMatters = whyItMatters,
+    prerequisites = prerequisites,
+    investigationGuidance = investigationGuidance,
     learningObjectives = learningObjectives,
     beginnerExplanation = beginnerExplanation,
     syntaxAndConcepts = syntaxAndConcepts,
+    independentTask = independentTask?.toDomain(),
+    hints = hints?.toDomain(),
     codeExamples = codeExamples.map { it.toDomain() },
     commonMistakes = commonMistakes.map { it.toDomain() },
     practiceQuiz = practiceQuiz?.toDomain(),
+    assessmentQuestions = assessmentQuestions.map { it.toDomain() },
+    verificationCriteria = verificationCriteria,
+    currentStatus = currentStatus,
+    nextRecommendedAction = nextRecommendedAction,
     resources = resources.map { it.toDomain() }
 )
 

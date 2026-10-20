@@ -32,6 +32,11 @@ import com.offline_First.domain.model.TopicCommonMistake
 import com.offline_First.domain.model.TopicLearningContent
 import com.offline_First.domain.model.TopicLearningResource
 import com.offline_First.domain.model.TopicPracticeQuiz
+import com.offline_First.domain.model.IndependentPracticeTask
+import com.offline_First.domain.model.ProgressiveHints
+import com.offline_First.domain.model.TopicAssessmentResult
+import com.offline_First.domain.model.AssessmentFeedbackItem
+import com.offline_First.domain.model.PersonalizedTopicStatus
 import com.offline_First.ui.theme.EduNovaAccent
 import com.offline_First.ui.theme.EduNovaPrimary
 import com.offline_First.ui.theme.EduNovaSecondary
@@ -48,6 +53,15 @@ fun PersonalizedTopicDetailScreen(
     val content = uiState.activeTopicContent
     val roadmap = uiState.activeRoadmap
     val isCompleted = roadmap?.completedTopicIds?.contains(content?.topicId ?: "") == true
+    val currentTopicStatus = uiState.assessmentResult?.status
+        ?: content?.currentStatus
+        ?: roadmap?.topics?.find { it.id == content?.topicId }?.status?.name
+        ?: if (isCompleted) "COMPLETED" else "NOT_STARTED"
+
+    val isMastered = currentTopicStatus == "MASTERED"
+    val isVerified = isMastered || currentTopicStatus == "VERIFIED_COMPLETE" || currentTopicStatus == "COMPLETED" || isCompleted
+    val isReviewed = currentTopicStatus == "REVIEWED" || currentTopicStatus == "ASSESSMENT_PENDING"
+    val isNeedsRevision = currentTopicStatus == "NEEDS_REVISION"
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -78,30 +92,58 @@ fun PersonalizedTopicDetailScreen(
                     }
                 },
                 actions = {
-                    if (isCompleted) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = EduNovaSuccess.copy(alpha = 0.15f),
-                            modifier = Modifier.padding(end = 12.dp)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isMastered -> Color(0xFFFFB300).copy(alpha = 0.18f)
+                            isVerified -> EduNovaSuccess.copy(alpha = 0.15f)
+                            isNeedsRevision -> MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                            isReviewed -> EduNovaSecondary.copy(alpha = 0.15f)
+                            else -> EduNovaPrimary.copy(alpha = 0.12f)
+                        },
+                        modifier = Modifier.padding(end = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = EduNovaSuccess,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Completed",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EduNovaSuccess,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Icon(
+                                imageVector = when {
+                                    isMastered -> Icons.Default.Star
+                                    isVerified -> Icons.Default.CheckCircle
+                                    isNeedsRevision -> Icons.Default.WarningAmber
+                                    isReviewed -> Icons.Default.AssignmentLate
+                                    else -> Icons.Default.Pending
+                                },
+                                contentDescription = null,
+                                tint = when {
+                                    isMastered -> Color(0xFFFF8F00)
+                                    isVerified -> EduNovaSuccess
+                                    isNeedsRevision -> MaterialTheme.colorScheme.error
+                                    isReviewed -> EduNovaSecondary
+                                    else -> EduNovaPrimary
+                                },
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = when {
+                                    isMastered -> "Mastered 🌟"
+                                    isVerified -> "Verified Complete ✓"
+                                    isNeedsRevision -> "Needs Revision"
+                                    isReviewed -> "Reviewed (Assessment Pending)"
+                                    else -> "In Progress"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = when {
+                                    isMastered -> Color(0xFFFF8F00)
+                                    isVerified -> EduNovaSuccess
+                                    isNeedsRevision -> MaterialTheme.colorScheme.error
+                                    isReviewed -> EduNovaSecondary
+                                    else -> EduNovaPrimary
+                                },
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 },
@@ -135,41 +177,77 @@ fun PersonalizedTopicDetailScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Back to Roadmap")
+                        Text("Roadmap")
                     }
 
-                    Button(
-                        onClick = {
-                            val rId = roadmap?.id ?: return@Button
-                            val tId = content?.topicId ?: return@Button
-                            val passed = uiState.topicQuizAnswerCorrect ?: true
-                            viewModel.completeTopic(rId, tId, quizPassed = passed) {
-                                Toast.makeText(context, "Topic marked completed!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        enabled = !uiState.isCompletingTopic && content != null,
-                        modifier = Modifier.weight(1.2f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCompleted) EduNovaSuccess else EduNovaPrimary
-                        )
-                    ) {
-                        if (uiState.isCompletingTopic) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
+                    if (isVerified) {
+                        Button(
+                            onClick = onBack,
+                            modifier = Modifier.weight(1.3f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isMastered) Color(0xFFFF8F00) else EduNovaSuccess
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Saving...")
-                        } else if (isCompleted) {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        ) {
+                            Icon(
+                                if (isMastered) Icons.Default.Star else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Completed ✓")
-                        } else {
-                            Icon(Icons.Default.CheckCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(if (isMastered) "Mastered 🌟" else "Verified Complete ✓")
+                        }
+                    } else if (isReviewed) {
+                        OutlinedButton(
+                            onClick = {
+                                Toast.makeText(
+                                    context,
+                                    "Complete the verification assessment below to verify this topic!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1.3f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = EduNovaSecondary
+                            ),
+                            border = BorderStroke(1.5.dp, EduNovaSecondary)
+                        ) {
+                            Icon(Icons.Default.FactCheck, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Mark Completed")
+                            Text("Take Assessment ↓")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                val rId = roadmap?.id ?: return@Button
+                                val tId = content?.topicId ?: return@Button
+                                viewModel.reviewTopic(rId, tId) {
+                                    Toast.makeText(
+                                        context,
+                                        "Topic marked reviewed! Complete the assessment below to verify.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            enabled = !uiState.isReviewingTopic && content != null,
+                            modifier = Modifier.weight(1.3f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
+                        ) {
+                            if (uiState.isReviewingTopic) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Saving...")
+                            } else {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Mark as Reviewed")
+                            }
                         }
                     }
                 }
@@ -233,14 +311,24 @@ fun PersonalizedTopicDetailScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // 1. Objectives
+                    // 1. Why this skill matters & prerequisites
+                    if (content.whyItMatters.isNotBlank() || content.prerequisites.isNotEmpty()) {
+                        item(key = "why_it_matters") {
+                            WhyItMattersAndPrereqCard(
+                                whyItMatters = content.whyItMatters,
+                                prerequisites = content.prerequisites
+                            )
+                        }
+                    }
+
+                    // 2. Learning Objectives
                     if (content.learningObjectives.isNotEmpty()) {
                         item(key = "objectives") {
                             LearningObjectivesCard(objectives = content.learningObjectives)
                         }
                     }
 
-                    // 2. Beginner Explanation
+                    // 3. Beginner Explanation
                     if (content.beginnerExplanation.isNotBlank()) {
                         item(key = "explanation") {
                             ConceptExplanationCard(
@@ -250,14 +338,21 @@ fun PersonalizedTopicDetailScreen(
                         }
                     }
 
-                    // 3. Syntax & Terminology
+                    // 4. Syntax & Terminology
                     if (content.syntaxAndConcepts.isNotBlank()) {
                         item(key = "syntax") {
                             SyntaxConceptsCard(syntax = content.syntaxAndConcepts)
                         }
                     }
 
-                    // 4. Code Examples
+                    // 5. Guided Investigation
+                    if (content.investigationGuidance.isNotBlank()) {
+                        item(key = "guided_investigation") {
+                            GuidedInvestigationCard(guidance = content.investigationGuidance)
+                        }
+                    }
+
+                    // 6. Code Examples
                     if (content.codeExamples.isNotEmpty()) {
                         item(key = "code_header") {
                             SectionHeader(
@@ -270,7 +365,7 @@ fun PersonalizedTopicDetailScreen(
                         }
                     }
 
-                    // 5. Common Mistakes
+                    // 7. Common Mistakes
                     if (content.commonMistakes.isNotEmpty()) {
                         item(key = "mistakes_header") {
                             SectionHeader(
@@ -283,7 +378,27 @@ fun PersonalizedTopicDetailScreen(
                         }
                     }
 
-                    // 6. Interactive Practice Quiz
+                    // 8. Independent Practice Task
+                    content.independentTask?.let { task ->
+                        item(key = "independent_task") {
+                            IndependentTaskCard(task = task)
+                        }
+                    }
+
+                    // 9. Progressive Hints
+                    content.hints?.let { hints ->
+                        item(key = "progressive_hints") {
+                            ProgressiveHintsCard(
+                                hints = hints,
+                                unlockedLevel = uiState.hintsUnlockedLevel,
+                                solutionRevealed = uiState.solutionRevealed,
+                                onUnlockNext = { viewModel.unlockNextHint() },
+                                onRevealSolution = { viewModel.revealSolution() }
+                            )
+                        }
+                    }
+
+                    // 10. Interactive Practice Quiz (quick concept check)
                     content.practiceQuiz?.let { quiz ->
                         item(key = "quiz") {
                             InteractivePracticeQuizCard(
@@ -298,7 +413,50 @@ fun PersonalizedTopicDetailScreen(
                         }
                     }
 
-                    // 7. Verified Learning Resources
+                    // 11. Topic Assessment Feedback (if available)
+                    if (uiState.assessmentResult != null) {
+                        item(key = "assessment_result") {
+                            AssessmentResultFeedbackCard(
+                                result = uiState.assessmentResult!!,
+                                onRetry = { viewModel.resetAssessmentState() }
+                            )
+                        }
+                    }
+
+                    // 12. Topic Verification Assessment (multi-question gate)
+                    if (content.assessmentQuestions.isNotEmpty() && (uiState.assessmentResult == null || !uiState.assessmentResult!!.passed)) {
+                        item(key = "assessment_card") {
+                            TopicVerificationAssessmentCard(
+                                questions = content.assessmentQuestions,
+                                selectedAnswers = uiState.assessmentAnswers,
+                                isSubmitting = uiState.isSubmittingTopicAssessment,
+                                onSelectAnswer = { qIdx, optIdx ->
+                                    viewModel.selectAssessmentAnswer(qIdx, optIdx)
+                                },
+                                onSubmit = {
+                                    val rId = roadmap?.id ?: return@TopicVerificationAssessmentCard
+                                    val tId = content.topicId
+                                    viewModel.submitTopicAssessment(rId, tId) { res ->
+                                        if (res.passed) {
+                                            Toast.makeText(
+                                                context,
+                                                if (res.status == "MASTERED") "Assessment Perfect! Topic Mastered 🌟" else "Assessment Passed! Topic Verified Complete ✓",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Score: ${res.scorePercentage}%. Review the feedback and try again.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // 13. Verified Learning Resources
                     if (content.resources.isNotEmpty()) {
                         item(key = "resources_header") {
                             SectionHeader(
@@ -801,6 +959,677 @@ private fun VerifiedResourceCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhyItMattersAndPrereqCard(
+    whyItMatters: String,
+    prerequisites: List<String>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Lightbulb,
+                    contentDescription = null,
+                    tint = EduNovaPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Why This Skill Matters",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = EduNovaPrimary
+                )
+            }
+
+            if (whyItMatters.isNotBlank()) {
+                Text(
+                    text = whyItMatters,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (prerequisites.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Prerequisites:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    prerequisites.forEach { prereq ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Text(
+                                text = prereq,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuidedInvestigationCard(guidance: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, EduNovaSecondary.copy(alpha = 0.25f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Explore,
+                    contentDescription = null,
+                    tint = EduNovaSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Guided Investigation",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = EduNovaSecondary
+                )
+            }
+            Text(
+                text = guidance,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 20.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun IndependentTaskCard(task: IndependentPracticeTask) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.5.dp, EduNovaAccent.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Construction,
+                    contentDescription = null,
+                    tint = EduNovaAccent,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Independent Practice Lab",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = EduNovaAccent
+                    )
+                    Text(
+                        text = "Attempt independently before checking solutions",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = task.prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            if (task.instructions.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Lab Instructions:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = task.instructions,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = EduNovaSuccess.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, EduNovaSuccess.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.AssignmentTurnedIn,
+                        contentDescription = null,
+                        tint = EduNovaSuccess,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Deliverable: ${task.expectedDeliverable}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = EduNovaSuccess
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgressiveHintsCard(
+    hints: ProgressiveHints,
+    unlockedLevel: Int,
+    solutionRevealed: Boolean,
+    onUnlockNext: () -> Unit,
+    onRevealSolution: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.HelpOutline,
+                        contentDescription = null,
+                        tint = EduNovaSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Progressive Hints",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = EduNovaSecondary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = EduNovaSecondary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = if (solutionRevealed) "Assisted" else if (unlockedLevel > 0) "Hint $unlockedLevel of 3" else "3 Available",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EduNovaSecondary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "Use hints sequentially if you are stuck. Revealing the complete solution reduces unassisted mastery.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Hint 1
+            if (unlockedLevel >= 1) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = EduNovaSecondary.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, EduNovaSecondary.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "💡 Hint 1: Concept Direction",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EduNovaSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = hints.hint1Concept, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // Hint 2
+            if (unlockedLevel >= 2) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = EduNovaSecondary.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, EduNovaSecondary.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "🔍 Hint 2: Strategy & Steps",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EduNovaSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = hints.hint2Strategy, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // Hint 3
+            if (unlockedLevel >= 3) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = EduNovaSecondary.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, EduNovaSecondary.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "🧱 Hint 3: Code Scaffold & Structure",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EduNovaSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = hints.hint3Scaffold, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // Solution Outline
+            if (solutionRevealed && hints.solution != null) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "⚠️ Solution Outline (Assisted Review)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = hints.solution,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
+            // Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (unlockedLevel < 3) {
+                    OutlinedButton(
+                        onClick = onUnlockNext,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Unlock Hint ${unlockedLevel + 1} of 3")
+                    }
+                } else if (!solutionRevealed && hints.solution != null) {
+                    OutlinedButton(
+                        onClick = onRevealSolution,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reveal Solution Outline")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopicVerificationAssessmentCard(
+    questions: List<TopicPracticeQuiz>,
+    selectedAnswers: Map<Int, Int>,
+    isSubmitting: Boolean,
+    onSelectAnswer: (Int, Int) -> Unit,
+    onSubmit: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.5.dp, EduNovaPrimary.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.FactCheck,
+                    contentDescription = null,
+                    tint = EduNovaPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Topic Verification Assessment",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = EduNovaPrimary
+                    )
+                    Text(
+                        text = "Score >= 70% required to verify completion",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            questions.forEachIndexed { qIdx, q ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Question ${qIdx + 1} of ${questions.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EduNovaPrimary
+                            )
+                            if (!q.skillTested.isNullOrBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.surface
+                                ) {
+                                    Text(
+                                        text = q.skillTested,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = q.question,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            q.options.forEachIndexed { optIdx, optText ->
+                                val isSelected = selectedAnswers[qIdx] == optIdx
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectAnswer(qIdx, optIdx) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) EduNovaPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) EduNovaPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${('A' + optIdx)}. ",
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) EduNovaPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = optText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isSelected) {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = EduNovaPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val allAnswered = questions.indices.all { selectedAnswers.containsKey(it) }
+
+            Button(
+                onClick = onSubmit,
+                enabled = allAnswered && !isSubmitting,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
+            ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Evaluating Evidence...")
+                } else {
+                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (allAnswered) "Submit Verification Assessment" else "Answer All Questions (${selectedAnswers.size}/${questions.size})")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssessmentResultFeedbackCard(
+    result: TopicAssessmentResult,
+    onRetry: () -> Unit
+) {
+    val passed = result.passed
+    val cardBorderColor = if (passed) EduNovaSuccess else MaterialTheme.colorScheme.error
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.5.dp, cardBorderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (passed) Icons.Default.CheckCircle else Icons.Default.WarningAmber,
+                        contentDescription = null,
+                        tint = cardBorderColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (result.status == "MASTERED") "Mastered 🌟" else if (passed) "Verified Complete ✓" else "Needs Revision",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = cardBorderColor
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = cardBorderColor.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "${result.scorePercentage}%",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = cardBorderColor,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (!passed && !result.revisionGuidance.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Targeted Revision Guidance:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = result.revisionGuidance,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            // Per question feedback
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                result.feedback.forEachIndexed { fIdx, fb ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (fb.isCorrect) EduNovaSuccess.copy(alpha = 0.06f) else MaterialTheme.colorScheme.error.copy(alpha = 0.06f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (fb.isCorrect) EduNovaSuccess.copy(alpha = 0.2f) else MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (fb.isCorrect) Icons.Default.Check else Icons.Default.Close,
+                                    contentDescription = null,
+                                    tint = if (fb.isCorrect) EduNovaSuccess else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Question ${fIdx + 1}: ${if (fb.isCorrect) "Correct" else "Incorrect"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (fb.isCorrect) EduNovaSuccess else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = fb.explanation,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!passed) {
+                OutlinedButton(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Re-attempt Assessment")
+                }
             }
         }
     }

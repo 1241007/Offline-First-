@@ -28,6 +28,9 @@ from app.schemas.personalized_roadmap import (
     TopicLearningContentResponse,
     CompleteTopicRequest,
     CompleteTopicResponse,
+    SubmitTopicAssessmentRequest,
+    SubmitTopicAssessmentResponse,
+    ReviewTopicResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["roadmaps"])
@@ -409,6 +412,59 @@ async def complete_topic(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/roadmaps/personalized/{roadmap_id}/topics/{topic_id}/review",
+    response_model=ReviewTopicResponse,
+)
+async def review_topic(
+    roadmap_id: str,
+    topic_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Record that learner reviewed study material, updating topic status to REVIEWED without bypassing assessment.
+    """
+    service = PersonalizedRoadmapService(db)
+    try:
+        return await service.review_topic(
+            roadmap_id=roadmap_id,
+            topic_id=topic_id,
+            user_id=current_user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/roadmaps/personalized/{roadmap_id}/topics/{topic_id}/submit-assessment",
+    response_model=SubmitTopicAssessmentResponse,
+)
+async def submit_topic_assessment(
+    roadmap_id: str,
+    topic_id: str,
+    payload: SubmitTopicAssessmentRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Evaluate topic assessment answers, determine verified completion or mastery, unlock downstream dependencies, and recalculate progress.
+    """
+    service = PersonalizedRoadmapService(db)
+    try:
+        return await service.submit_topic_assessment(
+            roadmap_id=roadmap_id,
+            topic_id=topic_id,
+            user_id=current_user_id,
+            answers=payload.answers,
+            hints_used=payload.hints_used,
+            solution_revealed=payload.solution_revealed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 
 
 # --- Saved Roadmaps ---

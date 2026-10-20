@@ -10,6 +10,8 @@ import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.PersonalizedRoadmapTopic
 import com.offline_First.domain.model.PersonalizedTopicStatus
 import com.offline_First.domain.model.TopicLearningContent
+import com.offline_First.domain.model.TopicAssessmentResult
+import com.offline_First.domain.model.TopicReviewResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +37,13 @@ data class PersonalizedRoadmapUiState(
     val topicQuizSelectedIndex: Int? = null,
     val topicQuizAnswerCorrect: Boolean? = null,
     val topicQuizExplanation: String? = null,
+    val hintsUnlockedLevel: Int = 0,
+    val solutionRevealed: Boolean = false,
+    val assessmentAnswers: Map<Int, Int> = emptyMap(),
+    val isSubmittingTopicAssessment: Boolean = false,
+    val assessmentResult: TopicAssessmentResult? = null,
+    val isReviewingTopic: Boolean = false,
+    val topicReviewMessage: String? = null,
     val roadmapJustGenerated: Boolean = false
 )
 
@@ -248,6 +257,11 @@ class PersonalizedRoadmapViewModel(
                     topicQuizSelectedIndex = null,
                     topicQuizAnswerCorrect = null,
                     topicQuizExplanation = null,
+                    hintsUnlockedLevel = 0,
+                    solutionRevealed = false,
+                    assessmentAnswers = emptyMap(),
+                    assessmentResult = null,
+                    topicReviewMessage = null,
                     errorMessage = null
                 )
             }
@@ -268,6 +282,132 @@ class PersonalizedRoadmapViewModel(
                         )
                     }
                 }
+        }
+    }
+
+    fun unlockNextHint() {
+        _uiState.update {
+            it.copy(hintsUnlockedLevel = (it.hintsUnlockedLevel + 1).coerceAtMost(3))
+        }
+    }
+
+    fun revealSolution() {
+        _uiState.update {
+            it.copy(solutionRevealed = true)
+        }
+    }
+
+    fun selectAssessmentAnswer(questionIndex: Int, optionIndex: Int) {
+        _uiState.update {
+            val updated = it.assessmentAnswers.toMutableMap()
+            updated[questionIndex] = optionIndex
+            it.copy(assessmentAnswers = updated)
+        }
+    }
+
+    fun resetAssessmentState() {
+        _uiState.update {
+            it.copy(
+                assessmentAnswers = emptyMap(),
+                assessmentResult = null
+            )
+        }
+    }
+
+    fun reviewTopic(roadmapId: String, topicId: String, onReviewed: () -> Unit = {}) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isReviewingTopic = true, errorMessage = null) }
+            repository.reviewTopic(roadmapId, topicId)
+                .onSuccess { reviewResult ->
+                    _uiState.update { state ->
+                        val updatedRoadmap = state.activeRoadmap?.let { r ->
+                            val updatedTopics = r.topics.map { t ->
+                                if (t.id == topicId && !t.status.isDone) {
+                                    t.copy(status = PersonalizedTopicStatus.REVIEWED)
+                                } else t
+                            }
+                            r.copy(topics = updatedTopics)
+                        }
+                        state.copy(
+                            isReviewingTopic = false,
+                            topicReviewMessage = reviewResult.message,
+                            activeRoadmap = updatedRoadmap ?: state.activeRoadmap
+                        )
+                    }
+                    onReviewed()
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(
+                            isReviewingTopic = false,
+                            errorMessage = err.localizedMessage ?: "Failed to record topic review"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        onEvaluated: (TopicAssessmentResult) -> Unit = {}
+    ) {
+        val state = _uiState.value
+        val questions = state.activeTopicContent?.assessmentQuestions ?: emptyList()
+        val answersList = (0 until questions.size).map { idx ->
+            state.assessmentAnswers[idx] ?: -1
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmittingTopicAssessment = true, errorMessage = null) }
+            repository.submitTopicAssessment(
+                roadmapId = roadmapId,
+                topicId = topicId,
+                answers = answersList,
+                hintsUsed = state.hintsUnlockedLevel,
+                solutionRevealed = state.solutionRevealed
+            ).onSuccess { res ->
+                _uiState.update { curr ->
+                    val updatedRoadmap = curr.activeRoadmap?.let { r ->
+                        val completedSet = r.completedTopicIds.toMutableSet()
+                        val inProgressSet = r.inProgressTopicIds.toMutableSet()
+                        if (res.passed) {
+                            completedSet.add(topicId)
+                            inProgressSet.remove(topicId)
+                        }
+                        val status = when (res.status) {
+                            "MASTERED" -> PersonalizedTopicStatus.MASTERED
+                            "VERIFIED_COMPLETE" -> PersonalizedTopicStatus.VERIFIED_COMPLETE
+                            else -> PersonalizedTopicStatus.NEEDS_REVISION
+                        }
+                        val updatedTopics = r.topics.map { t ->
+                            if (t.id == topicId) t.copy(status = status) else t
+                        }
+                        r.copy(
+                            topics = updatedTopics,
+                            completedTopicIds = completedSet,
+                            inProgressTopicIds = inProgressSet,
+                            updatedAtMillis = System.currentTimeMillis()
+                        ).withRecomputedStatuses()
+                    }
+                    curr.copy(
+                        isSubmittingTopicAssessment = false,
+                        assessmentResult = res,
+                        activeRoadmap = updatedRoadmap ?: curr.activeRoadmap,
+                        savedRoadmaps = if (updatedRoadmap != null) {
+                            curr.savedRoadmaps.map { if (it.id == updatedRoadmap.id) updatedRoadmap else it }
+                        } else curr.savedRoadmaps
+                    )
+                }
+                onEvaluated(res)
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isSubmittingTopicAssessment = false,
+                        errorMessage = err.localizedMessage ?: "Failed to evaluate assessment"
+                    )
+                }
+            }
         }
     }
 
@@ -319,7 +459,12 @@ class PersonalizedRoadmapViewModel(
                 activeTopicContent = null,
                 topicQuizSelectedIndex = null,
                 topicQuizAnswerCorrect = null,
-                topicQuizExplanation = null
+                topicQuizExplanation = null,
+                hintsUnlockedLevel = 0,
+                solutionRevealed = false,
+                assessmentAnswers = emptyMap(),
+                assessmentResult = null,
+                topicReviewMessage = null
             )
         }
     }

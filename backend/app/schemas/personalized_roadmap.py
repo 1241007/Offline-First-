@@ -284,10 +284,13 @@ class TopicCommonMistakeDto(BaseModel):
 
 
 class TopicPracticeQuizDto(BaseModel):
+    id: Optional[str] = None
     question: str
     options: List[str]
-    correct_option_index: int = Field(..., alias="correctOptionIndex")
-    explanation: str
+    correct_option_index: Optional[int] = Field(None, alias="correctOptionIndex")
+    explanation: Optional[str] = None
+    skill_tested: Optional[str] = Field(None, alias="skillTested")
+    difficulty: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -302,16 +305,43 @@ class TopicLearningResourceDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class IndependentPracticeTaskDto(BaseModel):
+    title: str
+    prompt: str
+    instructions: str
+    expected_deliverable: str = Field(..., alias="expectedDeliverable")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProgressiveHintsDto(BaseModel):
+    hint1_concept: str = Field(..., alias="hint1Concept")
+    hint2_strategy: str = Field(..., alias="hint2Strategy")
+    hint3_scaffold: str = Field(..., alias="hint3Scaffold")
+    solution: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TopicLearningContentResponse(BaseModel):
     topic_id: str = Field(..., alias="topicId")
     topic_title: str = Field(..., alias="topicTitle")
     domain: str = "Python"
+    why_it_matters: str = Field("", alias="whyItMatters")
+    prerequisites: List[str] = Field(default_factory=list)
+    investigation_guidance: str = Field("", alias="investigationGuidance")
     learning_objectives: List[str] = Field(default_factory=list, alias="learningObjectives")
     beginner_explanation: str = Field("", alias="beginnerExplanation")
     syntax_and_concepts: str = Field("", alias="syntaxAndConcepts")
+    independent_task: Optional[IndependentPracticeTaskDto] = Field(None, alias="independentTask")
+    hints: Optional[ProgressiveHintsDto] = None
     code_examples: List[TopicCodeExampleDto] = Field(default_factory=list, alias="codeExamples")
     common_mistakes: List[TopicCommonMistakeDto] = Field(default_factory=list, alias="commonMistakes")
     practice_quiz: Optional[TopicPracticeQuizDto] = Field(None, alias="practiceQuiz")
+    assessment_questions: List[TopicPracticeQuizDto] = Field(default_factory=list, alias="assessmentQuestions")
+    verification_criteria: str = Field("", alias="verificationCriteria")
+    current_status: str = Field("NOT_STARTED", alias="currentStatus")
+    next_recommended_action: str = Field("", alias="nextRecommendedAction")
     resources: List[TopicLearningResourceDto] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -329,5 +359,47 @@ class CompleteTopicResponse(BaseModel):
     is_completed: bool = Field(True, alias="isCompleted")
     progress_percentage: int = Field(..., alias="progressPercentage")
     completed_topic_ids: List[str] = Field(default_factory=list, alias="completedTopicIds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SubmitTopicAssessmentRequest(BaseModel):
+    answers: List[int] = Field(default_factory=list)
+    hints_used: int = Field(0, alias="hintsUsed")
+    solution_revealed: bool = Field(False, alias="solutionRevealed")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TopicAssessmentFeedbackItem(BaseModel):
+    question: str
+    selected_option_index: int = Field(..., alias="selectedOptionIndex")
+    correct_option_index: int = Field(..., alias="correctOptionIndex")
+    is_correct: bool = Field(..., alias="isCorrect")
+    explanation: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SubmitTopicAssessmentResponse(BaseModel):
+    roadmap_id: str = Field(..., alias="roadmapId")
+    topic_id: str = Field(..., alias="topicId")
+    score_percentage: int = Field(..., alias="scorePercentage")
+    passed: bool
+    status: str  # VERIFIED_COMPLETE, MASTERED, NEEDS_REVISION
+    feedback: List[TopicAssessmentFeedbackItem] = Field(default_factory=list)
+    revision_guidance: Optional[str] = Field(None, alias="revisionGuidance")
+    progress_percentage: int = Field(..., alias="progressPercentage")
+    completed_topic_ids: List[str] = Field(default_factory=list, alias="completedTopicIds")
+    unlocked_topic_ids: List[str] = Field(default_factory=list, alias="unlockedTopicIds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ReviewTopicResponse(BaseModel):
+    roadmap_id: str = Field(..., alias="roadmapId")
+    topic_id: str = Field(..., alias="topicId")
+    status: str = "REVIEWED"
+    message: str = "Learning activity reviewed. Take the knowledge assessment to earn verified completion."
 
     model_config = ConfigDict(populate_by_name=True)
