@@ -99,6 +99,9 @@ object AppContainer {
                     ?: tokenStorage.getUserIdentity()?.userId
                     ?: "default_user"
             },
+            tokenProvider = {
+                tokenStorage.getAccessToken()
+            },
             isOnlineProvider = {
                 networkMonitor.isOnline.value
             }

@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EduNovaEvaluationCase",
+  "type": "object",
+  "required": [
+    "case_id",
+    "dataset_version",
+    "domain_category",
+    "input_class",
+    "prompt",
+    "expected_behavior",
+    "primary_metric",
+    "severity",
+    "provenance"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_-]{3,30}$",
+      "description": "Stable unique identifier (e.g. DOM-001, SEC-012, RAG-045, EVAL-SCI10-001)"
+    },
+    "dataset_version": {
+      "type": "string",
+      "description": "Semantic version of the dataset"
+    },
+    "domain_category": {
+      "type": "string",
+      "enum": [
+        "in_domain_curriculum",
+        "in_domain_general_educational",
+        "out_of_domain_prohibited",
+        "mixed_intent",
+        "ambiguous_clarification",
+        "adversarial_security",
+        "missing_evidence_trap"
+      ]
+    },
+    "input_class": {
+      "type": "string",
+      "enum": ["normal", "boundary", "adversarial", "failure", "multilingual"]
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "explanation_mode": {
+      "type": "string",
+      "enum": ["teacher", "explainable", "general"],
+      "default": "general"
+    },
+    "app_mode": {
+      "type": "string",
+      "enum": ["student", "general"],
+      "default": "student"
+    },
+    "curriculum_context": {
+      "type": ["object", "null"],
+      "properties": {
+        "board": { "type": ["string", "null"] },
+        "class_grade": { "type": ["string", "null"] },
+        "subject": { "type": ["string", "null"] },
+        "chapter": { "type": ["string", "null"] }
+      }
+    },
+    "expected_behavior": {
+      "type": "string",
+      "enum": [
+        "SUFFICIENT",
+        "MISSING",
+        "UNCERTAIN",
+        "DIRECT_ANSWER",
+        "REFUSE_OOD",
+        "REFUSE_SAFETY",
+        "CLARIFICATION_REQUIRED",
+        "PARTIAL_ANSWER",
+        "CORPUS_NOT_CONFIGURED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    "expected_chunk_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reference_facts": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "disallowed_content_patterns": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "primary_metric": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    },
+    "release_gate": {
+      "type": "string",
+      "enum": ["BLOCKER", "THRESHOLD", "ADVISORY"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_type", "origin_reference", "reviewed_by"],
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": ["NCERT", "CBSE", "SYNTHETIC_POLICY", "SYNTHETIC_SECURITY", "REGRESSION_DEFECT"]
+        },
+        "origin_reference": { "type": "string" },
+        "reviewed_by": { "type": "string" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "split": {
+      "type": "string",
+      "enum": ["dev", "val", "holdout"],
+      "default": "holdout"
+    }
+  }
+}

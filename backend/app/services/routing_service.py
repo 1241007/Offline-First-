@@ -8,6 +8,7 @@ import httpx
 
 from app.core.config import settings
 from app.schemas.rag import AppMode, RAGRequestContext, RouteDecision
+from app.services.domain_policy import DomainIntent, domain_policy_service
 from app.services.route_header_parser import RouteHeaderParser
 
 logger = logging.getLogger(__name__)
@@ -93,13 +94,74 @@ class RoutingService:
             self._record_diagnostic(RouteDecision.DIRECT, "deterministic_app_command", context)
             return RouteDecision.DIRECT, None
 
-        # 4. Explicit Student Mode with selected chapter or curriculum keywords
+        # 4. Domain Policy & Scope Boundary Validation
+        app_mode_str = (
+            context.app_mode.value.lower()
+            if hasattr(context.app_mode, "value")
+            else str(context.app_mode).lower()
+        )
+        domain_res = domain_policy_service.classify_prompt(cleaned, app_mode=app_mode_str)
+        context.domain_classification = {
+            "intent": domain_res.intent.value,
+            "is_prohibited": domain_res.is_prohibited,
+            "prohibited_category": domain_res.prohibited_category,
+            "refusal_message": domain_res.refusal_message,
+            "clarification_prompt": domain_res.clarification_prompt,
+            "educational_subquery": domain_res.educational_subquery,
+            "declined_subquery": domain_res.declined_subquery,
+            "confidence": domain_res.confidence,
+            "rationale": domain_res.rationale,
+        }
+
+        # 4a. Prohibited Out-of-Domain -> DIRECT (Deterministic refusal, bypasses LLM & retrieval)
+        if domain_res.is_prohibited:
+            self._record_diagnostic(
+                RouteDecision.DIRECT,
+                f"domain_prohibited_{domain_res.prohibited_category.lower() if domain_res.prohibited_category else 'ood'}",
+                context,
+            )
+            return RouteDecision.DIRECT, None
+
+        # 4b. Ambiguous Queries requiring Clarification -> DIRECT (Deterministic clarification prompt)
+        if domain_res.intent == DomainIntent.AMBIGUOUS_CLARIFICATION:
+            self._record_diagnostic(
+                RouteDecision.DIRECT,
+                "domain_ambiguous_clarification",
+                context,
+            )
+            return RouteDecision.DIRECT, None
+
+        # 4c. Mixed-Intent Queries -> Decompose and route only educational subquery
+        if domain_res.intent == DomainIntent.MIXED_INTENT and domain_res.educational_subquery:
+            edu_sub = domain_res.educational_subquery
+            if context.app_mode == AppMode.STUDENT and (
+                context.selected_chapter
+                or CURRICULUM_KEYWORDS_PATTERN.search(edu_sub)
+                or bool(context.board or context.class_grade or context.subject)
+            ):
+                self._record_diagnostic(
+                    RouteDecision.RAG,
+                    f"domain_mixed_intent_rag_{domain_res.prohibited_category.lower() if domain_res.prohibited_category else 'part'}",
+                    context,
+                    edu_sub,
+                )
+                return RouteDecision.RAG, edu_sub
+            else:
+                self._record_diagnostic(
+                    RouteDecision.DIRECT,
+                    f"domain_mixed_intent_direct_{domain_res.prohibited_category.lower() if domain_res.prohibited_category else 'part'}",
+                    context,
+                    edu_sub,
+                )
+                return RouteDecision.DIRECT, edu_sub
+
+        # 5. Explicit Student Mode with selected chapter or curriculum keywords
         if context.app_mode == AppMode.STUDENT:
             if context.selected_chapter or CURRICULUM_KEYWORDS_PATTERN.search(cleaned):
                 self._record_diagnostic(RouteDecision.RAG, "deterministic_curriculum_keyword", context, cleaned)
                 return RouteDecision.RAG, cleaned
 
-        # 5. General Mode without curriculum indicators -> DIRECT
+        # 6. General Mode without curriculum indicators -> DIRECT
         # (General mode has no document corpus configured in this release)
         if context.app_mode == AppMode.GENERAL and not CURRICULUM_KEYWORDS_PATTERN.search(cleaned):
             self._record_diagnostic(RouteDecision.DIRECT, "deterministic_general_mode", context)
