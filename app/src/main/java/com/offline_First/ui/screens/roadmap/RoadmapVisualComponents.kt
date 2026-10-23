@@ -1296,14 +1296,16 @@ fun LessonPackCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 EduNovaBadge(pack.category)
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "${pack.lessonCount} Lessons • ${pack.durationMinutes}m",
                     style = MaterialTheme.typography.labelSmall,
-                    color = EduNovaTextSecondary
+                    color = EduNovaTextSecondary,
+                    maxLines = 1
                 )
             }
 

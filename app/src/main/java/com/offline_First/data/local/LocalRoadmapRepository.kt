@@ -7,6 +7,8 @@ import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapAccentTheme
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.TopicLearningContent
+import com.offline_First.domain.model.TopicReviewResult
+import com.offline_First.domain.model.TopicAssessmentResult
 import kotlinx.coroutines.delay
 
 class LocalRoadmapRepository : RoadmapRepository {
@@ -222,11 +224,27 @@ class LocalRoadmapRepository : RoadmapRepository {
     override suspend fun syncPendingRoadmaps(): Result<Unit> =
         Result.success(Unit)
 
-    override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> =
-        Result.failure(UnsupportedOperationException("Topic content not available locally"))
+    override suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent> = runCatching {
+        LocalPersonalizedRoadmapEngine.getTopicLearningContent(roadmapId, topicId)
+    }
 
-    override suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean): Result<PersonalizedRoadmapDetail> =
-        Result.failure(UnsupportedOperationException("Topic completion not available locally"))
+    override suspend fun reviewTopic(roadmapId: String, topicId: String): Result<TopicReviewResult> = runCatching {
+        LocalPersonalizedRoadmapEngine.reviewTopic(roadmapId, topicId)
+    }
+
+    override suspend fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        answers: List<Int>,
+        hintsUsed: Int,
+        solutionRevealed: Boolean
+    ): Result<TopicAssessmentResult> = runCatching {
+        LocalPersonalizedRoadmapEngine.submitTopicAssessment(roadmapId, topicId, answers, hintsUsed, solutionRevealed)
+    }
+
+    override suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean): Result<PersonalizedRoadmapDetail> = runCatching {
+        LocalPersonalizedRoadmapEngine.completeTopic(roadmapId, topicId, quizPassed)
+    }
 
     override suspend fun generatePersonalizedRoadmap(
         goal: String,

@@ -37,6 +37,31 @@ async def lifespan(app: FastAPI):
     if settings.allow_dev_user_id:
         logger.warning("⚠️  DEVELOPMENT MODE: user_id query parameter is ENABLED")
         logger.warning("⚠️  This is INSECURE and should NEVER be used in production!")
+
+    # Startup database column & schema resilience check
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_engine, Base
+        import app.models  # ensure models are registered
+        engine = get_engine()
+        async with engine.begin() as conn:
+            # 1. Create any missing tables (e.g. user_saved_courses, user_saved_roadmaps)
+            await conn.run_sync(Base.metadata.create_all)
+
+            # 2. Ensure domain column exists in roadmap_assessment_sessions
+            if "sqlite" in settings.async_database_url:
+                result = await conn.execute(text("PRAGMA table_info(roadmap_assessment_sessions)"))
+                cols = [row[1] for row in result.fetchall()]
+                if "domain" not in cols:
+                    await conn.execute(text("ALTER TABLE roadmap_assessment_sessions ADD COLUMN domain VARCHAR(100) DEFAULT 'Python'"))
+                    logger.info("Auto-migrated SQLite: added domain column to roadmap_assessment_sessions")
+            else:
+                await conn.execute(text("ALTER TABLE roadmap_assessment_sessions ADD COLUMN IF NOT EXISTS domain VARCHAR(100) DEFAULT 'Python'"))
+                await conn.execute(text("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS structure JSONB"))
+                logger.info("Auto-migrated PostgreSQL: ensured domain and structure columns exist")
+    except Exception as e:
+        logger.error(f"Error during startup database auto-migration check: {e}", exc_info=True)
+
     yield
     from app.services.openrouter_service import openrouter_service
     await openrouter_service.close()

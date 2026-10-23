@@ -425,6 +425,17 @@ fun PersonalizedRoadmapScreen(
                         }
                     }
                 }
+
+                // 4. Data-Driven Connected Graph
+                items(roadmap.topics, key = { it.id }) { topic ->
+                    PersonalizedTopicCard(
+                        topic = topic,
+                        onTopicClick = {
+                            viewModel.loadTopicContent(roadmap.id, topic.id)
+                            onOpenTopicDetail(topic.id)
+                        }
+                    )
+                }
             }
         }
     }
@@ -435,17 +446,13 @@ fun PersonalizedRoadmapScreen(
             topic = topic,
             roadmap = roadmap,
             onDismiss = { viewModel.selectTopic(null) },
-            onStartLearning = { topicId ->
-                if (roadmap != null) {
-                    viewModel.setTopicInProgress(topicId)
-                    viewModel.loadTopicContent(roadmap.id, topicId)
-                    onOpenTopicDetail(topicId)
+            onOpenTopic = {
+                val tId = topic.id
+                viewModel.selectTopic(null)
+                roadmap?.let {
+                    viewModel.loadTopicContent(it.id, tId)
                 }
-                viewModel.selectTopic(null)
-            },
-            onMarkCompleted = {
-                viewModel.toggleTopicCompleted(topic.id)
-                viewModel.selectTopic(null)
+                onOpenTopicDetail(tId)
             },
             onMarkInProgress = {
                 viewModel.setTopicInProgress(topic.id)
@@ -603,22 +610,31 @@ fun PersonalizedRoadmapScreen(
 @Composable
 private fun PersonalizedTopicCard(
     topic: PersonalizedRoadmapTopic,
-    onTopicClick: () -> Unit,
-    onToggleCompleted: () -> Unit
+    onTopicClick: () -> Unit
 ) {
-    val isCompleted = topic.status == PersonalizedTopicStatus.COMPLETED
-    val isLocked = topic.status == PersonalizedTopicStatus.LOCKED
+    val isMastered = topic.status == PersonalizedTopicStatus.MASTERED
+    val isVerified = topic.status == PersonalizedTopicStatus.VERIFIED_COMPLETE || topic.status == PersonalizedTopicStatus.COMPLETED
+    val isDone = topic.status.isDone
+    val isReviewed = topic.status == PersonalizedTopicStatus.REVIEWED || topic.status == PersonalizedTopicStatus.ASSESSMENT_PENDING
+    val isNeedsRevision = topic.status == PersonalizedTopicStatus.NEEDS_REVISION
     val isInProgress = topic.status == PersonalizedTopicStatus.IN_PROGRESS
+    val isLocked = topic.status == PersonalizedTopicStatus.LOCKED
 
     val borderColor = when {
-        isCompleted -> EduNovaSuccess
+        isMastered -> Color(0xFFFFB300)
+        isVerified -> EduNovaSuccess
+        isNeedsRevision -> MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+        isReviewed -> EduNovaSecondary.copy(alpha = 0.6f)
         isInProgress -> EduNovaAccent
         isLocked -> MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-        else -> EduNovaPrimary.copy(alpha = 0.5f)
+        else -> EduNovaPrimary.copy(alpha = 0.4f)
     }
 
     val containerColor = when {
-        isCompleted -> EduNovaSuccess.copy(alpha = 0.06f)
+        isMastered -> Color(0xFFFFB300).copy(alpha = 0.08f)
+        isVerified -> EduNovaSuccess.copy(alpha = 0.06f)
+        isNeedsRevision -> MaterialTheme.colorScheme.error.copy(alpha = 0.05f)
+        isReviewed -> EduNovaSecondary.copy(alpha = 0.05f)
         isInProgress -> EduNovaAccent.copy(alpha = 0.05f)
         isLocked -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         else -> MaterialTheme.colorScheme.surface
@@ -642,7 +658,10 @@ private fun PersonalizedTopicCard(
                     .size(36.dp)
                     .background(
                         color = when {
-                            isCompleted -> EduNovaSuccess
+                            isMastered -> Color(0xFFFFB300)
+                            isVerified -> EduNovaSuccess
+                            isNeedsRevision -> MaterialTheme.colorScheme.error
+                            isReviewed -> EduNovaSecondary
                             isInProgress -> EduNovaAccent
                             isLocked -> Color.Gray.copy(alpha = 0.2f)
                             else -> EduNovaPrimary.copy(alpha = 0.15f)
@@ -653,7 +672,10 @@ private fun PersonalizedTopicCard(
             ) {
                 Icon(
                     imageVector = when {
-                        isCompleted -> Icons.Default.Check
+                        isMastered -> Icons.Default.Star
+                        isVerified -> Icons.Default.Check
+                        isNeedsRevision -> Icons.Default.WarningAmber
+                        isReviewed -> Icons.Default.AssignmentLate
                         isInProgress -> Icons.Default.Schedule
                         isLocked -> Icons.Default.Lock
                         else -> Icons.Default.PlayArrow
@@ -661,8 +683,7 @@ private fun PersonalizedTopicCard(
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = when {
-                        isCompleted -> Color.White
-                        isInProgress -> Color.White
+                        isMastered || isVerified || isNeedsRevision || isReviewed || isInProgress -> Color.White
                         isLocked -> Color.Gray
                         else -> EduNovaPrimary
                     }
@@ -696,11 +717,65 @@ private fun PersonalizedTopicCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Badges row: Mastery level, Acceleration, Duration
+                // Badges row: Status badge, Acceleration, Duration
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (isMastered) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFFB300).copy(alpha = 0.18f)
+                        ) {
+                            Text(
+                                text = "🌟 Mastered",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFFF8F00),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else if (isVerified) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = EduNovaSuccess.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "✓ Verified",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EduNovaSuccess,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else if (isNeedsRevision) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "⚠️ Revision Needed",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else if (isReviewed) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = EduNovaSecondary.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "Assessment Ready",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EduNovaSecondary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
                     if (topic.accelerated) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -716,38 +791,6 @@ private fun PersonalizedTopicCard(
                         }
                     }
 
-                    when (topic.masteryLevel) {
-                        TopicMasteryLevel.WEAK -> {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = EduNovaAccent.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "Needs Practice",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EduNovaAccent,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        TopicMasteryLevel.STRONG -> {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = EduNovaSuccess.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "Mastered",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EduNovaSuccess,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        else -> {}
-                    }
-
                     Text(
                         text = "${topic.estimatedMinutes} min",
                         style = MaterialTheme.typography.labelSmall,
@@ -756,13 +799,13 @@ private fun PersonalizedTopicCard(
                 }
             }
 
-            // Quick toggle button if unlocked
+            // Right side arrow / completion indicator
             if (!isLocked) {
-                IconButton(onClick = onToggleCompleted) {
+                IconButton(onClick = onTopicClick) {
                     Icon(
-                        imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                        contentDescription = "Toggle Complete",
-                        tint = if (isCompleted) EduNovaSuccess else MaterialTheme.colorScheme.outline
+                        imageVector = if (isDone) Icons.Default.CheckCircle else Icons.Default.ChevronRight,
+                        contentDescription = if (isDone) "Completed" else "Open Topic",
+                        tint = if (isMastered) Color(0xFFFF8F00) else if (isVerified) EduNovaSuccess else MaterialTheme.colorScheme.outline
                     )
                 }
             }
@@ -776,8 +819,7 @@ private fun PersonalizedTopicBottomSheet(
     topic: PersonalizedRoadmapTopic,
     roadmap: PersonalizedRoadmapDetail?,
     onDismiss: () -> Unit,
-    onStartLearning: (String) -> Unit,
-    onMarkCompleted: () -> Unit,
+    onOpenTopic: () -> Unit,
     onMarkInProgress: () -> Unit,
     onSkip: () -> Unit,
     onReset: () -> Unit
@@ -924,17 +966,19 @@ private fun PersonalizedTopicBottomSheet(
                     .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (topic.status != PersonalizedTopicStatus.COMPLETED) {
+                if (!topic.status.isDone) {
                     Button(
-                        onClick = onMarkCompleted,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = EduNovaSuccess)
+                        onClick = onOpenTopic,
+                        modifier = Modifier.weight(1.3f),
+                        colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
                     ) {
-                        Text("Mark Completed")
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Start Lesson")
                     }
                 }
 
-                if (topic.status != PersonalizedTopicStatus.IN_PROGRESS && topic.status != PersonalizedTopicStatus.COMPLETED) {
+                if (topic.status != PersonalizedTopicStatus.IN_PROGRESS && !topic.status.isDone) {
                     OutlinedButton(
                         onClick = onMarkInProgress,
                         modifier = Modifier.weight(1f)
@@ -943,7 +987,7 @@ private fun PersonalizedTopicBottomSheet(
                     }
                 }
 
-                if (topic.status == PersonalizedTopicStatus.COMPLETED) {
+                if (topic.status.isDone) {
                     OutlinedButton(
                         onClick = onReset,
                         modifier = Modifier.weight(1f)

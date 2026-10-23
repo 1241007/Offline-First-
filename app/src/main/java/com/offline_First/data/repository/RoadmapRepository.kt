@@ -5,6 +5,8 @@ import com.offline_First.domain.model.GeneratedRoadmapPreview
 import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.RoadmapOption
 import com.offline_First.domain.model.TopicLearningContent
+import com.offline_First.domain.model.TopicReviewResult
+import com.offline_First.domain.model.TopicAssessmentResult
 
 /**
  * Repository interface for system and personalized roadmap operations.
@@ -74,6 +76,17 @@ interface RoadmapRepository {
     suspend fun syncPendingRoadmaps(): Result<Unit>
 
     suspend fun getTopicLearningContent(roadmapId: String, topicId: String): Result<TopicLearningContent>
+
+    suspend fun reviewTopic(roadmapId: String, topicId: String): Result<TopicReviewResult> =
+        Result.success(TopicReviewResult(roadmapId, topicId, "REVIEWED", "Learning activity reviewed."))
+
+    suspend fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        answers: List<Int>,
+        hintsUsed: Int = 0,
+        solutionRevealed: Boolean = false
+    ): Result<TopicAssessmentResult> = Result.failure(UnsupportedOperationException("Assessment submission not supported"))
 
     suspend fun completeTopic(roadmapId: String, topicId: String, quizPassed: Boolean = true): Result<PersonalizedRoadmapDetail>
 

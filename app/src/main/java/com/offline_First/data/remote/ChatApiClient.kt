@@ -553,6 +553,43 @@ object ChatApiClient {
         json.decodeFromString<CompleteTopicResponseDto>(body)
     }
 
+    suspend fun getTopicLearningContent(
+        roadmapId: String,
+        topicId: String
+    ): Result<TopicLearningContentDto> = runCatching {
+        val (code, body) = get("/roadmaps/personalized/$roadmapId/topics/$topicId/content")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<TopicLearningContentDto>(body)
+    }
+
+    suspend fun reviewTopic(
+        roadmapId: String,
+        topicId: String
+    ): Result<ReviewTopicResponseDto> = runCatching {
+        val (code, body) = post("/roadmaps/personalized/$roadmapId/topics/$topicId/review", "{}")
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<ReviewTopicResponseDto>(body)
+    }
+
+    suspend fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        answers: List<Int>,
+        hintsUsed: Int = 0,
+        solutionRevealed: Boolean = false
+    ): Result<SubmitTopicAssessmentResponseDto> = runCatching {
+        val payload = json.encodeToString(
+            SubmitTopicAssessmentRequestDto(
+                answers = answers,
+                hintsUsed = hintsUsed,
+                solutionRevealed = solutionRevealed
+            )
+        )
+        val (code, body) = post("/roadmaps/personalized/$roadmapId/topics/$topicId/submit-assessment", payload)
+        if (code !in 200..299) error("HTTP $code: $body")
+        json.decodeFromString<SubmitTopicAssessmentResponseDto>(body)
+    }
+
     suspend fun getActiveAssessmentSession(): Result<AssessmentSessionResponseDto?> = runCatching {
         val (code, body) = get("/roadmaps/personalized/active")
         if (code == 404 || body.trim() == "null" || body.trim().isEmpty()) return@runCatching null

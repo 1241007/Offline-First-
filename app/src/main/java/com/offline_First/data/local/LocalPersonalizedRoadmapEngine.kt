@@ -610,4 +610,283 @@ object LocalPersonalizedRoadmapEngine {
         saveRoadmap(updated)
         return updated
     }
+
+    // Secure cache of assessment questions per topic (with correct answer index and explanation for offline grading)
+    private val localTopicAssessments = mutableMapOf<String, List<TopicPracticeQuiz>>()
+
+    fun getTopicLearningContent(roadmapId: String, topicId: String): TopicLearningContent {
+        val roadmap = getRoadmap(roadmapId)
+            ?: savedRoadmaps.firstOrNull()
+            ?: throw IllegalArgumentException("Roadmap $roadmapId not found locally")
+
+        val topic = roadmap.topics.find { it.id == topicId }
+            ?: roadmap.phases.flatMap { it.tasks }.find { it.id == topicId }?.let { t ->
+                PersonalizedRoadmapTopic(id = t.id, topicTag = t.id, title = t.title, shortDescription = t.description)
+            }
+            ?: throw IllegalArgumentException("Topic $topicId not found in roadmap $roadmapId")
+
+        val domain = roadmap.domain.ifBlank { "Software Engineering" }
+        val title = topic.title
+
+        // Find or create secure assessment questions
+        val storedQuestions = localTopicAssessments.getOrPut(topicId) {
+            val qList = mutableListOf<TopicPracticeQuiz>()
+            val matchedDiag = when (domain.lowercase()) {
+                "python" -> PYTHON_QUESTIONS.find { it.topicTag in topic.topicTag || topic.title.contains("Python", ignoreCase = true) }
+                "java" -> JAVA_QUESTIONS.find { it.topicTag in topic.topicTag || topic.title.contains("Java", ignoreCase = true) }
+                "sql" -> SQL_QUESTIONS.find { it.topicTag in topic.topicTag || topic.title.contains("SQL", ignoreCase = true) }
+                else -> null
+            }
+            if (matchedDiag != null) {
+                qList.add(
+                    TopicPracticeQuiz(
+                        id = matchedDiag.id,
+                        question = matchedDiag.prompt,
+                        options = matchedDiag.options,
+                        correctOptionIndex = matchedDiag.correctOptionIndex,
+                        explanation = matchedDiag.explanation,
+                        skillTested = matchedDiag.topicTag,
+                        difficulty = "Level ${matchedDiag.difficultyLevel}"
+                    )
+                )
+            }
+            qList.add(
+                TopicPracticeQuiz(
+                    id = "${topicId}_q1",
+                    question = "What is the primary role of $title in $domain application architecture?",
+                    options = listOf(
+                        "Establishes reliable foundation, predictable state, and robust validation",
+                        "Bypasses unit tests and exception monitoring",
+                        "Reduces static analysis coverage",
+                        "Forces blocking calls on main thread"
+                    ),
+                    correctOptionIndex = 0,
+                    explanation = "Applying correct idioms and defensive patterns ensures high system reliability.",
+                    skillTested = "$domain: $title Architecture",
+                    difficulty = "Intermediate"
+                )
+            )
+            qList.add(
+                TopicPracticeQuiz(
+                    id = "${topicId}_q2",
+                    question = "How should boundary conditions and unexpected null/empty inputs be handled in $title?",
+                    options = listOf(
+                        "Validate inputs upfront and fail fast with meaningful error states",
+                        "Silently swallow errors and return null",
+                        "Disable type checks and proceed",
+                        "Catch all exceptions without logging"
+                    ),
+                    correctOptionIndex = 0,
+                    explanation = "Defensive validation prevents invalid downstream state propagation.",
+                    skillTested = "$domain: $title Robustness",
+                    difficulty = "Intermediate"
+                )
+            )
+            qList
+        }
+
+        // Strip correct answers for client-facing public DTOs
+        val publicQuestions = storedQuestions.map { q ->
+            q.copy(correctOptionIndex = null, explanation = null)
+        }
+
+        val currStatus = topic.status.name
+
+        return TopicLearningContent(
+            topicId = topic.id,
+            topicTitle = title,
+            domain = domain,
+            whyItMatters = "Understanding $title is essential to write production-grade, maintainable code in $domain.",
+            prerequisites = topic.prerequisiteTopicIds,
+            investigationGuidance = "1. Review official $domain documentation for $title.\n2. Trace input validation and error flows.\n3. Implement unit tests covering boundary edge cases.",
+            learningObjectives = listOf(
+                "Master core principles and idioms of $title",
+                "Implement robust, testable solutions handling edge cases",
+                "Verify performance and memory constraints"
+            ),
+            beginnerExplanation = topic.shortDescription.ifBlank { "Focused study module on $title." },
+            syntaxAndConcepts = "• Core Concept Definitions\n• Idiomatic Implementation Patterns\n• Boundary Checks and Error Handling",
+            independentTask = IndependentPracticeTask(
+                title = "Independent Practice: $title",
+                prompt = "Build a standalone verified lab implementing $title without external guidance.",
+                instructions = "1. Set up your module structure.\n2. Implement core business logic.\n3. Validate with boundary test cases.",
+                expectedDeliverable = "Production-ready, tested implementation with no unhandled exceptions."
+            ),
+            hints = ProgressiveHints(
+                hint1Concept = "Recall the single responsibility and core purpose of $title.",
+                hint2Strategy = "Break the implementation into: validate inputs -> process logic -> return result.",
+                hint3Scaffold = "Check for null/empty collections first, then apply standard $domain idioms.",
+                solution = "Review the curriculum documentation and execute test cases before submitting."
+            ),
+            codeExamples = listOf(
+                TopicCodeExample(
+                    title = "Idiomatic Pattern for $title",
+                    code = "// Production implementation pattern for $title\n// Emphasizes immutability and defensive validation",
+                    explanation = "Illustrates clean structure, edge-case safety, and idiomatic syntax.",
+                    expectedOutput = "Passes all test assertions without warnings."
+                )
+            ),
+            commonMistakes = listOf(
+                TopicCommonMistake(
+                    mistake = "Assuming non-null and happy-path data inputs",
+                    whyItHappens = "Testing only simple examples during initial development.",
+                    howToFix = "Add boundary checks and comprehensive test fixtures."
+                )
+            ),
+            practiceQuiz = publicQuestions.firstOrNull(),
+            assessmentQuestions = publicQuestions,
+            verificationCriteria = "Achieve >= 70% on the multi-question assessment and verify independent practice.",
+            currentStatus = currStatus,
+            nextRecommendedAction = "Complete the independent lab and submit the assessment to verify mastery.",
+            resources = listOf(
+                TopicLearningResource(
+                    title = "$title Curriculum Guide",
+                    url = "https://docs.edunova.dev",
+                    sourceName = "EduNova Offline Curriculum",
+                    description = "Official curriculum reference for $title."
+                )
+            )
+        )
+    }
+
+    fun reviewTopic(roadmapId: String, topicId: String): TopicReviewResult {
+        val roadmap = getRoadmap(roadmapId)
+        if (roadmap != null) {
+            val updatedTopics = roadmap.topics.map { t ->
+                if (t.id == topicId && !t.status.isDone) {
+                    t.copy(status = PersonalizedTopicStatus.REVIEWED)
+                } else t
+            }
+            saveRoadmap(roadmap.copy(topics = updatedTopics))
+        }
+        return TopicReviewResult(
+            roadmapId = roadmapId,
+            topicId = topicId,
+            status = "REVIEWED",
+            message = "Learning activity reviewed. Take the knowledge assessment to earn verified completion."
+        )
+    }
+
+    fun submitTopicAssessment(
+        roadmapId: String,
+        topicId: String,
+        answers: List<Int>,
+        hintsUsed: Int = 0,
+        solutionRevealed: Boolean = false
+    ): TopicAssessmentResult {
+        val roadmap = getRoadmap(roadmapId)
+            ?: savedRoadmaps.firstOrNull()
+            ?: throw IllegalArgumentException("Roadmap $roadmapId not found")
+
+        val questions = localTopicAssessments[topicId] ?: run {
+            getTopicLearningContent(roadmapId, topicId)
+            localTopicAssessments[topicId] ?: emptyList()
+        }
+
+        var correctCount = 0
+        val feedback = questions.mapIndexed { idx, q ->
+            val chosen = if (idx < answers.size) answers[idx] else -1
+            val expected = q.correctOptionIndex ?: 0
+            val isCorr = (chosen == expected)
+            if (isCorr) correctCount++
+            AssessmentFeedbackItem(
+                question = q.question,
+                selectedOptionIndex = chosen,
+                correctOptionIndex = expected,
+                isCorrect = isCorr,
+                explanation = q.explanation ?: "Review foundational patterns."
+            )
+        }
+
+        val total = maxOf(1, questions.size)
+        val scorePct = (correctCount * 100) / total
+        val passed = scorePct >= 70
+
+        val finalStatus = when {
+            passed && scorePct == 100 && !solutionRevealed && hintsUsed <= 1 -> "MASTERED"
+            passed -> "VERIFIED_COMPLETE"
+            else -> "NEEDS_REVISION"
+        }
+
+        val completedSet = roadmap.completedTopicIds.toMutableSet()
+        val inProgressSet = roadmap.inProgressTopicIds.toMutableSet()
+
+        if (passed) {
+            completedSet.add(topicId)
+            inProgressSet.remove(topicId)
+        }
+
+        val topicEnumStatus = when (finalStatus) {
+            "MASTERED" -> PersonalizedTopicStatus.MASTERED
+            "VERIFIED_COMPLETE" -> PersonalizedTopicStatus.VERIFIED_COMPLETE
+            else -> PersonalizedTopicStatus.NEEDS_REVISION
+        }
+
+        val updatedTopics = roadmap.topics.map { t ->
+            if (t.id == topicId) t.copy(status = topicEnumStatus) else t
+        }
+
+        val updatedRoadmap = roadmap.copy(
+            topics = updatedTopics,
+            completedTopicIds = completedSet,
+            inProgressTopicIds = inProgressSet,
+            updatedAtMillis = System.currentTimeMillis()
+        ).withRecomputedStatuses()
+
+        saveRoadmap(updatedRoadmap)
+
+        val revision = if (!passed) {
+            "You scored $scorePct%. Verified completion requires at least 70%. Review the study guidance and hints, then re-attempt."
+        } else null
+
+        val newlyUnlocked = updatedRoadmap.topics
+            .filter { it.status == PersonalizedTopicStatus.UNLOCKED && !completedSet.contains(it.id) }
+            .map { it.id }
+
+        return TopicAssessmentResult(
+            roadmapId = roadmapId,
+            topicId = topicId,
+            scorePercentage = scorePct,
+            passed = passed,
+            status = finalStatus,
+            feedback = feedback,
+            revisionGuidance = revision,
+            progressPercentage = updatedRoadmap.progressPercentage,
+            completedTopicIds = completedSet.toList(),
+            unlockedTopicIds = newlyUnlocked
+        )
+    }
+
+    fun completeTopic(
+        roadmapId: String,
+        topicId: String,
+        quizPassed: Boolean = true
+    ): PersonalizedRoadmapDetail {
+        val roadmap = getRoadmap(roadmapId)
+            ?: savedRoadmaps.firstOrNull()
+            ?: throw IllegalArgumentException("Roadmap $roadmapId not found")
+
+        val completedSet = roadmap.completedTopicIds.toMutableSet()
+        val inProgressSet = roadmap.inProgressTopicIds.toMutableSet()
+
+        if (quizPassed) {
+            completedSet.add(topicId)
+            inProgressSet.remove(topicId)
+        }
+
+        val status = if (quizPassed) PersonalizedTopicStatus.VERIFIED_COMPLETE else PersonalizedTopicStatus.NEEDS_REVISION
+        val updatedTopics = roadmap.topics.map { t ->
+            if (t.id == topicId) t.copy(status = status) else t
+        }
+
+        val updatedRoadmap = roadmap.copy(
+            topics = updatedTopics,
+            completedTopicIds = completedSet,
+            inProgressTopicIds = inProgressSet,
+            updatedAtMillis = System.currentTimeMillis()
+        ).withRecomputedStatuses()
+
+        saveRoadmap(updatedRoadmap)
+        return updatedRoadmap
+    }
 }

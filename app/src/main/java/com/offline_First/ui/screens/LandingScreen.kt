@@ -119,6 +119,7 @@ import com.offline_First.domain.model.Subject
 import com.offline_First.domain.model.UpcomingExam
 import com.offline_First.ui.components.EduNovaBottomNavItem
 import com.offline_First.ui.components.EduNovaBottomNavigation
+import com.offline_First.ui.components.SupportSection
 import com.offline_First.ui.screens.landing.LandingUiState
 import com.offline_First.ui.screens.landing.LandingViewModel
 import com.offline_First.ui.theme.EduNovaAccent
@@ -278,7 +279,8 @@ fun LandingScreen(
                                     },
                                     onSeeAllExams = {
                                         showMessage("All exams will be listed soon.")
-                                    }
+                                    },
+                                    onSupportAction = showMessage
                                 )
                             }
                             EducationMode.GENERAL -> {
@@ -472,7 +474,8 @@ private fun SchoolHomeContent(
     onSubjectClick: (Subject) -> Unit,
     onViewPlan: () -> Unit,
     onSeeAllSubjects: () -> Unit,
-    onSeeAllExams: () -> Unit
+    onSeeAllExams: () -> Unit,
+    onSupportAction: (String) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -503,6 +506,12 @@ private fun SchoolHomeContent(
             exams = uiState.upcomingExams,
             onSeeAll = onSeeAllExams,
             onExamClick = onContinueLearning
+        )
+
+        // 5. Help & Support Section
+        SupportSection(
+            onSupportAction = onSupportAction,
+            modifier = Modifier.padding(top = 8.dp)
         )
     }
 }

@@ -48,6 +48,11 @@ from app.schemas.personalized_roadmap import (
     TopicPracticeQuizDto,
     TopicLearningResourceDto,
     CompleteTopicResponse,
+    IndependentPracticeTaskDto,
+    ProgressiveHintsDto,
+    SubmitTopicAssessmentResponse,
+    TopicAssessmentFeedbackItem,
+    ReviewTopicResponse,
 )
 from app.schemas.roadmap import RoadmapItemResponse
 from app.services.openrouter_service import openrouter_service
@@ -342,6 +347,53 @@ _DIAGNOSTIC_QUESTION_BANK = {
             "selection_rationale": "Establishes baseline algorithmic knowledge and complexity analysis.",
         },
     ],
+    "go": [
+        {
+            "id": "go_1",
+            "question": "In Go concurrency, what occurs when a goroutine sends a value into an unbuffered channel (`ch <- val`) when no receiver is ready?",
+            "options": [
+                "The sending goroutine blocks execution until another goroutine executes a receive operation (`<-ch`) on that channel",
+                "The value is silently dropped and execution continues immediately",
+                "The runtime immediately panics with a deadlock exception",
+                "The unbuffered channel automatically expands its internal buffer to store the value",
+            ],
+            "correct_index": 0,
+            "explanation": "Unbuffered channels provide synchronous communication; a send blocks until a receiver is ready to receive the value, synchronizing both goroutines.",
+            "skill_tested": "Go Concurrency & Channel Synchronization",
+            "difficulty": "Intermediate",
+            "selection_rationale": "Verifies foundational understanding of CSP concurrency patterns and channel blocking semantics in Go.",
+        },
+        {
+            "id": "go_2",
+            "question": "How are interfaces satisfied in Go compared to languages like Java or C#?",
+            "options": [
+                "Implicitly (structural typing): a type implements an interface simply by implementing all of the interface's method signatures, without an explicit `implements` declaration",
+                "Explicitly: a type must declare `type MyStruct struct implements MyInterface`",
+                "Only through pointer receivers; value receivers cannot satisfy any interface",
+                "Interfaces can only be satisfied by embedding the `io.Reader` interface",
+            ],
+            "correct_index": 0,
+            "explanation": "Go uses structural subtyping (duck typing at compile-time); any type that defines all methods declared in an interface automatically implements that interface.",
+            "skill_tested": "Go Type System & Interfaces",
+            "difficulty": "Beginner",
+            "selection_rationale": "Validates core design principles of Go's structural type system and interface composition.",
+        },
+        {
+            "id": "go_3",
+            "question": "In Go, what is the execution order of multiple deferred function calls (`defer f()`) within the same enclosing function?",
+            "options": [
+                "Last-In, First-Out (LIFO): deferred calls are executed in reverse order of their registration when the surrounding function returns",
+                "First-In, First-Out (FIFO): deferred calls execute in the exact order they were declared",
+                "Concurrent: all deferred functions are launched in parallel goroutines",
+                "Arbitrary: the Go runtime executes them in random hash-map order",
+            ],
+            "correct_index": 0,
+            "explanation": "Deferred calls are pushed onto a per-goroutine call stack and popped/evaluated in LIFO (reverse) order upon function exit.",
+            "skill_tested": "Go Defer Semantics & Resource Cleanup",
+            "difficulty": "Beginner",
+            "selection_rationale": "Ensures proper understanding of resource cleanup patterns (closing files, releasing locks).",
+        },
+    ],
     "general": [
         {
             "id": "gen_1",
@@ -543,6 +595,8 @@ def _select_diagnostic_question_for_goal(
         pool_key = "ml_ai"
     elif "interview" in combined or "algorithm" in combined or "leetcode" in combined or "dsa" in combined:
         pool_key = "algorithms_interview"
+    elif "go" in combined or "golang" in combined:
+        pool_key = "go"
     elif "data" in combined or "pandas" in combined or "analytics" in combined or "python" in combined:
         pool_key = "python_data"
 
@@ -753,6 +807,17 @@ class PersonalizedRoadmapService:
                 "Offline-First Mobile Architecture with Room",
                 "Android App Performance & Multi-Module Clean Architecture",
                 "Android Portfolio Capstone Application",
+            ]
+        elif "go" in dom_lower or "golang" in dom_lower:
+            mentor_text = (
+                f"Hi {context['name']}! I'm your EduNova AI Learning Advisor. Let's design a high-impact Go (Golang) roadmap tailored to your exact goal and baseline skills.\n\n"
+                "What specific systems, backend services, or cloud projects do you want to build with Go?"
+            )
+            quick_opts = [
+                "High-Throughput Concurrent Microservices",
+                "Cloud-Native Tooling & Kubernetes Operators",
+                "Distributed Systems & gRPC Services",
+                "Core Go Mechanics & CLI Tools",
             ]
         else:
             mentor_text = (
@@ -1608,6 +1673,112 @@ class PersonalizedRoadmapService:
                             "completionCriteria": ["Implement analytical warehouse", "Validate query performance"],
                             "assessment": "Project evaluation against rubric",
                             "passingCriteria": "All analytical queries executed and benchmarked",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+            ]
+
+        if "go" in combined or "golang" in combined:
+            return [
+                {
+                    "title": "Phase 1: Go Systems Fundamentals & Concurrency" if level != "Advanced" else "Phase 1: Advanced Go Runtime & Low-Latency Systems",
+                    "objective": "Master Go syntax, type composition with interfaces, and goroutine/channel concurrency" if level != "Advanced" else "Master Go memory allocation, runtime scheduler internals, and lockless concurrency",
+                    "durationWeeks": 3,
+                    "topics": ["Go Core Syntax & Tooling", "Structs & Interfaces", "Goroutines & Channels"],
+                    "tasks": [
+                        {
+                            "id": "go_t1_1" if level != "Advanced" else "t1_1",
+                            "title": "Set Up Go Toolchain & Core Syntax Lab" if level != "Advanced" else "Benchmark and Profile Go Services",
+                            "description": "Configure Go modules, workspace, and master idiomatic Go syntax" if level != "Advanced" else "Profile CPU and heap allocations using pprof under high throughput",
+                            "instructions": "Install Go toolchain, initialize go.mod, write CLI utilities with standard library packages." if level != "Advanced" else "Instrument service with pprof and benchmark concurrent endpoints.",
+                            "estimatedHours": 2.5,
+                            "resources": ["Official Go Tour & Documentation", "Effective Go Guide"],
+                            "completionCriteria": "Go module builds cleanly and passes all unit tests with go test ./...",
+                            "isCompleted": False,
+                            "dependencies": [],
+                            "topicId": "go_syntax" if level != "Advanced" else "t1_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Go Toolchain & Modules", "Types & Structs", "Error Handling & Defer"],
+                            "learningObjectives": ["Configure Go workspace", "Write idiomatic error-checked Go code"],
+                            "codeExample": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Go Ready\")\n}",
+                        },
+                        {
+                            "id": "go_t1_2" if level != "Advanced" else "t1_2",
+                            "title": "Build Concurrent Pipeline with Goroutines & Channels" if level != "Advanced" else "Implement Mutex-Free Ring Buffer",
+                            "description": "Apply CSP concurrency using channels, select blocks, and sync primitives" if level != "Advanced" else "Construct lock-free memory ring buffer with atomic operations",
+                            "instructions": "Implement worker pool pattern with buffered channels and sync.WaitGroup." if level != "Advanced" else "Implement lockless atomic data pipeline and profile cache line contention.",
+                            "estimatedHours": 3.0,
+                            "resources": ["Concurrency in Go (Katherine Cox-Buday)", "Go Memory Model"],
+                            "completionCriteria": "Passes all concurrent tests with -race flag enabled with zero race detector warnings",
+                            "isCompleted": False,
+                            "dependencies": ["go_t1_1" if level != "Advanced" else "t1_1"],
+                            "topicId": "go_concurrency" if level != "Advanced" else "t1_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["Goroutines & sync.WaitGroup", "Channels & Select", "Race Detector (-race)"],
+                            "learningObjectives": ["Design clean CSP pipelines", "Eliminate race conditions"],
+                            "codeExample": "func worker(ch <-chan int, wg *sync.WaitGroup) {\n    defer wg.Done()\n    for val := range ch { process(val) }\n}",
+                        },
+                    ],
+                    "activities": ["Configure Go Module Workspace", "Build Concurrent Worker Pool"],
+                    "resources": ["Go Documentation", "Effective Go"],
+                    "milestones": [
+                        {
+                            "title": "Go Concurrency & Toolchain Milestone",
+                            "completionCriteria": ["Build CLI utility", "Pass race detector tests"],
+                            "assessment": "Code evaluation with go test -race",
+                            "passingCriteria": "Zero race conditions and 100% test pass rate",
+                        }
+                    ],
+                    "recommendedCourseIds": [],
+                },
+                {
+                    "title": "Phase 2: Applied Microservices & Cloud-Native Delivery",
+                    "objective": "Build production-ready HTTP/gRPC microservices with persistence and Docker containerization",
+                    "durationWeeks": 4,
+                    "topics": ["REST & gRPC Microservices", "Database Persistence & Migrations", "Containerized Deployment"],
+                    "tasks": [
+                        {
+                            "id": "go_t2_1" if level != "Advanced" else "t2_1",
+                            "title": "Implement Cloud-Native REST/gRPC API Service",
+                            "description": "Build high-throughput REST or gRPC service with structured logging and middleware",
+                            "instructions": "Implement HTTP router or gRPC server, add context cancellation handling and middleware.",
+                            "estimatedHours": 3.5,
+                            "resources": ["Go net/http & gRPC Guides", "Cloud-Native Go Patterns"],
+                            "completionCriteria": "Endpoints respond within SLA and handle context timeouts cleanly",
+                            "isCompleted": False,
+                            "dependencies": ["go_t1_2" if level != "Advanced" else "t1_2"],
+                            "topicId": "go_services" if level != "Advanced" else "t2_1",
+                            "status": "UNLOCKED",
+                            "subtopics": ["net/http & Chi Router", "Context Cancellation", "Structured Logging"],
+                            "learningObjectives": ["Build resilient HTTP services", "Handle request contexts properly"],
+                            "codeExample": "func handler(w http.ResponseWriter, r *http.Request) {\n    ctx := r.Context()\n    // handle request\n}",
+                        },
+                        {
+                            "id": "go_t2_2" if level != "Advanced" else "t2_2",
+                            "title": "Complete Capstone Portfolio Service",
+                            "description": "Deliver a complete, containerized distributed Go backend service",
+                            "instructions": "Connect PostgreSQL using pgx or sqlx, write migration scripts, package with multi-stage Dockerfile.",
+                            "estimatedHours": 4.5,
+                            "resources": ["Docker Multi-Stage Build for Go", "Production Readiness Checklist"],
+                            "completionCriteria": "Automated integration test suite passes and Docker image compiles under 25MB",
+                            "isCompleted": False,
+                            "dependencies": ["go_t2_1" if level != "Advanced" else "t2_1"],
+                            "topicId": "go_capstone" if level != "Advanced" else "t2_2",
+                            "status": "UNLOCKED",
+                            "subtopics": ["PostgreSQL with pgx", "Multi-stage Dockerfile", "Healthchecks & Metrics"],
+                            "learningObjectives": ["Deploy lightweight Go containers", "Integrate SQL persistence"],
+                            "codeExample": "FROM golang:1.22-alpine AS builder\nWORKDIR /app\nRUN go build -o server .\nFROM scratch\nCOPY --from=builder /app/server /server\nENTRYPOINT [\"/server\"]",
+                        },
+                    ],
+                    "activities": ["Build Cloud REST API", "Ship Multi-Stage Docker Service"],
+                    "resources": ["Cloud-Native Go", "Production Readiness Checklist"],
+                    "milestones": [
+                        {
+                            "title": "Go Microservices Capstone Delivery",
+                            "completionCriteria": ["Implement SQL persistence", "Build minimal Docker image"],
+                            "assessment": "Capstone code review & load test",
+                            "passingCriteria": "Service passes automated tests under concurrent load",
                         }
                     ],
                     "recommendedCourseIds": [],
@@ -2537,15 +2708,343 @@ class PersonalizedRoadmapService:
                 suggestions=["Foundational Syntax Lab", "Architecture & Design", "Capstone Portfolio Project"]
             )
 
+    def _generate_domain_guided_topic(
+        self, domain: str, topic_id: str, title: str, desc: str, subtopics: List[str], learning_objectives: List[str], code_example: str
+    ) -> Dict[str, Any]:
+        """Generates authentic curriculum guidance, independent tasks, progressive hints, and multi-question assessments."""
+        d_lower = (domain or "").lower()
+        t_lower = (title or "").lower()
+
+        # Domain-specific tailoring
+        if "go" in d_lower or "golang" in d_lower:
+            why_it_matters = f"In Go production engineering, mastering {title} enables high-throughput concurrent services with minimal memory overhead and zero race conditions."
+            prerequisites = ["Go Toolchain & Workspace", "Structs & Types", "Standard Library I/O"]
+            investigation_guidance = "Investigate Effective Go, the official Go memory model, and review the runtime scheduler CSP channel mechanics before writing code."
+            task_title = f"Hands-on Lab: Implement Production {title}"
+            task_prompt = f"Design and implement a robust, testable Go module demonstrating {title} with concurrent safety."
+            task_instructions = "1. Initialize module package.\n2. Implement the core logic using context cancellation and error handling.\n3. Verify concurrency using `go test -race` with table-driven tests."
+            task_deliverable = "Compile-clean Go package passing automated race detector verification tests."
+            hint1 = "Think about goroutine lifecycles and how channels synchronize execution without explicit mutex locks."
+            hint2 = "Always select on `ctx.Done()` alongside worker channels to ensure goroutines exit cleanly when canceled."
+            hint3 = "Use `sync.WaitGroup` to coordinate worker completion and close output channels only from the sender goroutine."
+            sol = code_example or "package main\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc RunWorker(ctx context.Context, jobs <-chan int, wg *sync.WaitGroup) {\n\tdefer wg.Done()\n\tfor {\n\t\tselect {\n\t\tcase <-ctx.Done():\n\t\t\treturn\n\t\tcase job, ok := <-jobs:\n\t\t\tif !ok { return }\n\t\t\tfmt.Printf(\"Processed %d\\n\", job)\n\t\t}\n\t}\n}"
+            questions = [
+                {
+                    "id": f"{topic_id}_q1",
+                    "question": "What is the primary guarantee of an unbuffered channel in Go?",
+                    "options": [
+                        "A send operation blocks until a receiver is ready to receive the value",
+                        "Values are stored in an unbounded heap buffer",
+                        "The runtime executes the send in a separate OS thread asynchronously",
+                        "Sends are automatically retried if the receiver panics"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Unbuffered channels provide synchronous communication; both goroutines synchronize at the transfer point.",
+                    "skill_tested": "Go Channel Concurrency",
+                    "difficulty": "Intermediate"
+                },
+                {
+                    "id": f"{topic_id}_q2",
+                    "question": "How are deferred calls (`defer`) evaluated and executed in Go functions?",
+                    "options": [
+                        "Arguments are evaluated when defer is reached; execution occurs in LIFO order upon function exit",
+                        "Arguments and execution are delayed until the garbage collector runs",
+                        "Deferred functions execute concurrently in parallel goroutines",
+                        "They execute in FIFO order before the function returns"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Deferred function arguments are evaluated immediately at declaration, while execution runs in LIFO order at return.",
+                    "skill_tested": "Go Defer Semantics",
+                    "difficulty": "Beginner"
+                },
+                {
+                    "id": f"{topic_id}_q3",
+                    "question": "In Go, what command detects data races during automated testing?",
+                    "options": [
+                        "`go test -race ./...`",
+                        "`go vet --lock-check`",
+                        "`go run --check-memory`",
+                        "`go tool race-fix`"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "The Go race detector is built into the toolchain and enabled with the `-race` flag.",
+                    "skill_tested": "Go Concurrency Testing",
+                    "difficulty": "Intermediate"
+                }
+            ]
+        elif "java" in d_lower and "script" not in d_lower:
+            why_it_matters = f"In enterprise backend engineering, {title} establishes maintainable OOP architecture, memory predictability, and multi-threaded throughput on the JVM."
+            prerequisites = ["Java Core Syntax", "OOP Principles (Encapsulation, Polymorphism)", "JVM Memory Basics"]
+            investigation_guidance = "Review the Java Language Specification, Effective Java by Joshua Bloch, and examine OpenJDK standard library patterns."
+            task_title = f"Engineering Exercise: Build {title} Architecture"
+            task_prompt = f"Construct a decoupled Java component representing {title} with interface contracts and defensive immutability."
+            task_instructions = "1. Declare clear interface boundaries with default method contracts.\n2. Implement thread-safe encapsulation without exposing mutable references.\n3. Write JUnit 5 unit tests validating boundary cases."
+            task_deliverable = "Tested Java classes adhering to clean interface contracts with zero mutation leaks."
+            hint1 = "Use interface default methods for convenience behaviors without storing mutable state."
+            hint2 = "Wrap returned collections in `Collections.unmodifiableList()` or `List.copyOf()` to prevent external mutation."
+            hint3 = "Define a generic interface `Service<T>`, implement it with `private final` fields, and validate all inputs with `Objects.requireNonNull()`."
+            sol = code_example or "public interface TaskService<T> {\n    T process(String id);\n    default boolean isValid(T item) {\n        return item != null;\n    }\n}"
+            questions = [
+                {
+                    "id": f"{topic_id}_q1",
+                    "question": "How does an interface with default methods fundamentally differ from an abstract class in Java?",
+                    "options": [
+                        "An abstract class can maintain mutable instance state (fields), while interfaces cannot have instance fields",
+                        "Interfaces can only contain private methods",
+                        "Abstract classes cannot implement any methods with bodies",
+                        "There is no difference; default methods completely replaced abstract classes"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Interfaces cannot have instance state/variables (only static constants), whereas abstract classes have constructors and instance fields.",
+                    "skill_tested": "Java OOP & Type System",
+                    "difficulty": "Intermediate"
+                },
+                {
+                    "id": f"{topic_id}_q2",
+                    "question": "What is the memory visibility guarantee of the `volatile` keyword in Java multi-threading?",
+                    "options": [
+                        "Guarantees that reads and writes see the latest value across threads without mutual exclusion locks",
+                        "Guarantees compound operations like `count++` execute atomically",
+                        "Prevents garbage collection from ever removing the object from JVM heap",
+                        "Causes the thread to yield CPU execution immediately"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Volatile guarantees memory visibility and establishes a happens-before order, but does not provide atomicity for compound operations.",
+                    "skill_tested": "Java Concurrency & Memory Model",
+                    "difficulty": "Advanced"
+                },
+                {
+                    "id": f"{topic_id}_q3",
+                    "question": "In Java 8+, what happens to a HashMap bucket when collisions reach the TREEIFY_THRESHOLD (8)?",
+                    "options": [
+                        "The internal bucket converts from a linked list into a balanced Red-Black tree for O(log n) lookups",
+                        "The HashMap throws an OutOfMemoryError and crashes",
+                        "All colliding keys are discarded",
+                        "The table size is doubled and all entries are re-hashed into vectors"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Java converts linked lists in buckets to Red-Black Trees when collisions reach 8, reducing lookup time from O(n) to O(log n).",
+                    "skill_tested": "Java Collections & Data Structures",
+                    "difficulty": "Advanced"
+                }
+            ]
+        elif "sql" in d_lower or "database" in d_lower:
+            why_it_matters = f"Relational integrity and efficient query execution for {title} ensure scalable persistence and high-performance business analytics."
+            prerequisites = ["Relational Modeling (Primary/Foreign Keys)", "Basic SELECT/WHERE Queries", "SQL Data Types"]
+            investigation_guidance = "Examine relational algebra, ACID transaction isolation levels, and use `EXPLAIN ANALYZE` on execution plans."
+            task_title = f"Database Lab: Design & Query {title}"
+            task_prompt = f"Design a normalized schema and author efficient analytical queries demonstrating {title}."
+            task_instructions = "1. Write normalized DDL with foreign key constraints.\n2. Author queries utilizing window functions or joins.\n3. Verify query execution plan utilizes index scans rather than sequential table scans."
+            task_deliverable = "SQL migration script and verified analytical queries producing accurate datasets."
+            hint1 = "Remember that WHERE filters individual rows before grouping, whereas HAVING filters summary groups."
+            hint2 = "Use window functions with `OVER (PARTITION BY ... ORDER BY ...)` to preserve individual record granularity."
+            hint3 = "Wrap complex window rank queries inside a Common Table Expression (CTE) with `WITH cte AS (...) SELECT * FROM cte WHERE rank = 1`."
+            sol = code_example or "WITH ranked_metrics AS (\n    SELECT id, category, score, DENSE_RANK() OVER (PARTITION BY category ORDER BY score DESC) as rank\n    FROM performance_metrics\n)\nSELECT * FROM ranked_metrics WHERE rank <= 3;"
+            questions = [
+                {
+                    "id": f"{topic_id}_q1",
+                    "question": "In SQL, what is the fundamental evaluation difference between WHERE and HAVING?",
+                    "options": [
+                        "WHERE filters rows before aggregations are computed, while HAVING filters aggregated groups after GROUP BY",
+                        "HAVING is faster than WHERE because it uses primary key indexes exclusively",
+                        "WHERE can only be used with numeric columns, while HAVING works on strings",
+                        "HAVING can only be used in subqueries, whereas WHERE is only for outer queries"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "WHERE filters individual records before aggregation; HAVING filters group summaries created by GROUP BY.",
+                    "skill_tested": "SQL Filtering & Aggregations",
+                    "difficulty": "Beginner"
+                },
+                {
+                    "id": f"{topic_id}_q2",
+                    "question": "How does `DENSE_RANK()` differ from `RANK()` when identical values occur?",
+                    "options": [
+                        "DENSE_RANK() assigns consecutive rank numbers without gaps, whereas RANK() leaves rank gaps after ties",
+                        "DENSE_RANK() only works on unique values",
+                        "RANK() is non-deterministic, while DENSE_RANK() sorts descending",
+                        "DENSE_RANK() calculates percentage percentiles"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "DENSE_RANK does not skip ranks after ties (1, 1, 2), whereas RANK leaves gaps (1, 1, 3).",
+                    "skill_tested": "SQL Window Functions",
+                    "difficulty": "Intermediate"
+                },
+                {
+                    "id": f"{topic_id}_q3",
+                    "question": "What concurrency phenomenon is prevented by SERIALIZABLE isolation that is permitted under REPEATABLE READ?",
+                    "options": [
+                        "Phantom reads (insertions of new rows by other transactions matching the filter predicate)",
+                        "Dirty reads (reading uncommitted data)",
+                        "Non-repeatable reads (reading updated values of existing rows)",
+                        "Deadlocks during index scans"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Repeatable Read prevents dirty and non-repeatable reads; Serializable additionally prevents phantom reads.",
+                    "skill_tested": "SQL Transactions & ACID Isolation",
+                    "difficulty": "Advanced"
+                }
+            ]
+        elif "android" in d_lower or "kotlin" in d_lower or "compose" in d_lower:
+            why_it_matters = f"In modern mobile architecture, {title} enables responsive, lifecycle-aware, and offline-first Android apps with Jetpack Compose."
+            prerequisites = ["Kotlin Syntax & Null Safety", "Coroutines Basics", "Android ViewModel Pattern"]
+            investigation_guidance = "Review official Android Architecture Guides, Jetpack Compose side-effects documentation, and Room SQLite streaming."
+            task_title = f"Mobile Architecture Lab: Build {title}"
+            task_prompt = f"Implement a reactive, lifecycle-aware Android module with Compose and Room demonstrating {title}."
+            task_instructions = "1. Implement a Single Source of Truth (SSOT) repository.\n2. Observe local Room database flows inside ViewModel.\n3. Render UI declaratively with Jetpack Compose using unidirectional data flow."
+            task_deliverable = "Clean architecture Kotlin code with observable StateFlow and Compose UI."
+            hint1 = "In an offline-first architecture, the UI should observe the local Room database, never raw network responses."
+            hint2 = "Launch side effects inside `LaunchedEffect` rather than raw Composable bodies to avoid triggering duplicate work on recomposition."
+            hint3 = "Expose immutable `StateFlow<UiState>` from ViewModel using `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InitialState)`."
+            sol = code_example or "class TopicViewModel(private val repo: TopicRepository) : ViewModel() {\n    val uiState: StateFlow<TopicUiState> = repo.observeTopics()\n        .map { TopicUiState.Success(it) }\n        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TopicUiState.Loading)\n}"
+            questions = [
+                {
+                    "id": f"{topic_id}_q1",
+                    "question": "In Jetpack Compose, why must long-running suspend tasks be launched inside `LaunchedEffect` rather than directly in the Composable body?",
+                    "options": [
+                        "Direct Composable invocations execute on every recomposition, causing duplicate jobs and memory leaks",
+                        "Suspend functions cannot syntactically be called on the main thread",
+                        "LaunchedEffect forces coroutines to run on RenderThread",
+                        "Composable bodies are synchronous and throw a compiler crash"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "LaunchedEffect scopes coroutines to the Composable lifecycle, canceling and restarting them only when keys change.",
+                    "skill_tested": "Jetpack Compose Lifecycle",
+                    "difficulty": "Intermediate"
+                },
+                {
+                    "id": f"{topic_id}_q2",
+                    "question": "What is the Single Source of Truth (SSOT) pattern in an offline-first Android architecture?",
+                    "options": [
+                        "The UI observes a Room/SQLite stream, while network sync updates the local database in the background",
+                        "The UI directly calls REST APIs, caching JSON in memory variables as fallback",
+                        "SharedPreferences caches all network responses for 10 minutes",
+                        "The ViewModel maintains UI state exclusively without persisting to disk"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "In SSOT offline-first architecture, the local database is the single authority driving UI Flow.",
+                    "skill_tested": "Offline-First Mobile Architecture",
+                    "difficulty": "Advanced"
+                },
+                {
+                    "id": f"{topic_id}_q3",
+                    "question": "In Kotlin Coroutines, what is the key difference between `StateFlow` and `SharedFlow`?",
+                    "options": [
+                        "StateFlow always retains and emits its current value to new collectors (conflated), whereas SharedFlow can emit events without state",
+                        "SharedFlow only runs on Dispatchers.Main",
+                        "StateFlow cannot be collected inside Compose",
+                        "SharedFlow is synchronous and blocks the thread"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "StateFlow is a state-holder observable flow that always has an initial value and emits the current state to new collectors.",
+                    "skill_tested": "Kotlin Coroutines & Flow",
+                    "difficulty": "Intermediate"
+                }
+            ]
+        else:
+            # Python / General / ML baseline
+            why_it_matters = f"Mastering {title} establishes rigorous engineering habits, robust error handling, and scalable execution for your learning goals."
+            prerequisites = [f"{domain} Core Syntax", "Data Structures", "Modular Design"]
+            investigation_guidance = "Review official documentation, community best practices, and trace memory/algorithmic complexity before implementing."
+            task_title = f"Independent Project: Master {title}"
+            task_prompt = f"Design and implement a clean, production-grade module demonstrating {title}."
+            task_instructions = "1. Write modular code with clear interfaces.\n2. Handle edge cases, null/empty states, and unexpected inputs.\n3. Add unit tests verifying functional behavior."
+            task_deliverable = "Tested implementation passing all boundary conditions with zero unhandled exceptions."
+            hint1 = "Break the problem down into distinct input validation, processing, and output representation steps."
+            hint2 = "Avoid mutable global state or shared default arguments across invocations."
+            hint3 = "Write a comprehensive test suite asserting both typical inputs and extreme boundary conditions."
+            sol = code_example or f"# Implementation for {title}\ndef solve_problem(input_data):\n    if not input_data:\n        return None\n    return [item.strip() for item in input_data if item]"
+            questions = [
+                {
+                    "id": f"{topic_id}_q1",
+                    "question": f"What is the primary architectural best practice when implementing {title}?",
+                    "options": [
+                        "Enforce modular boundary separation, defensive validation, and clean interface contracts",
+                        "Hardcode all operational parameters directly in source code",
+                        "Disable unit testing to speed up iteration cycles",
+                        "Catch all exceptions silently without logging or error recovery"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Modular boundaries and input validation prevent state corruption, security flaws, and regressions.",
+                    "skill_tested": "Software Engineering Best Practices",
+                    "difficulty": "Beginner"
+                },
+                {
+                    "id": f"{topic_id}_q2",
+                    "question": "Why is defining a mutable object (e.g. `target=[]`) as a default function argument considered an anti-pattern in Python?",
+                    "options": [
+                        "The default object is instantiated once when the function is defined and mutated across subsequent calls",
+                        "Python throws an immediate SyntaxError on mutable default parameters",
+                        "Default arguments cannot be modified inside the function body",
+                        "It causes the garbage collector to deallocate the list prematurely"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Default argument expressions are evaluated once at definition time, retaining mutated state across invocations.",
+                    "skill_tested": "Python Language Mechanics",
+                    "difficulty": "Beginner"
+                },
+                {
+                    "id": f"{topic_id}_q3",
+                    "question": "What is the average time complexity of key lookups in a hash table or dictionary?",
+                    "options": [
+                        "O(1) average time complexity",
+                        "O(n) linear search complexity",
+                        "O(n log n) divide-and-conquer complexity",
+                        "O(2^n) exponential complexity"
+                    ],
+                    "correct_index": 0,
+                    "explanation": "Hash tables compute array indices directly via hash functions, achieving O(1) average time complexity.",
+                    "skill_tested": "Data Structures & Complexity Analysis",
+                    "difficulty": "Beginner"
+                }
+            ]
+
+        independent_task = IndependentPracticeTaskDto(
+            title=task_title,
+            prompt=task_prompt,
+            instructions=task_instructions,
+            expectedDeliverable=task_deliverable,
+        )
+        hints = ProgressiveHintsDto(
+            hint1Concept=hint1,
+            hint2Strategy=hint2,
+            hint3Scaffold=hint3,
+            solution=sol,
+        )
+        verification_criteria = "Demonstrate competence by scoring >= 70% on the multi-question assessment without viewing the full solution."
+        resources = [
+            TopicLearningResourceDto(
+                title=f"{domain} Official Reference: {title}",
+                url=f"https://docs.edunova.app/{domain.lower().replace(' ', '-')}/{topic_id}",
+                sourceName="EduNova Curriculum Guide",
+                description=desc or f"Official learning documentation and reference for {title}.",
+                isVerified=True
+            )
+        ]
+
+        return {
+            "why_it_matters": why_it_matters,
+            "prerequisites": prerequisites,
+            "investigation_guidance": investigation_guidance,
+            "independent_task": independent_task,
+            "hints": hints,
+            "questions": questions,
+            "verification_criteria": verification_criteria,
+            "resources": resources,
+        }
+
     async def get_topic_learning_content(
-        self, roadmap_id: str, topic_id: str, user_id: str
+        self, roadmap_id: str, topic_id: str, user_id: Optional[str] = None
     ) -> Optional[TopicLearningContentResponse]:
-        """Retrieves rich structured educational content for a specific roadmap topic."""
-        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        """Retrieves rich structured educational content, guidance, tasks, hints, and assessment questions for a specific topic."""
+        roadmap = None
+        if user_id:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id(roadmap_id)
         if not roadmap or not roadmap.structure:
             return None
 
-        structure = roadmap.structure
+        structure = dict(roadmap.structure)
         phases = structure.get("phases", [])
         matched_task = None
         for p in phases:
@@ -2562,6 +3061,45 @@ class PersonalizedRoadmapService:
         learning_objectives = matched_task.get("learningObjectives", []) if matched_task else [f"Master {title}", "Apply core techniques in code"]
         code_example = matched_task.get("codeExample", "") if matched_task else ""
         domain = structure.get("domain") or "Python"
+
+        # Generate or retrieve cached domain guidance and questions
+        guided = self._generate_domain_guided_topic(
+            domain=domain,
+            topic_id=topic_id,
+            title=title,
+            desc=desc,
+            subtopics=subtopics,
+            learning_objectives=learning_objectives,
+            code_example=code_example
+        )
+
+        # Store assessment questions securely on server structure if not already cached
+        topic_assessments = structure.setdefault("topic_assessments", {})
+        if topic_id not in topic_assessments:
+            topic_assessments[topic_id] = guided["questions"]
+            roadmap.structure = structure
+            await self.db.commit()
+
+        # Build public assessment questions DTO (WITHOUT correct_index or explanation to prevent client cheating!)
+        public_questions = [
+            TopicPracticeQuizDto(
+                id=q.get("id", f"{topic_id}_{idx}"),
+                question=q["question"],
+                options=q["options"],
+                correctOptionIndex=None,
+                explanation=None,
+                skillTested=q.get("skill_tested"),
+                difficulty=q.get("difficulty")
+            )
+            for idx, q in enumerate(topic_assessments.get(topic_id, guided["questions"]))
+        ]
+
+        # Determine current status
+        completed_set = set(structure.get("completedMilestones", []))
+        topic_statuses = structure.get("topic_statuses", {})
+        curr_status = topic_statuses.get(topic_id)
+        if not curr_status:
+            curr_status = "VERIFIED_COMPLETE" if topic_id in completed_set else "NOT_STARTED"
 
         code_examples = []
         if code_example:
@@ -2582,46 +3120,229 @@ class PersonalizedRoadmapService:
             )
         ]
 
-        practice_quiz = TopicPracticeQuizDto(
-            question=f"What is the primary best practice when implementing {title}?",
-            options=[
-                "Enforce modular boundary separation and validate inputs",
-                "Hardcode configuration directly in source files",
-                "Disable automated unit tests to speed up builds",
-                "Catch all exceptions silently without logging"
-            ],
-            correctOptionIndex=0,
-            explanation="Modular separation and input validation prevent runtime regression and security vulnerabilities."
-        )
-
-        resources = [
-            TopicLearningResourceDto(
-                title=f"{domain} Documentation: {title}",
-                url=f"https://docs.edunova.app/{domain.lower().replace(' ', '-')}/{topic_id}",
-                sourceName="EduNova Curriculum Guide",
-                description=desc or f"Official learning documentation and reference for {title}.",
-                isVerified=True
-            )
-        ]
+        # First question public dto for legacy backward compatibility
+        legacy_quiz = public_questions[0] if public_questions else None
 
         return TopicLearningContentResponse(
             topicId=topic_id,
             topicTitle=title,
             domain=domain,
+            whyItMatters=guided["why_it_matters"],
+            prerequisites=guided["prerequisites"],
+            investigationGuidance=guided["investigation_guidance"],
             learningObjectives=learning_objectives,
             beginnerExplanation=desc or f"Learn foundational and practical patterns for {title}.",
             syntaxAndConcepts="\n".join([f"• {st}" for st in subtopics]),
+            independentTask=guided["independent_task"],
+            hints=guided["hints"],
             codeExamples=code_examples,
             commonMistakes=common_mistakes,
-            practiceQuiz=practice_quiz,
-            resources=resources,
+            practiceQuiz=legacy_quiz,
+            assessmentQuestions=public_questions,
+            verificationCriteria=guided["verification_criteria"],
+            currentStatus=curr_status,
+            nextRecommendedAction="Complete the independent lab and take the verification assessment to earn verified mastery.",
+            resources=guided["resources"],
+        )
+
+    async def review_topic(
+        self, roadmap_id: str, topic_id: str, user_id: Optional[str] = None
+    ) -> ReviewTopicResponse:
+        """Records that the learner reviewed the study material without bypassing verification."""
+        roadmap = None
+        if user_id:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id(roadmap_id)
+        if not roadmap or not roadmap.structure:
+            raise ValueError("Personalized roadmap not found or unauthorized")
+
+        structure = dict(roadmap.structure)
+        topic_statuses = structure.setdefault("topic_statuses", {})
+        current = topic_statuses.get(topic_id, "NOT_STARTED")
+        if current not in ("VERIFIED_COMPLETE", "MASTERED"):
+            topic_statuses[topic_id] = "REVIEWED"
+            roadmap.structure = structure
+            await self.db.commit()
+
+        return ReviewTopicResponse(
+            roadmapId=roadmap_id,
+            topicId=topic_id,
+            status=topic_statuses.get(topic_id, "REVIEWED"),
+            message="Learning activity reviewed. Take the knowledge assessment to earn verified completion."
+        )
+
+    async def submit_topic_assessment(
+        self, roadmap_id: str, topic_id: str, user_id: Optional[str] = None, answers: Optional[List[int]] = None, hints_used: int = 0, solution_revealed: bool = False
+    ) -> SubmitTopicAssessmentResponse:
+        """Evaluates assessment answers, decides verified completion or mastery, unlocks dependencies, and recalculates progress."""
+        answers = answers or []
+        roadmap = None
+        if user_id:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id(roadmap_id)
+        if not roadmap or not roadmap.structure:
+            raise ValueError("Personalized roadmap not found or unauthorized")
+
+        structure = dict(roadmap.structure)
+        topic_assessments = structure.get("topic_assessments", {})
+        questions = topic_assessments.get(topic_id)
+        if not questions:
+            # Generate fallback questions
+            phases = structure.get("phases", [])
+            domain = structure.get("domain") or "Python"
+            guided = self._generate_domain_guided_topic(domain, topic_id, f"Topic {topic_id}", "", [], [], "")
+            questions = guided["questions"]
+            structure.setdefault("topic_assessments", {})[topic_id] = questions
+
+        feedback: List[TopicAssessmentFeedbackItem] = []
+        correct_count = 0
+        missed_topics = []
+
+        for idx, q in enumerate(questions):
+            chosen = answers[idx] if idx < len(answers) else -1
+            expected = q.get("correct_index", 0)
+            is_corr = (chosen == expected)
+            if is_corr:
+                correct_count += 1
+            else:
+                missed_topics.append(q.get("skill_tested", f"Question {idx+1}"))
+
+            feedback.append(
+                TopicAssessmentFeedbackItem(
+                    question=q["question"],
+                    selectedOptionIndex=chosen,
+                    correctOptionIndex=expected,
+                    isCorrect=is_corr,
+                    explanation=q.get("explanation", "Review the concept reference.")
+                )
+            )
+
+        total_q = max(1, len(questions))
+        score_pct = int((correct_count / total_q) * 100)
+        passed = (score_pct >= 70)
+
+        completed_set = set(structure.get("completedMilestones", []))
+        topic_statuses = structure.setdefault("topic_statuses", {})
+        skipped_set = set()
+
+        unlocked_new_ids = []
+        revision_guidance = None
+
+        if passed:
+            if score_pct == 100 and not solution_revealed and hints_used <= 1:
+                final_status = "MASTERED"
+            else:
+                final_status = "VERIFIED_COMPLETE"
+
+            completed_set.add(topic_id)
+            topic_statuses[topic_id] = final_status
+
+            # Mark task completed in phases
+            phases = structure.get("phases", [])
+            for p in phases:
+                for t in p.get("tasks", []):
+                    tid = t.get("topicId") or t.get("id")
+                    if t.get("status") == "SKIPPED":
+                        skipped_set.add(tid)
+                    if tid == topic_id:
+                        t["isCompleted"] = True
+                        t["status"] = final_status
+
+            # Mark in top-level topics
+            topics = structure.get("topics", [])
+            for t in topics:
+                tid = t.get("id")
+                if t.get("status") == "SKIPPED":
+                    skipped_set.add(tid)
+                if tid == topic_id:
+                    t["status"] = final_status
+
+            # Recompute downstream unlocked statuses
+            satisfied_set = completed_set.union(skipped_set)
+            for p in phases:
+                for t in p.get("tasks", []):
+                    tid = t.get("topicId") or t.get("id")
+                    if t.get("status") in ("COMPLETED", "VERIFIED_COMPLETE", "MASTERED", "SKIPPED"):
+                        continue
+                    deps = t.get("dependencies", [])
+                    if not deps or all(d in satisfied_set for d in deps):
+                        t["status"] = "UNLOCKED"
+                        unlocked_new_ids.append(tid)
+                    else:
+                        t["status"] = "LOCKED"
+
+            for t in topics:
+                tid = t.get("id")
+                if t.get("status") in ("COMPLETED", "VERIFIED_COMPLETE", "MASTERED", "SKIPPED"):
+                    continue
+                deps = t.get("prerequisiteTopicIds", [])
+                if not deps or all(d in satisfied_set for d in deps):
+                    t["status"] = "UNLOCKED"
+                    if tid not in unlocked_new_ids:
+                        unlocked_new_ids.append(tid)
+                else:
+                    t["status"] = "LOCKED"
+        else:
+            final_status = "NEEDS_REVISION"
+            topic_statuses[topic_id] = final_status
+            missed_str = ", ".join(missed_topics) if missed_topics else "key concepts"
+            revision_guidance = (
+                f"You achieved {score_pct}%. Verified completion requires at least 70%. "
+                f"Review the learning guidance for {missed_str}, check the hints, and re-attempt the assessment."
+            )
+
+        # Log attempt
+        attempts = structure.setdefault("assessment_attempts", {}).setdefault(topic_id, [])
+        attempts.append({
+            "score": score_pct,
+            "passed": passed,
+            "status": final_status,
+            "hints_used": hints_used,
+            "solution_revealed": solution_revealed,
+            "timestamp": None
+        })
+
+        # Calculate progress
+        all_topic_ids = set()
+        phases = structure.get("phases", [])
+        for p in phases:
+            for t in p.get("tasks", []):
+                all_topic_ids.add(t.get("topicId") or t.get("id"))
+        for t in structure.get("topics", []):
+            all_topic_ids.add(t.get("id"))
+
+        active_required = all_topic_ids - skipped_set
+        completed_required = completed_set.intersection(active_required)
+        progress = int((len(completed_required) / max(1, len(active_required))) * 100) if active_required else 100
+
+        structure["completedMilestones"] = sorted(list(completed_set))
+        roadmap.structure = structure
+        await self.db.commit()
+
+        return SubmitTopicAssessmentResponse(
+            roadmapId=roadmap_id,
+            topicId=topic_id,
+            scorePercentage=score_pct,
+            passed=passed,
+            status=final_status,
+            feedback=feedback,
+            revisionGuidance=revision_guidance,
+            progressPercentage=progress,
+            completedTopicIds=sorted(list(completed_set)),
+            unlockedTopicIds=unlocked_new_ids,
         )
 
     async def complete_topic(
-        self, roadmap_id: str, topic_id: str, user_id: str, quiz_passed: bool = True
+        self, roadmap_id: str, topic_id: str, user_id: Optional[str] = None, quiz_passed: bool = True
     ) -> CompleteTopicResponse:
-        """Marks a topic complete, unlocks downstream prerequisites, and recalculates progress."""
-        roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        """Marks a topic complete, unlocks downstream prerequisites, and recalculates progress (backward-compatible)."""
+        roadmap = None
+        if user_id:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id_and_user(roadmap_id, user_id)
+        if not roadmap:
+            roadmap = await self.roadmap_repo.get_roadmap_by_id(roadmap_id)
         if not roadmap or not roadmap.structure:
             raise ValueError("Personalized roadmap not found or unauthorized")
 
@@ -2632,6 +3353,11 @@ class PersonalizedRoadmapService:
         completed_set = set(current_structure.get("completedMilestones", []))
         skipped_set = set()
 
+        final_status = "VERIFIED_COMPLETE" if quiz_passed else "NEEDS_REVISION"
+        if quiz_passed:
+            completed_set.add(topic_id)
+        current_structure.setdefault("topic_statuses", {})[topic_id] = final_status
+
         # Update phases and tasks
         for p in phases:
             for t in p.get("tasks", []):
@@ -2639,9 +3365,8 @@ class PersonalizedRoadmapService:
                 if t.get("status") == "SKIPPED":
                     skipped_set.add(tid)
                 if tid == topic_id:
-                    t["isCompleted"] = True
-                    t["status"] = "COMPLETED"
-                    completed_set.add(tid)
+                    t["isCompleted"] = quiz_passed
+                    t["status"] = final_status
 
         # Update top-level topics if present
         for t in topics:
@@ -2649,15 +3374,14 @@ class PersonalizedRoadmapService:
             if t.get("status") == "SKIPPED":
                 skipped_set.add(tid)
             if tid == topic_id:
-                t["status"] = "COMPLETED"
-                completed_set.add(tid)
+                t["status"] = final_status
 
         # Recompute downstream unlocked statuses
         satisfied_set = completed_set.union(skipped_set)
         for p in phases:
             for t in p.get("tasks", []):
                 tid = t.get("topicId") or t.get("id")
-                if t.get("status") in ("COMPLETED", "SKIPPED"):
+                if t.get("status") in ("COMPLETED", "VERIFIED_COMPLETE", "MASTERED", "SKIPPED"):
                     continue
                 deps = t.get("dependencies", [])
                 if not deps or all(d in satisfied_set for d in deps):
@@ -2667,7 +3391,7 @@ class PersonalizedRoadmapService:
 
         for t in topics:
             tid = t.get("id")
-            if t.get("status") in ("COMPLETED", "SKIPPED"):
+            if t.get("status") in ("COMPLETED", "VERIFIED_COMPLETE", "MASTERED", "SKIPPED"):
                 continue
             deps = t.get("prerequisiteTopicIds", [])
             if not deps or all(d in satisfied_set for d in deps):
@@ -2694,7 +3418,7 @@ class PersonalizedRoadmapService:
         return CompleteTopicResponse(
             roadmapId=roadmap_id,
             topicId=topic_id,
-            isCompleted=True,
+            isCompleted=quiz_passed,
             progressPercentage=progress,
             completedTopicIds=sorted(list(completed_set)),
         )

@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -129,6 +131,7 @@ fun launchExternalResource(context: Context, url: String?): Result<Unit> {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LessonViewerScreen(
     courseId: String,
@@ -288,10 +291,10 @@ fun LessonViewerScreen(
                                         )
                                     }
 
-                                    // Metadata Badges
-                                    Row(
+                                    // Metadata Badges (Responsive FlowRow)
+                                    FlowRow(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         val contentTypeIcon = when (lesson.contentType.lowercase()) {
                                             "quiz" -> Icons.Default.Quiz
@@ -362,9 +365,9 @@ fun LessonViewerScreen(
                                             fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onBackground
                                         )
-                                        Row(
+                                        FlowRow(
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             EduNovaBadge(
                                                 text = "Requires Internet",
@@ -473,9 +476,9 @@ fun LessonViewerScreen(
                                                 fontSize = 16.sp,
                                                 color = MaterialTheme.colorScheme.onBackground
                                             )
-                                            Row(
+                                            FlowRow(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
                                                 EduNovaBadge(
                                                     text = "Requires Internet",

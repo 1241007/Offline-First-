@@ -89,8 +89,16 @@ enum class PersonalizedTopicStatus {
     LOCKED,        // Prerequisites not yet met
     UNLOCKED,      // Available to start
     IN_PROGRESS,
+    REVIEWED,          // Studied guidance, pending assessment
+    ASSESSMENT_PENDING,
+    NEEDS_REVISION,    // Assessment score < 70%
+    VERIFIED_COMPLETE, // Assessment passed (>= 70%)
+    MASTERED,          // 100% score unassisted
     COMPLETED,
-    SKIPPED
+    SKIPPED;
+
+    val isDone: Boolean get() = this in setOf(COMPLETED, VERIFIED_COMPLETE, MASTERED)
+    val isVerified: Boolean get() = this in setOf(VERIFIED_COMPLETE, MASTERED)
 }
 
 /**
@@ -141,23 +149,77 @@ data class TopicCommonMistake(
     val howToFix: String
 )
 
+data class IndependentPracticeTask(
+    val title: String,
+    val prompt: String,
+    val instructions: String,
+    val expectedDeliverable: String
+)
+
+data class ProgressiveHints(
+    val hint1Concept: String,
+    val hint2Strategy: String,
+    val hint3Scaffold: String,
+    val solution: String? = null
+)
+
 data class TopicPracticeQuiz(
+    val id: String = "",
     val question: String,
     val options: List<String>,
+    val correctOptionIndex: Int? = null,
+    val explanation: String? = null,
+    val skillTested: String? = null,
+    val difficulty: String? = null
+)
+
+data class AssessmentFeedbackItem(
+    val question: String,
+    val selectedOptionIndex: Int,
     val correctOptionIndex: Int,
+    val isCorrect: Boolean,
     val explanation: String
+)
+
+data class TopicAssessmentResult(
+    val roadmapId: String,
+    val topicId: String,
+    val scorePercentage: Int,
+    val passed: Boolean,
+    val status: String,
+    val feedback: List<AssessmentFeedbackItem>,
+    val revisionGuidance: String? = null,
+    val progressPercentage: Int,
+    val completedTopicIds: List<String> = emptyList(),
+    val unlockedTopicIds: List<String> = emptyList()
+)
+
+data class TopicReviewResult(
+    val roadmapId: String,
+    val topicId: String,
+    val status: String,
+    val message: String
 )
 
 data class TopicLearningContent(
     val topicId: String,
     val topicTitle: String,
     val domain: String,
+    val whyItMatters: String = "",
+    val prerequisites: List<String> = emptyList(),
+    val investigationGuidance: String = "",
     val learningObjectives: List<String> = emptyList(),
     val beginnerExplanation: String = "",
     val syntaxAndConcepts: String = "",
+    val independentTask: IndependentPracticeTask? = null,
+    val hints: ProgressiveHints? = null,
     val codeExamples: List<TopicCodeExample> = emptyList(),
     val commonMistakes: List<TopicCommonMistake> = emptyList(),
     val practiceQuiz: TopicPracticeQuiz? = null,
+    val assessmentQuestions: List<TopicPracticeQuiz> = emptyList(),
+    val verificationCriteria: String = "",
+    val currentStatus: String = "NOT_STARTED",
+    val nextRecommendedAction: String = "",
     val resources: List<TopicLearningResource> = emptyList()
 )
 
