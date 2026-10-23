@@ -64,6 +64,7 @@ fun PersonalizedRoadmapScreen(
     var isRenameDialogOpen by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
     var showRoadmapSwitcher by remember { mutableStateOf(false) }
+    var selectedViewMode by remember { mutableIntStateOf(0) } // 0 = Interactive Graph, 1 = Topic List
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -192,153 +193,234 @@ fun PersonalizedRoadmapScreen(
                 }
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(padding)
             ) {
-                // 1. Roadmap Overview & Progress Card
-                item(key = "progress_header") {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                // Top Roadmap Progress Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Column {
+                                Text(
+                                    text = "${roadmap.completedCount} of ${roadmap.totalTopics} Topics Completed",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Estimated: ${roadmap.estimatedWeeks} weeks @ ${roadmap.studyHoursPerWeek}h/week",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "${roadmap.progressPercentage}%",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (roadmap.progressPercentage == 100) EduNovaSuccess else primaryColor
+                            )
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { roadmap.progressPercentage / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (roadmap.progressPercentage == 100) EduNovaSuccess else primaryColor,
+                            trackColor = primaryColor.copy(alpha = 0.12f)
+                        )
+                    }
+                }
+
+                // View Mode Switcher: Interactive Graph vs Topic List
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedViewMode == 0,
+                        onClick = { selectedViewMode = 0 },
+                        label = { Text("Interactive Graph") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Hub,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = primaryColor.copy(alpha = 0.15f),
+                            selectedLabelColor = primaryColor
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = selectedViewMode == 1,
+                        onClick = { selectedViewMode = 1 },
+                        label = { Text("Topic List") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.FormatListNumbered,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = primaryColor.copy(alpha = 0.15f),
+                            selectedLabelColor = primaryColor
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (selectedViewMode == 0) {
+                    // --- 1. Interactive 2D Navigable Graph View ---
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        PersonalizedNavigableGraphView(
+                            roadmap = roadmap,
+                            selectedTopicId = uiState.selectedTopic?.id,
+                            onTopicSelected = { topic ->
+                                viewModel.selectTopic(topic)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else {
+                    // --- 2. Sequential Topic List View ---
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Recommended Next Topic Banner
+                        roadmap.recommendedNextTopic?.let { nextTopic ->
+                            item(key = "recommended_topic") {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = EduNovaPrimary.copy(alpha = 0.08f)
+                                    ),
+                                    border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.3f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.AutoAwesome,
+                                                contentDescription = null,
+                                                tint = EduNovaPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "AI Recommended Next Step",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = EduNovaPrimary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        Text(
+                                            text = nextTopic.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        if (nextTopic.explanation.isNotEmpty()) {
+                                            Text(
+                                                text = nextTopic.explanation,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = onSurfaceVariant
+                                            )
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    viewModel.setTopicInProgress(nextTopic.id)
+                                                    viewModel.loadTopicContent(roadmap.id, nextTopic.id)
+                                                    onOpenTopicDetail(nextTopic.id)
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Start Learning", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section Title
+                        item(key = "sequence_title") {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text(
-                                        text = "${roadmap.completedCount} of ${roadmap.totalTopics} Topics Completed",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Estimated: ${roadmap.estimatedWeeks} weeks @ ${roadmap.studyHoursPerWeek}h/week",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = onSurfaceVariant
-                                    )
-                                }
                                 Text(
-                                    text = "${roadmap.progressPercentage}%",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (roadmap.progressPercentage == 100) EduNovaSuccess else primaryColor
-                                )
-                            }
-
-                            LinearProgressIndicator(
-                                progress = { roadmap.progressPercentage / 100f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                color = if (roadmap.progressPercentage == 100) EduNovaSuccess else primaryColor,
-                                trackColor = primaryColor.copy(alpha = 0.12f)
-                            )
-                        }
-                    }
-                }
-
-                // 2. Next Recommended Topic Banner
-                roadmap.recommendedNextTopic?.let { nextTopic ->
-                    item(key = "recommended_topic") {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = EduNovaPrimary.copy(alpha = 0.08f)
-                            ),
-                            border = BorderStroke(1.dp, EduNovaPrimary.copy(alpha = 0.3f))
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = EduNovaPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "AI Recommended Next Step",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = EduNovaPrimary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Text(
-                                    text = nextTopic.title,
+                                    text = "Visual Learning Sequence",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
-
-                                if (nextTopic.explanation.isNotEmpty()) {
-                                    Text(
-                                        text = nextTopic.explanation,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = onSurfaceVariant
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = primaryColor.copy(alpha = 0.1f)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            viewModel.setTopicInProgress(nextTopic.id)
-                                            viewModel.loadTopicContent(roadmap.id, nextTopic.id)
-                                            onOpenTopicDetail(nextTopic.id)
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Start Learning", fontSize = 12.sp)
-                                    }
+                                    Text(
+                                        text = "${roadmap.topics.size} Connected Topics",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = primaryColor,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
-                    }
-                }
 
-                // 3. Section Title
-                item(key = "sequence_title") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Visual Learning Sequence",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = primaryColor.copy(alpha = 0.1f)
-                        ) {
-                            Text(
-                                text = "${roadmap.topics.size} Connected Topics",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = primaryColor,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        // Connected Topic Cards
+                        items(roadmap.topics, key = { it.id }) { topic ->
+                            PersonalizedTopicCard(
+                                topic = topic,
+                                onTopicClick = {
+                                    viewModel.loadTopicContent(roadmap.id, topic.id)
+                                    onOpenTopicDetail(topic.id)
+                                },
+                                onToggleCompleted = { viewModel.toggleTopicCompleted(topic.id) }
                             )
                         }
                     }
@@ -780,6 +862,33 @@ private fun PersonalizedTopicBottomSheet(
                 )
             }
 
+            // Locked topic explanation banner
+            if (topic.status == PersonalizedTopicStatus.LOCKED) {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "This topic is locked. You must complete or demonstrate mastery of its prerequisite topics before unlocking this lesson.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
             // AI Explanation / Personalization Reason
             if (topic.explanation.isNotEmpty()) {
                 Card(
@@ -833,11 +942,28 @@ private fun PersonalizedTopicBottomSheet(
                 }
             }
 
-            // Action Buttons
+            // Primary Action: Start or Continue Learning
+            Button(
+                onClick = { onStartLearning(topic.id) },
+                enabled = topic.status != PersonalizedTopicStatus.LOCKED,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = EduNovaPrimary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (topic.status == PersonalizedTopicStatus.IN_PROGRESS) "Continue Learning Lesson" else "Start Learning Lesson")
+            }
+
+            // Secondary Action Buttons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 24.dp),
+                    .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!topic.status.isDone) {

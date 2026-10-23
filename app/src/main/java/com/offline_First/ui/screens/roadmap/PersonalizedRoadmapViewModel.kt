@@ -3,8 +3,11 @@ package com.offline_First.ui.screens.roadmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.offline_First.data.AppContainer
+import com.offline_First.data.remote.RoadmapWsEvent
 import com.offline_First.data.repository.RoadmapRepository
 import com.offline_First.domain.model.AssessmentPhase
+import com.offline_First.domain.model.AssessmentQuestion
+import com.offline_First.domain.model.AssessmentQuestionType
 import com.offline_First.domain.model.AssessmentSessionState
 import com.offline_First.domain.model.PersonalizedRoadmapDetail
 import com.offline_First.domain.model.PersonalizedRoadmapTopic
@@ -17,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.UUID
 
 data class PersonalizedRoadmapUiState(
     val assessmentState: AssessmentSessionState? = null,
@@ -56,6 +61,127 @@ class PersonalizedRoadmapViewModel(
 
     init {
         loadSavedRoadmaps()
+        observeWebSocketEvents()
+    }
+
+    private fun observeWebSocketEvents() {
+        viewModelScope.launch {
+            repository.observeRoadmapWsEvents().collect { event ->
+                when (event) {
+                    is RoadmapWsEvent.SessionReady -> {
+                        val q = parseQuestionFromJson(event.currentQuestionJson)
+                        _uiState.update { state ->
+                            val current = state.assessmentState ?: AssessmentSessionState(
+                                id = event.sessionId,
+                                sessionId = event.sessionId,
+                                domain = event.domain
+                            )
+                            state.copy(
+                                isLoading = false,
+                                assessmentState = current.copy(
+                                    id = event.sessionId,
+                                    sessionId = event.sessionId,
+                                    domain = event.domain,
+                                    currentQuestion = q ?: current.currentQuestion,
+                                    phase = AssessmentPhase.DIAGNOSTIC,
+                                    completenessPercentage = event.completenessPercentage,
+                                    questionNumber = 1,
+                                    totalQuestions = 5
+                                )
+                            )
+                        }
+                    }
+                    is RoadmapWsEvent.NextQuestion -> {
+                        val q = parseQuestionFromJson(event.nextQuestionJson)
+                        _uiState.update { state ->
+                            val current = state.assessmentState ?: return@update state
+                            state.copy(
+                                isSubmittingAnswer = false,
+                                assessmentState = current.copy(
+                                    currentQuestion = q ?: current.currentQuestion,
+                                    lastAnswerExplanation = event.feedback,
+                                    completenessPercentage = event.completenessPercentage,
+                                    questionNumber = current.questionNumber + 1
+                                )
+                            )
+                        }
+                    }
+                    is RoadmapWsEvent.SessionComplete -> {
+                        _uiState.update { state ->
+                            val current = state.assessmentState ?: return@update state
+                            state.copy(
+                                isSubmittingAnswer = false,
+                                assessmentState = current.copy(
+                                    phase = AssessmentPhase.SUMMARY,
+                                    isComplete = true,
+                                    lastAnswerExplanation = event.feedback
+                                )
+                            )
+                        }
+                    }
+                    is RoadmapWsEvent.RoadmapGenerationStarted -> {
+                        _uiState.update { it.copy(isGenerating = true) }
+                    }
+                    is RoadmapWsEvent.RoadmapReady -> {
+                        viewModelScope.launch {
+                            repository.getPersonalizedRoadmapDetail(event.sessionId)
+                                .onSuccess { roadmap ->
+                                    _uiState.update { state ->
+                                        state.copy(
+                                            isGenerating = false,
+                                            activeRoadmap = roadmap,
+                                            savedRoadmaps = listOf(roadmap) + state.savedRoadmaps.filter { it.id != roadmap.id },
+                                            assessmentState = null,
+                                            roadmapJustGenerated = true
+                                        )
+                                    }
+                                }
+                                .onFailure {
+                                    _uiState.update { it.copy(isGenerating = false) }
+                                }
+                        }
+                    }
+                    is RoadmapWsEvent.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                isSubmittingAnswer = false,
+                                isGenerating = false,
+                                errorMessage = event.message
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun parseQuestionFromJson(qJson: JSONObject?): AssessmentQuestion? {
+        if (qJson == null) return null
+        val qTypeStr = qJson.optString("question_type", "MULTIPLE_CHOICE")
+        val qType = try {
+            AssessmentQuestionType.valueOf(qTypeStr.uppercase())
+        } catch (_: Exception) {
+            AssessmentQuestionType.MULTIPLE_CHOICE
+        }
+        val opts = mutableListOf<String>()
+        qJson.optJSONArray("options")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                opts.add(arr.optString(i))
+            }
+        }
+        return AssessmentQuestion(
+            id = qJson.optString("id", UUID.randomUUID().toString()),
+            topicTag = qJson.optString("topic_tag", "core"),
+            questionType = qType,
+            prompt = qJson.optString("prompt", ""),
+            codeSnippet = if (qJson.has("code_snippet") && !qJson.isNull("code_snippet")) qJson.optString("code_snippet") else null,
+            options = opts,
+            correctOptionIndex = if (qJson.has("correct_option_index") && !qJson.isNull("correct_option_index")) qJson.optInt("correct_option_index") else null,
+            difficultyLevel = qJson.optInt("difficulty_level", 1),
+            explanation = qJson.optString("explanation", "")
+        )
     }
 
     fun updateCourseInput(input: String) {
@@ -99,6 +225,8 @@ class PersonalizedRoadmapViewModel(
     }
 
     fun startAssessment(domain: String = "Python") {
+        repository.connectRoadmapWs()
+        repository.sendWsStartRoadmap(domain = domain)
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             repository.startPersonalizedAssessment(domain)
@@ -124,25 +252,37 @@ class PersonalizedRoadmapViewModel(
 
     fun submitAnswer(answer: String, quizSelectedIndex: Int? = null) {
         val currentSession = _uiState.value.assessmentState ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSubmittingAnswer = true, errorMessage = null) }
-            repository.submitAssessmentAnswer(
+        val currentQ = currentSession.currentQuestion
+        _uiState.update { it.copy(isSubmittingAnswer = true, errorMessage = null) }
+
+        if (repository.isWsConnected()) {
+            repository.sendWsSubmitAnswer(
                 sessionId = currentSession.sessionId,
-                answer = answer,
-                quizSelectedIndex = quizSelectedIndex
-            ).onSuccess { updatedSession ->
-                _uiState.update {
-                    it.copy(
-                        isSubmittingAnswer = false,
-                        assessmentState = updatedSession
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isSubmittingAnswer = false,
-                        errorMessage = error.localizedMessage ?: "Failed to submit answer"
-                    )
+                questionId = currentQ?.id,
+                answerText = answer,
+                quizIndex = quizSelectedIndex
+            )
+            // The response will arrive via observeWebSocketEvents() (RoadmapWsEvent.NextQuestion / SessionComplete)
+        } else {
+            viewModelScope.launch {
+                repository.submitAssessmentAnswer(
+                    sessionId = currentSession.sessionId,
+                    answer = answer,
+                    quizSelectedIndex = quizSelectedIndex
+                ).onSuccess { updatedSession ->
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingAnswer = false,
+                            assessmentState = updatedSession
+                        )
+                    }
+                }.onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingAnswer = false,
+                            errorMessage = error.localizedMessage ?: "Failed to submit answer"
+                        )
+                    }
                 }
             }
         }
@@ -201,28 +341,34 @@ class PersonalizedRoadmapViewModel(
 
     fun generateRoadmap() {
         val currentSession = _uiState.value.assessmentState ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isGenerating = true, errorMessage = null) }
-            repository.generatePersonalizedRoadmap(currentSession.sessionId)
-                .onSuccess { roadmap ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isGenerating = false,
-                            activeRoadmap = roadmap,
-                            savedRoadmaps = listOf(roadmap) + state.savedRoadmaps.filter { it.id != roadmap.id },
-                            assessmentState = null,
-                            roadmapJustGenerated = true
-                        )
+        _uiState.update { it.copy(isGenerating = true, errorMessage = null) }
+
+        if (repository.isWsConnected()) {
+            repository.sendWsGenerateRoadmap(currentSession.sessionId)
+            // The response will arrive via observeWebSocketEvents() (RoadmapWsEvent.RoadmapReady)
+        } else {
+            viewModelScope.launch {
+                repository.generatePersonalizedRoadmap(currentSession.sessionId)
+                    .onSuccess { roadmap ->
+                        _uiState.update { state ->
+                            state.copy(
+                                isGenerating = false,
+                                activeRoadmap = roadmap,
+                                savedRoadmaps = listOf(roadmap) + state.savedRoadmaps.filter { it.id != roadmap.id },
+                                assessmentState = null,
+                                roadmapJustGenerated = true
+                            )
+                        }
                     }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isGenerating = false,
-                            errorMessage = error.localizedMessage ?: "Failed to generate roadmap"
-                        )
+                    .onFailure { error ->
+                        _uiState.update {
+                            it.copy(
+                                isGenerating = false,
+                                errorMessage = error.localizedMessage ?: "Failed to generate roadmap"
+                            )
+                        }
                     }
-                }
+            }
         }
     }
 
@@ -559,5 +705,10 @@ class PersonalizedRoadmapViewModel(
 
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        repository.disconnectRoadmapWs()
     }
 }

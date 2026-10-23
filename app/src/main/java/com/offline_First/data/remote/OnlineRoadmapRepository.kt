@@ -10,6 +10,7 @@ class OnlineRoadmapRepository(
     context: Context? = null,
     private val userIdProvider: () -> String = { "default_user" },
     val cacheDb: ChatCacheDatabase? = context?.let { ChatCacheDatabase(it.applicationContext) },
+    private val tokenProvider: () -> String? = { null },
     private val isOnlineProvider: () -> Boolean = { true }
 ) : RoadmapRepository {
 
@@ -1152,6 +1153,45 @@ class OnlineRoadmapRepository(
         // 2. Offline fallback: load strictly user-saved roadmaps from SQLite
         val offlineSaved = cacheDb?.getSavedRoadmaps(uId) ?: emptyList()
         return Result.success(offlineSaved)
+    }
+
+    // -----------------------------------------------------------------------
+    // Dedicated WebSocket Methods
+    // -----------------------------------------------------------------------
+
+    private val wsClient: RoadmapWebSocketClient by lazy {
+        RoadmapWebSocketClient(
+            okHttpClient = ChatApiClient.okHttpClient,
+            tokenProvider = tokenProvider,
+            userIdProvider = { currentUserId }
+        )
+    }
+
+    override fun isWsConnected(): Boolean = wsClient.isConnected
+
+    override fun observeRoadmapWsEvents(): kotlinx.coroutines.flow.Flow<RoadmapWsEvent> {
+        return wsClient.events
+    }
+
+    override fun connectRoadmapWs(sessionId: String?) {
+        val baseUrl = ChatApiClient.customBaseUrl ?: ChatApiConfig.BASE_URL
+        wsClient.connect(baseUrl = baseUrl, sessionId = sessionId)
+    }
+
+    override fun sendWsStartRoadmap(domain: String, goal: String?, level: String?, weeklyHours: Float?) {
+        wsClient.startRoadmap(domain = domain, goal = goal, level = level, weeklyHours = weeklyHours)
+    }
+
+    override fun sendWsSubmitAnswer(sessionId: String, questionId: String?, answerText: String?, quizIndex: Int?) {
+        wsClient.submitAnswer(sessionId = sessionId, questionId = questionId, answerText = answerText, quizIndex = quizIndex)
+    }
+
+    override fun sendWsGenerateRoadmap(sessionId: String) {
+        wsClient.generateRoadmap(sessionId = sessionId)
+    }
+
+    override fun disconnectRoadmapWs() {
+        wsClient.disconnect()
     }
 }
 

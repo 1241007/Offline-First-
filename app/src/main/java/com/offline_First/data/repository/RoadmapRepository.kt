@@ -104,5 +104,14 @@ interface RoadmapRepository {
         studyTime: String,
         interest: String
     ): Result<GeneratedRoadmapPreview>
+
+    // --- Dedicated WebSocket Lifecycle ---
+    fun observeRoadmapWsEvents(): kotlinx.coroutines.flow.Flow<com.offline_First.data.remote.RoadmapWsEvent> = kotlinx.coroutines.flow.emptyFlow()
+    fun isWsConnected(): Boolean = false
+    fun connectRoadmapWs(sessionId: String? = null) {}
+    fun sendWsStartRoadmap(domain: String, goal: String? = null, level: String? = null, weeklyHours: Float? = null) {}
+    fun sendWsSubmitAnswer(sessionId: String, questionId: String?, answerText: String?, quizIndex: Int?) {}
+    fun sendWsGenerateRoadmap(sessionId: String) {}
+    fun disconnectRoadmapWs() {}
 }
 

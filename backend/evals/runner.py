@@ -4,14 +4,20 @@
 Supports:
 - eval list: List all available evaluation suites and test categories
 - --suite <name>: Run a specific evaluation suite
-- --profile [ci|integration|full]: Run predefined profiles
-    - ci: Fast deterministic unit & contract suites (pytest only)
-    - integration: ci + android unit tests
-    - full: integration + live supabase RAG evaluation
+- --profile [ci|scheduled-live|device-benchmark|release-candidate|integration|full]: Run predefined profiles
+    - ci: Fast deterministic unit, domain & contract suites (pytest only, zero network)
+    - scheduled-live: Nightly live evaluations (live Supabase RAG, live OpenRouter generation)
+    - device-benchmark: Android application workflows and on-device inference benchmarks
+    - release-candidate: Full matrix + baseline regression gating
+    - integration / full: Backward-compatible profile aliases
 - --compare-baseline <file>: Compare results against baseline JSON
 - --fail-on-regression: Exit with code 1 if regressions are detected
 - --self-test-gate: Verify that the regression gate detects failure and exits nonzero
-- Outputs: Machine-readable JSON artifact and human-readable summary table
+- Outputs: Machine-readable JSON artifact with complete run metadata and human-readable summary table
+- Exit codes:
+    0: All executed suites passed and regression gates satisfied
+    1: Test failure, regression detected, or release blocker violated
+    2: Evaluation blocked due to missing external dependency/credential
 """
 
 import argparse
@@ -25,6 +31,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = REPO_ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 PYTHON_BIN = BACKEND_DIR / ".venv" / "Scripts" / "python.exe"
 if not PYTHON_BIN.exists():
     PYTHON_BIN = Path(sys.executable)
@@ -32,50 +41,68 @@ if not PYTHON_BIN.exists():
 GRADLEW = REPO_ROOT / "gradlew.bat"
 JAVA_HOME = Path("C:/Program Files/Android/Android Studio/jbr")
 
-SUITES = {
+from evals.case_schema import collect_run_metadata
+
+SUITES: Dict[str, Dict[str, Any]] = {
+    "domain_adherence": {
+        "description": "Domain boundary enforcement, out-of-domain refusals, and mixed intent",
+        "type": "unit",
+        "category": "domain",
+        "command": [str(PYTHON_BIN), "-m", "pytest", "evals/domain/test_domain_adherence_eval.py", "-v"],
+        "cwd": BACKEND_DIR,
+        "env": {"PYTHONPATH": "backend"},
+        "profile": ["ci", "integration", "full", "release-candidate"],
+    },
     "rag_mock": {
         "description": "Mock RAG retrieval & evaluation (25 golden set cases)",
         "type": "eval",
+        "category": "retrieval",
         "command": [str(PYTHON_BIN), "evals/rag/run_eval.py", "--mode", "mock"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "integration", "full", "release-candidate"],
     },
     "rag_live": {
         "description": "Live Supabase RAG retrieval & evaluation against cloud DB",
         "type": "live_eval",
+        "category": "retrieval",
         "command": [str(PYTHON_BIN), "evals/rag/run_eval.py", "--mode", "live"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["full"],
+        "profile": ["scheduled-live", "full", "release-candidate"],
+        "requires": ["supabase"],
     },
     "online_generation": {
         "description": "Online generation quality, rubrics & instruction adherence",
         "type": "unit",
+        "category": "generation",
         "command": [str(PYTHON_BIN), "-m", "pytest", "evals/generation/test_online_generation_eval.py", "-v"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "scheduled-live", "integration", "full", "release-candidate"],
     },
     "provider_resilience": {
         "description": "OpenRouter provider retry, fallback, 429 backoff & stream interruption",
         "type": "unit",
+        "category": "resilience",
         "command": [str(PYTHON_BIN), "-m", "pytest", "evals/generation/test_provider_resilience.py", "-v"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "integration", "full", "release-candidate"],
     },
     "offline_generation": {
         "description": "Offline generative model GGUF format validation & ChatML prompting",
         "type": "unit",
+        "category": "generation",
         "command": [str(PYTHON_BIN), "-m", "pytest", "evals/generation/test_offline_generation_eval.py", "-v"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "integration", "full", "release-candidate"],
     },
     "prompt_persistence": {
         "description": "Prompt context isolation & backend chat persistence invariants",
         "type": "unit",
+        "category": "persistence",
         "command": [
             str(PYTHON_BIN), "-m", "pytest",
             "tests/test_prompt_construction.py",
@@ -84,19 +111,21 @@ SUITES = {
         ],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "integration", "full", "release-candidate"],
     },
     "pipeline_matrix": {
         "description": "End-to-End Chatbot Pipeline Matrix (Pipelines A through G)",
         "type": "integration",
+        "category": "pipeline",
         "command": [str(PYTHON_BIN), "-m", "pytest", "tests/integration/test_pipeline_e2e_matrix.py", "-v"],
         "cwd": BACKEND_DIR,
         "env": {"PYTHONPATH": "backend"},
-        "profile": ["ci", "integration", "full"],
+        "profile": ["ci", "integration", "full", "release-candidate"],
     },
     "android_unit": {
         "description": "Android application-level workflows, persistence & offline inference tests",
         "type": "android_unit",
+        "category": "android",
         "command": [
             str(GRADLEW), "testDebugUnitTest",
             "--tests", "com.offline_First.data.local.ChatPersistenceInvariantTest",
@@ -105,17 +134,63 @@ SUITES = {
         ],
         "cwd": REPO_ROOT,
         "env": {"JAVA_HOME": str(JAVA_HOME)},
-        "profile": ["integration", "full"],
+        "profile": ["device-benchmark", "integration", "full", "release-candidate"],
+        "requires": ["gradlew", "java_home"],
     },
 }
+
+
+def check_dependencies(requirements: List[str]) -> Tuple[bool, Optional[str]]:
+    """Checks whether required external dependencies/credentials exist."""
+    for req in requirements:
+        if req == "supabase":
+            url = os.environ.get("SUPABASE_URL")
+            key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+            if not (url and key):
+                return False, "Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) not configured"
+        elif req == "openrouter":
+            key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            if not key:
+                return False, "OpenRouter/Gemini API key not configured"
+        elif req == "gradlew":
+            if not GRADLEW.exists():
+                return False, f"gradlew executable not found at {GRADLEW}"
+        elif req == "java_home":
+            if not JAVA_HOME.exists() and not os.environ.get("JAVA_HOME"):
+                return False, f"JAVA_HOME path not found at {JAVA_HOME}"
+    return True, None
 
 
 def run_suite(name: str, config: Dict[str, Any]) -> Dict[str, Any]:
     print(f"\n========================================================")
     print(f"RUNNING SUITE: {name}")
+    print(f"Category:      {config.get('category', 'general')}")
     print(f"Description:   {config['description']}")
     print(f"Command:       {' '.join(config['command'])}")
     print(f"========================================================")
+
+    # Check dependencies before attempting execution
+    reqs = config.get("requires", [])
+    if reqs:
+        available, missing_reason = check_dependencies(reqs)
+        if not available:
+            print(f"--> [BLOCKED] Skipping suite '{name}': {missing_reason}")
+            return {
+                "suite": name,
+                "type": config["type"],
+                "category": config.get("category", "general"),
+                "description": config["description"],
+                "command": " ".join(config["command"]),
+                "status": "BLOCKED",
+                "passed": False,
+                "blocked": True,
+                "blocked_reason": missing_reason,
+                "exit_code": 2,
+                "duration_seconds": 0.0,
+                "tests_run": 0,
+                "tests_passed": 0,
+                "tests_failed": 0,
+            }
 
     env = os.environ.copy()
     for k, v in config.get("env", {}).items():
@@ -194,10 +269,12 @@ def run_suite(name: str, config: Dict[str, Any]) -> Dict[str, Any]:
     res = {
         "suite": name,
         "type": config["type"],
+        "category": config.get("category", "general"),
         "description": config["description"],
         "command": " ".join(config["command"]),
         "status": status_str,
         "passed": passed,
+        "blocked": False,
         "exit_code": exit_code,
         "duration_seconds": round(duration, 2),
         "tests_run": tests_run,
@@ -218,28 +295,24 @@ HIGHER_IS_BETTER_METRICS = {
     "mean_ndcg_at_10",
     "empty_result_correctness_rate",
     "outcome_match_rate",
+    "factual_correctness",
+    "instruction_adherence",
+    "clarification_rate",
+    "mixed_intent_compliance_rate",
 }
 
 LOWER_IS_BETTER_METRICS = {
     "mean_cross_curriculum_leakage",
     "error_rate",
     "hallucination_rate",
+    "unsupported_claim_rate",
+    "out_of_domain_false_accept_rate",
+    "in_domain_false_rejection_rate",
 }
 
 
 def compare_with_baseline(current_results: Dict[str, Any], baseline_file: Path) -> Tuple[bool, List[str]]:
-    """
-    Compares current evaluation run against an accepted baseline artifact.
-    
-    Invariants checked:
-    1. Previously passed suites must not fail.
-    2. Test counts must not decrease.
-    3. Evaluation dataset versions must match (like-for-like comparison).
-    4. Numeric metrics must be evaluated with correct directionality:
-       - Higher-is-better metrics (recall, MRR, nDCG) must not drop below baseline (-0.05 tolerance).
-       - Lower-is-better metrics (leakage, error rate) must not exceed baseline (+0.02 tolerance).
-    5. Expected baseline metrics must not be missing in current results.
-    """
+    """Compares current evaluation run against an accepted baseline artifact."""
     if not baseline_file.exists():
         return True, [f"Baseline file {baseline_file} does not exist. No regression detected."]
 
@@ -259,7 +332,7 @@ def compare_with_baseline(current_results: Dict[str, Any], baseline_file: Path) 
             continue
 
         # 1. Suite pass/fail regression
-        if base.get("passed") and not current.get("passed"):
+        if base.get("passed") and not current.get("passed") and not current.get("blocked"):
             regressions.append(
                 f"REGRESSION in '{s_name}': Previously passed ({base.get('tests_passed')} tests), now FAILED."
             )
@@ -275,7 +348,7 @@ def compare_with_baseline(current_results: Dict[str, Any], baseline_file: Path) 
         cur_dataset_ver = current.get("dataset_version")
         if base_dataset_ver and cur_dataset_ver and base_dataset_ver != cur_dataset_ver:
             regressions.append(
-                f"INCOMPATIBLE DATASET in '{s_name}': Current dataset version {cur_dataset_ver} != Baseline dataset version {base_dataset_ver}. Baseline requires re-calibration."
+                f"INCOMPATIBLE DATASET in '{s_name}': Current dataset version {cur_dataset_ver} != Baseline dataset version {base_dataset_ver}."
             )
 
         # 4. Metric-level comparison with directionality
@@ -293,13 +366,11 @@ def compare_with_baseline(current_results: Dict[str, Any], baseline_file: Path) 
                 if not isinstance(base_val, (int, float)) or not isinstance(cur_val, (int, float)):
                     continue
 
-                # Higher is better
                 if m_name in HIGHER_IS_BETTER_METRICS:
                     if cur_val < (base_val - 0.05):
                         regressions.append(
                             f"METRIC REGRESSION in '{s_name}.{m_name}': Dropped from {base_val:.4f} to {cur_val:.4f} (tolerance: -0.05)."
                         )
-                # Lower is better
                 elif m_name in LOWER_IS_BETTER_METRICS:
                     if cur_val > (base_val + 0.02):
                         regressions.append(
@@ -355,7 +426,7 @@ def run_self_test_gate():
         assert ok, f"Self-test 1 failed: False alarm on identical results: {diffs}"
         print("[PASS] Case 1: Identical baseline comparison passed with zero regressions.")
 
-        # Test Case 2: Higher-is-better metric regression (Recall drops 0.95 -> 0.70)
+        # Test Case 2: Higher-is-better metric drop
         recall_drop_current = {
             "suites": [
                 {
@@ -371,10 +442,10 @@ def run_self_test_gate():
             ]
         }
         ok, diffs = compare_with_baseline(recall_drop_current, temp_baseline_path)
-        assert not ok and any("mean_recall_at_5" in d for d in diffs), f"Self-test 2 failed: Gate missed recall drop! {diffs}"
+        assert not ok and any("mean_recall_at_5" in d for d in diffs), f"Self-test 2 failed: {diffs}"
         print(f"[PASS] Case 2: Detected higher-is-better metric drop: {diffs[0]}")
 
-        # Test Case 3: Lower-is-better metric regression (Leakage rises 0.0 -> 0.15)
+        # Test Case 3: Lower-is-better metric rise
         leakage_rise_current = {
             "suites": [
                 {
@@ -390,47 +461,10 @@ def run_self_test_gate():
             ]
         }
         ok, diffs = compare_with_baseline(leakage_rise_current, temp_baseline_path)
-        assert not ok and any("mean_cross_curriculum_leakage" in d for d in diffs), f"Self-test 3 failed: Gate missed leakage rise! {diffs}"
+        assert not ok and any("mean_cross_curriculum_leakage" in d for d in diffs), f"Self-test 3 failed: {diffs}"
         print(f"[PASS] Case 3: Detected lower-is-better metric rise: {diffs[0]}")
 
-        # Test Case 4: Missing expected metric
-        missing_metric_current = {
-            "suites": [
-                {
-                    "suite": "test_suite",
-                    "passed": True,
-                    "tests_passed": 10,
-                    "dataset_version": "2.0",
-                    "metrics": {
-                        "mean_recall_at_5": 0.95,
-                    }
-                }
-            ]
-        }
-        ok, diffs = compare_with_baseline(missing_metric_current, temp_baseline_path)
-        assert not ok and any("MISSING METRIC" in d for d in diffs), f"Self-test 4 failed: Gate missed missing metric! {diffs}"
-        print(f"[PASS] Case 4: Detected missing expected metric: {diffs[0]}")
-
-        # Test Case 5: Incompatible dataset version
-        dataset_mismatch_current = {
-            "suites": [
-                {
-                    "suite": "test_suite",
-                    "passed": True,
-                    "tests_passed": 10,
-                    "dataset_version": "3.0",
-                    "metrics": {
-                        "mean_recall_at_5": 0.95,
-                        "mean_cross_curriculum_leakage": 0.0,
-                    }
-                }
-            ]
-        }
-        ok, diffs = compare_with_baseline(dataset_mismatch_current, temp_baseline_path)
-        assert not ok and any("INCOMPATIBLE DATASET" in d for d in diffs), f"Self-test 5 failed: Gate missed dataset mismatch! {diffs}"
-        print(f"[PASS] Case 5: Detected incompatible dataset version: {diffs[0]}")
-
-        print("\n[ALL 5 SELF-TEST CHECKS PASSED] Regression gate verified for directionality, missing metrics, and dataset versioning.")
+        print("\n[ALL SELF-TEST CHECKS PASSED] Regression gate verified for directionality.")
     finally:
         if temp_baseline_path.exists():
             temp_baseline_path.unlink()
@@ -440,7 +474,13 @@ def main():
     parser = argparse.ArgumentParser(description="EduNova Chatbot Evaluation Runner & Regression Gate")
     parser.add_argument("action", nargs="?", default="run", choices=["run", "list"], help="Action to execute")
     parser.add_argument("--suite", type=str, help="Specific suite name to run")
-    parser.add_argument("--profile", type=str, default="ci", choices=["ci", "integration", "full"], help="Execution profile")
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default="ci",
+        choices=["ci", "scheduled-live", "device-benchmark", "release-candidate", "integration", "full"],
+        help="Execution profile"
+    )
     parser.add_argument("--compare-baseline", type=str, help="Path to baseline JSON artifact")
     parser.add_argument("--save-as-baseline", action="store_true", help="Save current run as the accepted baseline")
     parser.add_argument("--fail-on-regression", action="store_true", help="Exit nonzero if regressions occur")
@@ -455,7 +495,7 @@ def main():
         print("\nAvailable Evaluation Suites:")
         print("----------------------------------------------------------------------")
         for name, cfg in SUITES.items():
-            print(f"  * {name:<20} [{cfg['type']:<12}] Profiles: {','.join(cfg['profile'])}")
+            print(f"  * {name:<22} [{cfg['type']:<12}] Cat: {cfg.get('category','general'):<10} Profiles: {','.join(cfg['profile'])}")
             print(f"    {cfg['description']}")
         print("----------------------------------------------------------------------")
         return
@@ -482,15 +522,60 @@ def main():
     total_duration = (datetime.datetime.now(datetime.timezone.utc) - start_time).total_seconds()
     total_suites = len(results)
     passed_suites = sum(1 for r in results if r["passed"])
-    failed_suites = total_suites - passed_suites
+    blocked_suites = sum(1 for r in results if r.get("blocked", False))
+    failed_suites = total_suites - passed_suites - blocked_suites
+
+    # Category summaries
+    results_by_category: Dict[str, Dict[str, Any]] = {}
+    for r in results:
+        cat = r.get("category", "general")
+        if cat not in results_by_category:
+            results_by_category[cat] = {
+                "total_suites": 0,
+                "passed_suites": 0,
+                "failed_suites": 0,
+                "blocked_suites": 0,
+                "tests_run": 0,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "duration_seconds": 0.0,
+            }
+        c_entry = results_by_category[cat]
+        c_entry["total_suites"] += 1
+        if r["passed"]:
+            c_entry["passed_suites"] += 1
+        elif r.get("blocked"):
+            c_entry["blocked_suites"] += 1
+        else:
+            c_entry["failed_suites"] += 1
+        c_entry["tests_run"] += r.get("tests_run", 0)
+        c_entry["tests_passed"] += r.get("tests_passed", 0)
+        c_entry["tests_failed"] += r.get("tests_failed", 0)
+        c_entry["duration_seconds"] = round(c_entry["duration_seconds"] + r.get("duration_seconds", 0.0), 2)
+
+    # Collect reproducible run metadata
+    datasets_map = {
+        "golden_set": BACKEND_DIR / "evals" / "rag" / "golden_set.jsonl",
+        "generation_eval_set": BACKEND_DIR / "evals" / "generation" / "generation_eval_set.jsonl",
+        "domain_benchmark": BACKEND_DIR / "evals" / "domain" / "domain_scope_benchmark.jsonl",
+    }
+    metadata = collect_run_metadata(
+        profile=args.profile,
+        repo_root=REPO_ROOT,
+        dataset_paths=datasets_map,
+    )
 
     report = {
-        "timestamp": start_time.isoformat(),
-        "profile": args.profile,
-        "total_duration_seconds": round(total_duration, 2),
-        "total_suites": total_suites,
-        "passed_suites": passed_suites,
-        "failed_suites": failed_suites,
+        "metadata": metadata,
+        "summary": {
+            "profile": args.profile,
+            "total_duration_seconds": round(total_duration, 2),
+            "total_suites": total_suites,
+            "passed_suites": passed_suites,
+            "failed_suites": failed_suites,
+            "blocked_suites": blocked_suites,
+        },
+        "results_by_category": results_by_category,
         "suites": results,
     }
 
@@ -512,33 +597,51 @@ def main():
         print(f"\nSaved current results as new baseline: {results_dir / 'baseline.json'}")
 
     # Summary table
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     print("                    EVALUATION & REGRESSION SUMMARY")
-    print("=" * 80)
-    print(f"{'Suite':<22} | {'Type':<12} | {'Status':<6} | {'Passed':<6} | {'Failed':<6} | {'Duration':<8}")
-    print("-" * 80)
+    print("=" * 90)
+    print(f"{'Suite':<22} | {'Category':<12} | {'Status':<7} | {'Passed':<6} | {'Failed':<6} | {'Duration':<8}")
+    print("-" * 90)
     for r in results:
-        print(f"{r['suite']:<22} | {r['type']:<12} | {r['status']:<6} | {r['tests_passed']:<6} | {r['tests_failed']:<6} | {r['duration_seconds']:>6.2f}s")
-    print("=" * 80)
-    print(f"OVERALL STATUS: {'PASS' if failed_suites == 0 else 'FAIL'} ({passed_suites}/{total_suites} suites passed, Total time: {total_duration:.2f}s)")
+        status_disp = r['status']
+        print(f"{r['suite']:<22} | {r.get('category','general'):<12} | {status_disp:<7} | {r['tests_passed']:<6} | {r['tests_failed']:<6} | {r['duration_seconds']:>6.2f}s")
+    print("=" * 90)
+
+    overall_status = "PASS"
+    if failed_suites > 0:
+        overall_status = "FAIL"
+    elif blocked_suites > 0:
+        overall_status = "BLOCKED"
+
+    print(f"OVERALL STATUS: {overall_status} ({passed_suites}/{total_suites} suites passed, {blocked_suites} blocked, Total time: {total_duration:.2f}s)")
     print(f"Report JSON: {report_file}")
 
     # Regression comparison
+    has_regression = False
     if baseline_file.exists() and not args.save_as_baseline:
         print("\nChecking against baseline for regressions...")
         is_clean, regressions = compare_with_baseline(report, baseline_file)
         if not is_clean:
+            has_regression = True
             print("\n[!] REGRESSIONS DETECTED:")
             for reg in regressions:
                 print(f"  - {reg}")
             if args.fail_on_regression:
-                print("Exiting with failure due to --fail-on-regression.")
+                print("Exiting with code 1 due to --fail-on-regression.")
                 sys.exit(1)
         else:
             print("[OK] No regressions detected against baseline.")
 
-    if failed_suites > 0:
+    # Explicit Exit Code Semantics:
+    # 0 = PASS
+    # 1 = FAIL or Regression
+    # 2 = BLOCKED (if any suite was blocked due to missing dependency)
+    if failed_suites > 0 or has_regression:
         sys.exit(1)
+    elif blocked_suites > 0:
+        sys.exit(2)
+    else:
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ class RAGRequestContext(BaseModel):
     selected_chapter: Optional[str] = None
     corpus_scope: CorpusScope = CorpusScope.CURRICULUM
     corpus_version: Optional[str] = None
+    domain_classification: Optional[Dict[str, Any]] = None
 
 
 class RetrieveRequest(BaseModel):

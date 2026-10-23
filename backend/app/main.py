@@ -10,6 +10,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.courses import router as courses_router
 from app.api.routes.roadmaps import router as roadmaps_router
+from app.api.routes.roadmap_websocket import router as roadmap_websocket_router
 from app.api.routes.learning import router as learning_router
 from app.api.routes.profile import router as profile_router
 from app.api.routes.memory import router as memory_router
@@ -174,8 +175,10 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(courses_router)
 app.include_router(roadmaps_router)
+app.include_router(roadmap_websocket_router)
 app.include_router(learning_router)
 app.include_router(profile_router)
 app.include_router(memory_router)
 app.include_router(retrieve_router)
 app.include_router(syllabus_sync_router)
+

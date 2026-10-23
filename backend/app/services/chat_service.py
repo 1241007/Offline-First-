@@ -11,6 +11,7 @@ from app.services.openrouter_service import openrouter_service, clean_fallback_t
 gemini_service = openrouter_service  # Backwards compatibility alias
 from app.services.memory_service import MemoryService
 from app.services.routing_service import routing_service
+from app.services.domain_policy import domain_policy_service, DomainIntent
 from app.services.supabase_retrieval_service import SupabaseRetrievalService
 from app.schemas.rag import RAGRequestContext, RouteDecision, EvidenceOutcome, AppMode
 from app.models.conversation import Conversation
@@ -149,6 +150,30 @@ class ChatService:
             parent_id=parent_id,
         )
         logger.info(f"Saved user message id={user_msg.id} to conv={conversation_id}")
+
+        # Check domain policy classification before making external LLM calls
+        domain_res = domain_policy_service.classify_prompt(normalized_content)
+        if domain_res.is_prohibited:
+            refusal = domain_res.refusal_message or (
+                "I am an educational AI tutor focused on academic coursework. "
+                "This topic is outside my permitted educational scope."
+            )
+            assistant_msg = await self.repo.save_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=refusal,
+                parent_id=user_msg.id,
+            )
+            return user_msg, assistant_msg
+
+        if domain_res.intent == DomainIntent.AMBIGUOUS_CLARIFICATION and domain_res.clarification_prompt:
+            assistant_msg = await self.repo.save_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=domain_res.clarification_prompt,
+                parent_id=user_msg.id,
+            )
+            return user_msg, assistant_msg
 
         # 5. Load bounded context (most recent N messages including the one just saved)
         recent = await self.repo.get_recent_messages(
@@ -307,6 +332,32 @@ class ChatService:
         accumulated_chunks = []
         stream_interrupted = False
         try:
+            # Check domain policy classification decisions
+            domain_info = rag_context.domain_classification or {}
+            if domain_info.get("is_prohibited"):
+                refusal_msg = domain_info.get("refusal_message") or (
+                    "I am an educational AI tutor focused on academic coursework. "
+                    "This topic is outside my permitted educational scope."
+                )
+                accumulated_chunks.append(refusal_msg)
+                yield f"data: {json.dumps({'type': 'token', 'content': refusal_msg})}\n\n"
+                return
+
+            if domain_info.get("intent") == "AMBIGUOUS_CLARIFICATION" and domain_info.get("clarification_prompt"):
+                clarif_msg = domain_info["clarification_prompt"]
+                accumulated_chunks.append(clarif_msg)
+                yield f"data: {json.dumps({'type': 'token', 'content': clarif_msg})}\n\n"
+                return
+
+            if domain_info.get("intent") == "MIXED_INTENT":
+                declined = domain_info.get("declined_subquery") or "the non-academic request"
+                mixed_notice = (
+                    f"*(Note: As an educational assistant, I cannot provide advice on '{declined}', "
+                    f"but here is the help for your academic question:)*\n\n"
+                )
+                accumulated_chunks.append(mixed_notice)
+                yield f"data: {json.dumps({'type': 'token', 'content': mixed_notice})}\n\n"
+
             if route_decision == RouteDecision.RAG:
                 retrieval_service = SupabaseRetrievalService(self.db)
                 retrieval_query = normalize_query(standalone_query) if standalone_query else normalized_content
