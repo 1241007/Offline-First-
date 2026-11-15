@@ -419,22 +419,10 @@ fun PersonalizedRoadmapScreen(
                                 onTopicClick = {
                                     viewModel.loadTopicContent(roadmap.id, topic.id)
                                     onOpenTopicDetail(topic.id)
-                                },
-                                onToggleCompleted = { viewModel.toggleTopicCompleted(topic.id) }
+                                }
                             )
                         }
                     }
-                }
-
-                // 4. Data-Driven Connected Graph
-                items(roadmap.topics, key = { it.id }) { topic ->
-                    PersonalizedTopicCard(
-                        topic = topic,
-                        onTopicClick = {
-                            viewModel.loadTopicContent(roadmap.id, topic.id)
-                            onOpenTopicDetail(topic.id)
-                        }
-                    )
                 }
             }
         }
@@ -944,7 +932,7 @@ private fun PersonalizedTopicBottomSheet(
 
             // Primary Action: Start or Continue Learning
             Button(
-                onClick = { onStartLearning(topic.id) },
+                onClick = onOpenTopic,
                 enabled = topic.status != PersonalizedTopicStatus.LOCKED,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
