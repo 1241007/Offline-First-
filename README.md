@@ -1,112 +1,389 @@
-# EduNova: Offline-First AI Educational Platform & Adaptive Tutor
+# 🌟 EduNova: Offline-First AI Educational Platform & Adaptive Tutor
 
 [![Kotlin Version](https://img.shields.io/badge/Kotlin-2.0+-7F52FF.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Android API](https://img.shields.io/badge/Android%20API-26+-3DDC84.svg?logo=android&logoColor=white)](https://developer.android.com/)
-[![Inference Engine](https://img.shields.io/badge/llama.cpp-Edge%20Native-blue.svg)](https://github.com/ggerganov/llama.cpp)
-[![PostgreSQL](https://img.shields.io/badge/Database-Supabase%20pgvector-3ECF8E.svg?logo=supabase&logoColor=white)](https://supabase.com/)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4.svg?logo=android&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Android API](https://img.shields.io/badge/Android%20API-24%20to%2037-3DDC84.svg?logo=android&logoColor=white)](https://developer.android.com/)
+[![Inference Engine](https://img.shields.io/badge/llama.cpp-Edge%20Native%20C++-blue.svg)](https://github.com/ggerganov/llama.cpp)
+[![Supabase pgvector](https://img.shields.io/badge/Database-Supabase%20pgvector-3ECF8E.svg?logo=supabase&logoColor=white)](https://supabase.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**EduNova** is an enterprise-grade, **offline-first educational platform and AI tutor** designed for Android mobile devices and backed by an asynchronous Python cloud service (FastAPI). 
-
-EduNova bridges the digital divide for students and lifelong learners: when connected to the internet, it leverages low-latency cloud intelligence (Google Gemini models via OpenRouter, Supabase pgvector hybrid search, and persistent cloud sync); when completely disconnected, it continues to provide **full-featured, on-device AI tutoring** using native C++ `llama.cpp` inference running quantized GGUF models (Qwen 2.5 1.5B/3B) and local SQLite storage on CPU and RAM.
-
----
-
-## Table of Contents
-
-- [Core Value Propositions](#core-value-propositions)
-- [System Architecture](#system-architecture)
-  - [High-Level Architectural Diagram](#high-level-architectural-diagram)
-  - [Edge vs. Cloud Request Routing](#edge-vs-cloud-request-routing)
-- [Repository & Folder Structure](#repository--folder-structure)
-- [Android Client (`app/`)](#android-client-app)
-  - [Tech Stack & Native JNI](#tech-stack--native-jni)
-  - [Offline Model Engine & KV Caching](#offline-model-engine--kv-caching)
-  - [Local Cache & Storage](#local-cache--storage)
-  - [Hardware-Backed Security](#hardware-backed-security)
-- [Cloud Backend (`backend/`)](#cloud-backend-backend)
-  - [Tech Stack & Frameworks](#tech-stack--frameworks)
-  - [API Endpoints Directory](#api-endpoints-directory)
-  - [RAG Retrieval & Evidence Calibration](#rag-retrieval--evidence-calibration)
-  - [Long-Term Personalization Memory](#long-term-personalization-memory)
-  - [Authentication & Replay Attack Defense](#authentication--replay-attack-defense)
-- [Official Curriculum & Syllabus Corpus](#official-curriculum--syllabus-corpus)
-- [Getting Started & Local Setup](#getting-started--local-setup)
-  - [Prerequisites](#prerequisites)
-  - [1. Backend Setup & Local Server](#1-backend-setup--local-server)
-  - [2. Android Studio Setup & Compilation](#2-android-studio-setup--compilation)
-  - [3. Native Libraries (`llama.cpp`) Prebuilt Setup](#3-native-libraries-llamacpp-prebuilt-setup)
-- [Testing & Quality Verification](#testing--quality-verification)
-- [Contributing & Development Workflows](#contributing--development-workflows)
-- [License](#license)
+> **"Learn anything, anywhere, even with zero internet."**  
+> EduNova is an enterprise-grade mobile educational platform and AI tutor for Android, backed by an asynchronous Python cloud service (FastAPI). When connected, it harnesses Google Gemini cloud intelligence with verified CBSE curriculum retrieval; when completely disconnected, it runs **100% private, on-device AI models (`llama.cpp` + Qwen 2.5)** directly on phone hardware.
 
 ---
 
-## Core Value Propositions
+## 🚀 Quick Setup Guide
 
-1. **Dual-Engine AI Tutoring (Edge + Cloud)**:
-   - **Offline Edge AI**: Native C++ on-device LLM inference using `llama.cpp` with quantized Qwen 2.5 1.5B and 3B Instruct GGUF models. Operates with zero network dependency, real-time token streaming, and automatic multi-turn KV cache reuse.
-   - **Online Cloud AI**: High-capacity cloud inference with Google Gemini (`google/gemini-3.8-flash` / `gemini-2.5-flash`) via OpenRouter, featuring Server-Sent Events (SSE) streaming and dynamic fallback.
-2. **True Offline-First Continuity**:
-   - Single unified chat and learning interface: conversations, drafts, pinned chats, message history, and user memories persist locally in an encrypted SQLite cache and synchronize bidirectionally with the backend when internet connectivity is restored.
-3. **Hybrid RAG & Grounded Curriculum Retrieval**:
-   - Hybrid retrieval combining dense vector similarity (`intfloat/multilingual-e5-small` 384-dimensional embeddings) and sparse lexical search (`tsvector` with BM25-style ranking) fused via Reciprocal Rank Fusion (RRF).
-   - Strict evidence thresholds preventing hallucinations on out-of-syllabus questions.
-4. **Adaptive Learning Modes (Student vs. General)**:
-   - **Student Mode**: Curated for CBSE Classes 9-12 (Science, Mathematics, Physics, Chemistry, Economics, Computer Science) with chapter breakdowns, progress tracking, and exam countdowns.
-   - **General Mode**: Focused on professional software engineering, system architecture, programming languages, and industry roadmaps.
-5. **Dynamic Long-Term Personalization**:
-   - Real-time rule-based memory extraction that identifies learner goals (e.g., "preparing for JEE/NEET"), programming language preferences (e.g., "prefer Kotlin/Python"), and cognitive delivery styles, injecting context into prompt system instructions.
-6. **Hardened Security & Cold-Start Protection**:
-   - Dual-token JWT architecture with session family rotation and cryptographic token theft detection.
-   - Android hardware-backed encryption (`androidx.security.crypto` with `MasterKey` AES-256 GCM/SIV).
-   - Dynamic DNS and extended connection timeouts to gracefully absorb cloud provider cold starts (Render/Supabase).
+> [!TIP]
+> **New to EduNova or non-technical?** Choose **Option A (Quick Start)** below! It connects the mobile app directly to the live cloud backend, so you don't have to install Python, Docker, or databases. If you are a developer looking to modify the cloud backend, follow **Option B**.
+
+```mermaid
+flowchart LR
+    A["Choose Your Path"] --> B["Option A: Quick Start (3 Mins)<br/>Connect to live cloud backend"]
+    A --> C["Option B: Full Developer Setup<br/>Run local FastAPI + Android Studio"]
+    B --> D["Install & Launch APK<br/>Ready to learn!"]
+    C --> E["Start Python Backend (:8000)<br/>+ Compile Android App"]
+    E --> D
+```
 
 ---
 
-## System Architecture
+### 📋 Prerequisites Checklist
 
-### High-Level Architectural Diagram
+Before you begin, ensure you have the following installed on your computer:
+
+| Requirement | Minimum Version | Recommended For | Download Link |
+|---|---|---|---|
+| **Android Studio** | Ladybug / Jellyfish (2024.1+) | App Compilation & Testing | [Download Android Studio](https://developer.android.com/studio) |
+| **Java JDK** | JDK 17 or JDK 21 | Android Gradle Builds | Included with Android Studio (JBR) |
+| **Android NDK** | 27.2.12479018 | Native C++ (`llama.cpp`) builds | Available via Android Studio SDK Manager |
+| **Python** (for Backend) | Python 3.11+ | Cloud API & Model Scripts | [Download Python](https://www.python.org/downloads/) |
+| **Git** | Latest | Cloning repository | [Download Git](https://git-scm.com/) |
+| **Device / Emulator** | Android 7.0+ (API 24+) | Running EduNova App | Physical device or Pixel 8 Emulator |
+
+---
+
+### ⚡ Option A: Quick Start (3-Minute Setup - Recommended)
+
+The EduNova backend is already deployed and live in the cloud on Render! You can build and run the Android app immediately without hosting your own server.
+
+#### Step 1: Clone the Repository
+Open your terminal (PowerShell on Windows, or Bash on macOS/Linux):
+```bash
+git clone https://github.com/your-username/edunova-offline-first.git
+cd edunova-offline-first
+```
+
+#### Step 2: Open in Android Studio
+1. Launch **Android Studio**.
+2. Click **Open** and select the `Offline First` project directory.
+3. Wait for Gradle to download dependencies and sync (2–3 minutes on first launch).
+
+#### Step 3: Verify the Live Backend URL
+Open [`gradle.properties`](file:///e:/Offline%20First/gradle.properties) in the root folder. Notice that the production cloud URL is already set by default:
+```properties
+backendBaseUrl=https://edunova-backend-9waj.onrender.com
+```
+
+#### Step 4: Run the App
+1. Connect your Android smartphone via USB (with **USB Debugging** enabled in Developer Options) **OR** start an Android Virtual Device (AVD Emulator) with at least 4GB RAM.
+2. Click the green **Run ▶** button in Android Studio (or press `Shift + F10`).
+3. The app will install and open automatically! Create an account or sign in to begin exploring.
+
+---
+
+### 🛠️ Option B: Full Local Developer Setup (Backend + App)
+
+Follow these steps if you want to run the FastAPI backend server, database, and Android app entirely on your local development machine.
+
+#### Step 1: Set Up & Run the Python Cloud Backend
+
+1. **Navigate to the backend directory and create a virtual environment**:
+   ```powershell
+   cd backend
+   python -m venv .venv
+   
+   # Activate the virtual environment:
+   .\.venv\Scripts\activate      # Windows (PowerShell)
+   # source .venv/bin/activate    # macOS / Linux
+   ```
+
+2. **Install Python dependencies**:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+3. **Configure the Environment Variables**:
+   Create a `.env` file inside the `backend/` folder (or copy from `.env.example`):
+   ```ini
+   ENVIRONMENT=development
+   DATABASE_URL=postgresql+asyncpg://postgres:your_password@localhost:5432/edunova
+   JWT_SECRET_KEY=your-32-byte-secret-hex-key-here
+   OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key-here
+   OPENROUTER_MODEL=google/gemini-3.8-flash
+   CORS_ORIGINS=["http://10.0.2.2:8000","http://localhost:8000","http://127.0.0.1:8000"]
+   ```
+
+4. **Run Database Migrations & Seed Baseline Curriculum**:
+   ```bash
+   alembic upgrade head
+   python scripts/seed_data.py
+   ```
+
+5. **Start the FastAPI Development Server**:
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   - 🌐 **Interactive Swagger API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - 🩺 **Health Check**: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+
+---
+
+#### Step 2: Configure & Compile the Android Client
+
+1. **Direct the Android App to your Local Machine**:
+   Open [`gradle.properties`](file:///e:/Offline%20First/gradle.properties) in the project root:
+   ```properties
+   # For Android Emulator pointing to host computer:
+   backendBaseUrl=http://10.0.2.2:8000
+
+   # For Physical Device connected via USB (with 'adb reverse tcp:8000 tcp:8000'):
+   # backendBaseUrl=http://127.0.0.1:8000
+
+   # For Physical Device on the same Wi-Fi (replace with your computer's local IP):
+   # backendBaseUrl=http://192.168.1.50:8000
+   ```
+
+2. **Compile and Run Unit Tests (Optional Verification)**:
+   ```powershell
+   # Point to Android Studio's bundled JDK
+   $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+   .\gradlew.bat testDebugUnitTest
+   ```
+
+3. **Build and Install Debug APK**:
+   ```powershell
+   .\gradlew.bat installDebug
+   ```
+   *The generated standalone APK is also available at:*  
+   [`app/build/outputs/apk/debug/app-debug.apk`](file:///e:/Offline%20First/app/build/outputs/apk/debug/app-debug.apk)
+
+---
+
+#### Step 3: Setting Up Offline AI Models (On-Device LLM)
+
+EduNova uses quantized **Qwen 2.5 GGUF** models so you can chat with the AI tutor without an internet connection.
+
+```mermaid
+flowchart TD
+    A["Choose Offline Model Setup"] --> B["Method 1: In-App 1-Click Download<br/>(Easiest)"]
+    A --> C["Method 2: Python Helper Script<br/>(Fastest for Devs)"]
+    
+    B --> D["Open App > AI Workspace > Tap 'Download Offline Model'<br/>Downloads directly from Hugging Face"]
+    C --> E["Run: python backend/scripts/download_qwen_gguf.py<br/>Pushes model directly to device storage"]
+```
+
+- **Method 1 (Built-In 1-Click In-App Download)**:
+  1. Open the EduNova app on your phone.
+  2. Switch the AI Workspace mode toggle from **Online** to **Offline**.
+  3. The app will detect if model weights are missing and show a **"Download AI Tutor Model"** button.
+  4. Tap Download — the app streams the verified Qwen GGUF model directly from Hugging Face with progress indicators, background pause/resume, and SHA-256 verification.
+
+- **Method 2 (CLI Pre-Download via Python)**:
+  Run the automated script to download the model directly to your machine:
+  ```bash
+  python backend/scripts/download_qwen_gguf.py
+  ```
+  Then push it to your Android device's app storage using ADB:
+  ```bash
+  adb push backend/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf /sdcard/Android/data/com.offline_First/files/models/
+  ```
+
+---
+
+### 🔧 Troubleshooting & Common Questions
+
+<details>
+<summary><b>❓ The Android Emulator cannot connect to my local backend server (Network Error / Timeout)</b></summary>
+
+- Inside the Android Emulator, `localhost` refers to the *emulator itself*, not your computer.
+- Always use `http://10.0.2.2:8000` as the `backendBaseUrl` in `gradle.properties` when using an emulator.
+- If using a physical phone over USB, run this in PowerShell: `adb reverse tcp:8000 tcp:8000` and set `backendBaseUrl=http://127.0.0.1:8000`.
+</details>
+
+<details>
+<summary><b>❓ CMake or NDK compilation error in Android Studio</b></summary>
+
+- EduNova requires Android NDK version `27.2.12479018`.
+- In Android Studio, go to **Settings (Preferences) > Appearance & Behavior > System Settings > Android SDK > SDK Tools**.
+- Check **Show Package Details**, scroll down to **NDK (Side by side)**, check version `27.2.12479018`, and click **Apply**.
+</details>
+
+<details>
+<summary><b>❓ Port 8000 is already in use by another application</b></summary>
+
+- You can launch Uvicorn on another port, for example port 8080:
+  ```bash
+  uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+  ```
+- Remember to update `backendBaseUrl` in `gradle.properties` to match port `8080`.
+</details>
+
+<details>
+<summary><b>❓ How much storage and RAM does on-device AI need?</b></summary>
+
+- **Qwen 2.5 1.5B Instruct (Q4_K_M)**: Requires ~980 MB of disk storage and runs smoothly on phones with **4 GB to 6 GB RAM**.
+- **Qwen 2.5 3B Instruct (Q4_K_M)**: Requires ~2.0 GB of disk storage and is recommended for devices with **6 GB to 8 GB+ RAM**.
+- The app automatically unloads model weights after **3 minutes** of inactivity to ensure your battery and memory remain untouched when not actively learning!
+</details>
+
+---
+
+## 🌟 What is EduNova? (Non-Technical Explanation)
+
+### 💡 The Big Idea: The Pocket Professor That Never Disconnects
+
+Imagine living in an area where the internet goes out every evening, or riding on a train with zero signal, or having a limited cellular data plan. In traditional educational apps, your learning stops completely — quizzes refuse to load, chatbots throw "No Connection" errors, and textbooks remain locked on a remote server.
+
+**EduNova changes that forever.**
+
+Think of EduNova like having a **brilliant, patient private tutor who lives directly inside your phone's memory chip**. 
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             HOW EDUNOVA WORKS                               │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│           🌐 ONLINE MODE             │           📴 OFFLINE MODE            │
+│       (When Wi-Fi Is Available)      │         (No Internet Needed)         │
+├──────────────────────────────────────┼──────────────────────────────────────┤
+│ 🚀 Supercharged Cloud AI (Gemini)    │ 📱 100% On-Device AI (Qwen + C++)    │
+│ 📚 Live Syllabus Sync from CBSE      │ 💾 Local Encrypted SQLite Database   │
+│ 🔄 Cloud Backup for Messages & Stats │ ⚡ Zero Data Usage & Zero Latency    │
+│ 🔎 Live Web & Citation Search        │ 🔒 100% Private — Data Never Leaves  │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+When you have internet, EduNova synchronizes your progress to the cloud and gives you access to ultra-fast Google Gemini AI with verified CBSE school curriculum citations. When your internet cuts off, **nothing breaks**. The app seamlessly switches to its built-in C++ offline engine (`llama.cpp`), allowing you to continue asking questions, practicing exam problems, generating quizzes, and tracking your roadmap without missing a single beat.
+
+---
+
+### 🆚 Traditional Learning Apps vs. EduNova
+
+| Feature | Typical EdTech Apps | EduNova AI Platform |
+|---|---|---|
+| **Works without Internet** | ❌ No. Shows "Check Connection" spinner | ✅ **100% Functional** on-device offline engine |
+| **AI Question Answering** | ⚠️ Online-only API calls | ✅ **Dual-Engine** (Cloud Gemini + Edge Qwen 2.5) |
+| **Curriculum Accuracy** | ⚠️ Generic LLM prone to hallucinations | ✅ **Strict Grounded RAG** on official CBSE syllabi |
+| **Learning Roadmaps** | 📄 Static, boring list of links | ✅ **Adaptive DAG Graph** that customizes to your pace |
+| **Privacy & Security** | ☁️ All chats sent to third-party servers | ✅ **Local Encrypted Storage** (AES-256 GCM) |
+| **Interactive Study Tools** | 🔒 Paywalled or separate disjointed apps | ✅ **7 Built-In Tools** (Flashcards, Quizzes, PYQs, Maps) |
+
+---
+
+## 📱 User Experience & Core Features Tour
+
+EduNova is packed with intuitive tools designed for students, competitive exam aspirants (JEE/NEET/GATE), and software engineers.
+
+```mermaid
+flowchart TD
+    Home["🏠 EduNova Home Hub"]
+    Home --> Tab1["📚 Verified Courses<br/>CBSE Classes 9-12 & NCERT"]
+    Home --> Tab2["🤖 Dual AI Tutor<br/>Real-time Streaming Chat"]
+    Home --> Tab3["🗺️ Career & Skill Roadmaps<br/>Dynamic Personalized Graphs"]
+    Home --> Tab4["🛠️ Interactive Study Tools<br/>7 Hands-On Learning Utilities"]
+    Home --> Tab5["📊 Progress & Memory<br/>Streak Tracking & Analytics"]
+```
+
+---
+
+### 1. 🤖 Dual-Mode AI Workspace
+The AI Workspace is the crown jewel of EduNova. It feels like chatting with a world-class teacher:
+- **Instant Token Streaming**: Text types out smoothly in real-time.
+- **Formula & Math Rendering**: Clean LaTeX math formatting for complex physics and chemistry equations.
+- **Copy, Edit & Branch**: Don't like how a question was phrased? Edit your message to branch off into a new line of thought.
+- **Offline/Online Switcher**: A simple top toggle lets you switch between cloud speed and edge privacy with one tap.
+
+---
+
+### 2. 🛠️ The 7 Interactive Study Tools Suite
+
+EduNova comes equipped with 7 dedicated micro-apps accessible right from your home screen:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          7 INTERACTIVE STUDY TOOLS                          │
+├───────────────────────────┬─────────────────────────────────────────────────┤
+│ 🃏 Flashcards Tool        │ Interactive flip-cards with spaced repetition   │
+│ 📝 Quiz Arena             │ Timed multiple-choice quizzes with explanations │
+│ 📜 PYQ Exam Simulator     │ Real Previous Years' CBSE board exam questions  │
+│ 🧠 Concept Mind Maps      │ Visual tree structures breaking down hard topics│
+│ 📅 Smart Study Planner    │ Exam countdowns, daily targets, and revisions   │
+│ 📊 Topic Analytics        │ Visual heatmaps identifying strong & weak areas │
+│ 🔍 Visual Problem Solver  │ Image analysis for textbook diagrams and notes  │
+└───────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+1. **🃏 Interactive Flashcard Tool**: Flip through digital revision cards, rate your recall difficulty, and let spaced repetition ensure you never forget key formulas.
+2. **📝 Interactive Quiz Arena**: Test your knowledge with chapter-wise multiple choice questions, instant grading, and detailed explanations for every option.
+3. **📜 Interactive PYQ Exam Tool**: Practice official Previous Years' Questions (Class 9–12) with scoring rubrics and step-by-step marking schemes.
+4. **🧠 Interactive Mind Map Tool**: Breaks down massive chapters (e.g., *Electromagnetism* or *Photosynthesis*) into clean, digestible visual branches.
+5. **📅 Interactive Study Planner Tool**: Calculates how many days are left until your board or entrance exams and schedules daily bite-sized tasks.
+6. **📊 Interactive Topic Reports & Analytics**: Shows radar charts and mastery percentages so you know exactly which chapters need extra revision.
+7. **🔍 Interactive Image Problem Solver**: Snap a photo or upload an image of a diagram, circuit, or textbook problem for instant pedagogical breakdowns.
+
+---
+
+### 3. 🗺️ Dynamic Career & Skill Roadmaps
+
+Whether you are preparing for high school board exams or training to become a software engineer, EduNova provides interactive, step-by-step roadmaps:
+- **Pre-Built Engineering Tracks**:
+  - 🌐 **Modern Web Development**: HTML/CSS, JavaScript, TypeScript, React, Next.js, Backend APIs.
+  - 🐍 **Python Specialist**: Core Python, OOP, Data Structures, FastAPI, Asyncio.
+  - ☕ **Enterprise Java Developer**: Java 21, Spring Boot, Microservices, JVM internals.
+  - 🤖 **Machine Learning & AI**: Math & Statistics, Scikit-Learn, PyTorch, LLMs, Vector Databases.
+  - 🗄️ **SQL & Database Architect**: Relational design, Indexing, Query Optimization, NoSQL.
+- **Personalized Assessment Engine**: Take a quick diagnostic quiz, and EduNova automatically constructs a custom **Directed Acyclic Graph (DAG)** tailored to your current knowledge level and available study hours per week.
+
+---
+
+### 4. 📚 Official CBSE & NCERT Syllabus Coverage
+
+EduNova contains verified official curriculum materials across four key school standards:
+- **Class 9**: Science, Mathematics, Social Science, English
+- **Class 10**: Science, Mathematics, Social Science, English (Board Exam Focus)
+- **Class 11**: Physics, Chemistry, Mathematics, Biology, Computer Science, Economics
+- **Class 12**: Physics, Chemistry, Mathematics, Biology, Computer Science, Economics
+
+Every single chapter is cataloged with verified textbook page references, official CBSE source manifests, and pre-computed semantic embeddings so the AI tutor answers strictly within syllabus bounds.
+
+---
+
+## 🏗️ System Architecture & Engineering
+
+EduNova adheres to clean modular architecture, splitting responsibilities cleanly between the Android frontend, the native C++ inference bridge, and the asynchronous Python backend.
+
+### High-Level Architectural Flow
 
 ```mermaid
 flowchart TB
-    subgraph AndroidClient ["Android Application (Kotlin + Jetpack Compose)"]
-        UI["UI Layer\n- AI Workspace Screen\n- Landing & School Screen\n- My Learning Screen\n- Roadmap Screen\n- Profile & Auth Screens"]
-        VM["ViewModel & State Machine Layer\n- AIViewModel\n- LandingViewModel\n- RoadmapViewModel\n- AuthViewModel\n- SessionManager (StateFlow)"]
-        REPO["Repository Orchestration\n- ModeAwareAIRepository\n- RemoteAuthRepository\n- Course & Learning Repositories\n- SyllabusSyncRepository"]
+    subgraph AndroidClient ["Android Mobile Application (Kotlin + Jetpack Compose)"]
+        UI["UI Presentation Layer\n- AI Workspace Screen\n- EduNova Home Hub\n- Roadmap & Assessment Screens\n- Interactive Tools Suite"]
+        VM["ViewModel & State Layer\n- AIViewModel\n- RoadmapViewModel\n- AuthViewModel\n- SessionManager (StateFlow)"]
+        REPO["Repository Orchestration\n- ModeAwareAIRepository\n- LocalAIRepository\n- OnlineAIRepository\n- Course & Roadmap Repositories"]
         
-        subgraph LocalEdgeEngine ["Local Data & Edge Engine"]
+        subgraph LocalEdgeEngine ["Local Edge Engine (100% Offline)"]
             CACHE_DB[("Local SQLite Database\nedunova_chat_cache.db\nsyllabus_offline.db")]
-            TOKEN_STORE["EncryptedTokenStorage\n(MasterKey AES-256 GCM/SIV)"]
-            MODEL_MGR["OfflineModelManager\n(Idle watchdog, KV cache lifecycle)"]
+            TOKEN_STORE["EncryptedTokenStorage\n(MasterKey AES-256 GCM)"]
+            MODEL_MGR["OfflineModelManager\n(Watchdog, KV Cache lifecycle)"]
             JNI["JNI Bridge (llama_jni.cpp)"]
-            LLAMA_NATIVE["llama.cpp Shared Libraries\n(libllama, libggml-cpu, libggml)"]
+            LLAMA_CPP["llama.cpp Native Libraries\n(libllama, libggml-cpu)"]
             GGUF_FILE[("Local GGUF Models\nQwen2.5-1.5B / 3B")]
-            E5_EMBED["E5EmbeddingService\n(ONNX Quantized 384-dim)"]
+            E5_LOCAL["Local ONNX Embeddings\n(384-dim E5 Small)"]
         end
 
-        subgraph RemoteNetworking ["Network & API Layer"]
-            OKHTTP_PUB["Public AuthApiClient\n(Login, Register, Refresh)"]
-            OKHTTP_AUTH["AuthenticatedApiClient\n(AuthInterceptor + TokenAuthenticator)"]
-            CHAT_CLIENT["ChatApiClient\n(SSE Streaming / REST)"]
+        subgraph RemoteNetworking ["Secure Networking Layer"]
+            OKHTTP_PUB["Public Auth Client\n(Register, Login, Session Restore)"]
+            OKHTTP_AUTH["Authenticated Client\n(Bearer JWT + Auto-Refresh Mutex)"]
+            CHAT_CLIENT["Streaming Chat Client\n(SSE Protocol / Fallbacks)"]
         end
     end
 
     subgraph CloudBackend ["Cloud Backend (FastAPI + Async Python 3.11)"]
-        ROUTERS["API Routers (/api/v1)\n- /auth (JWT, refresh, reset)\n- /chat & /stream (SSE)\n- /courses & /learning\n- /roadmaps & /profile\n- /memory (long-term facts)\n- /syllabus (sync & search)"]
-        MIDDLEWARE["Middleware & Security\n- SlowAPI Rate Limiter\n- CorrelationIdMiddleware\n- Structured AuthException Handler"]
-        SERVICES["Business Services\n- AuthService & Token Rotation\n- ChatService\n- SupabaseRetrievalService (RRF)\n- OpenRouterService (Gemini)\n- MemoryService (Rule Extraction)"]
+        ROUTERS["API Routers (/api/v1)\n- /auth (JWT rotation & replay defense)\n- /chat & /stream (SSE Streaming)\n- /courses & /learning\n- /roadmaps & /profile\n- /memory (Long-term learner facts)"]
+        MIDDLEWARE["Security & Defense Middleware\n- SlowAPI Rate Limiter\n- CorrelationIdMiddleware (X-Correlation-ID)\n- Global Error Handlers"]
+        SERVICES["Core Business Services\n- AuthService & Token Rotation\n- ChatService\n- SupabaseRetrievalService (RRF)\n- OpenRouterService (Google Gemini)\n- MemoryService (Rule-based Extraction)"]
         SQLA["SQLAlchemy 2.0 Async ORM"]
         DB[("PostgreSQL Database (Supabase)\nUsers, Progress, Roadmaps, Messages\nSyllabus pgvector 384-dim (IVFFlat + GIN)")]
     end
 
-    subgraph ExternalServices ["External Cloud Services"]
+    subgraph ExternalCloud ["External Cloud Services"]
         OPENROUTER["OpenRouter API\n(google/gemini-3.8-flash)"]
-        HF["Hugging Face Model Hub\n(PatilKrish/Qwen_Models2)"]
+        HF["Hugging Face Hub\n(PatilKrish/Qwen_Models2)"]
     end
 
-    %% Wiring
+    %% Flow connections
     UI --> VM
     VM --> REPO
     REPO --> MODEL_MGR
@@ -116,65 +393,67 @@ flowchart TB
     REPO --> CHAT_CLIENT
 
     MODEL_MGR --> JNI
-    JNI --> LLAMA_NATIVE
-    LLAMA_NATIVE --> GGUF_FILE
-    MODEL_MGR -.->|Direct Model Download| HF
+    JNI --> LLAMA_CPP
+    LLAMA_CPP --> GGUF_FILE
+    MODEL_MGR -.->|1-Click Download| HF
 
     OKHTTP_PUB -->|HTTPS / REST| ROUTERS
     OKHTTP_AUTH -->|HTTPS + Bearer JWT| ROUTERS
-    CHAT_CLIENT -->|HTTP SSE Streaming| ROUTERS
+    CHAT_CLIENT -->|SSE Token Stream| ROUTERS
 
     ROUTERS --> MIDDLEWARE
     MIDDLEWARE --> SERVICES
     SERVICES --> SQLA
     SQLA --> DB
-    SERVICES -->|Prompt + Grounded Context| OPENROUTER
+    SERVICES -->|Prompt + Grounded Evidence| OPENROUTER
 ```
 
-### Edge vs. Cloud Request Routing
+---
 
-EduNova provides an intelligent routing layer (`ModeAwareAIRepository`) that directs user interactions based on user preference, connectivity state, and model availability:
+### 🔄 Edge vs. Cloud Request Routing Lifecycle
+
+When a student types a question in the AI Workspace, EduNova's `ModeAwareAIRepository` dynamically routes the prompt based on active connectivity, user choice, and on-device model availability:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Student as Student (User)
+    actor Learner as Student / Learner
     participant UI as AIWorkspaceScreen
     participant VM as AIViewModel
-    participant ModeRouter as ModeAwareAIRepository
+    participant Router as ModeAwareAIRepository
     participant LocalRepo as LocalAIRepository
     participant ModelMgr as OfflineModelManager
     participant JNI as llama_jni.cpp
     participant OnlineRepo as OnlineAIRepository
-    participant CloudAPI as FastAPI Backend
+    participant FastAPI as Cloud FastAPI
     participant Supabase as Supabase pgvector
-    participant LLM as OpenRouter Gemini
+    participant Gemini as Google Gemini 3.8
 
-    Student->>UI: Enters question & taps Send
-    UI->>VM: sendMessage(text)
-    VM->>ModeRouter: streamMessage(prompt, conversationId, mode)
+    Learner->>UI: Types question & hits Send
+    UI->>VM: sendMessage(prompt)
+    VM->>Router: streamMessage(prompt, conversationId, mode)
 
-    alt Mode is OFFLINE
-        ModeRouter->>LocalRepo: streamMessage(...)
+    alt Mode is OFFLINE (Edge Inference)
+        Router->>LocalRepo: streamMessage(...)
         LocalRepo->>ModelMgr: generateStreaming(prompt, history)
-        ModelMgr->>ModelMgr: Verify GGUF loaded & reset 3-min idle timer
+        ModelMgr->>ModelMgr: Check instance ID & reset 3-min watchdog
         ModelMgr->>JNI: nativeGenerateStream(handle, prompt, callback)
-        loop Local Token Generation
+        loop Token-by-Token Generation
             JNI-->>ModelMgr: onToken(tokenPiece)
             ModelMgr-->>LocalRepo: emit(tokenPiece)
             LocalRepo-->>VM: emit(tokenPiece)
             VM-->>UI: Real-time UI text update
         end
-        LocalRepo->>LocalRepo: Commit prompt & answer to SQLite
-    else Mode is ONLINE
-        ModeRouter->>OnlineRepo: streamMessage(...)
-        OnlineRepo->>CloudAPI: POST /api/v1/chat/.../stream (Bearer JWT)
-        CloudAPI->>Supabase: Hybrid Retrieval (E5 384-dim + tsvector)
-        Supabase-->>CloudAPI: RRF Scored Chunks
-        CloudAPI->>LLM: Stream prompt with syllabus evidence
+        LocalRepo->>LocalRepo: Commit prompt & answer to local SQLite
+    else Mode is ONLINE (Cloud Inference)
+        Router->>OnlineRepo: streamMessage(...)
+        OnlineRepo->>FastAPI: POST /api/v1/chat/.../stream (Bearer JWT)
+        FastAPI->>Supabase: Hybrid Search (E5 384-dim dense + tsvector sparse)
+        Supabase-->>FastAPI: Top Chunks fused via RRF (k=60)
+        FastAPI->>Gemini: Stream prompt + Grounded Syllabus Context
         loop SSE Event Stream
-            LLM-->>CloudAPI: Token piece
-            CloudAPI-->>OnlineRepo: SSE "token" / "citations" event
+            Gemini-->>FastAPI: Token chunk
+            FastAPI-->>OnlineRepo: SSE 'token' / 'citations' event
             OnlineRepo-->>VM: emit(tokenPiece)
             VM-->>UI: Real-time UI text update
         end
@@ -184,19 +463,43 @@ sequenceDiagram
 
 ---
 
-## Repository & Folder Structure
+### 🧠 Hybrid RAG Retrieval Engine
 
-Every major directory in this repository contains its own dedicated `README.md` with deep domain explanations, component manifests, and usage instructions:
+In Online Mode, questions are matched against official curriculum chunks using a state-of-the-art **Hybrid Retrieval** architecture:
 
-| Directory | Purpose | Dedicated Guide |
+1. **Dense Vector Search**: The user query is converted into a 384-dimensional dense vector using the `intfloat/multilingual-e5-small` model. Vector cosine similarity finds conceptually related text even if exact keywords differ.
+2. **Sparse Lexical Search**: PostgreSQL full-text search (`tsvector` with `tsquery`) locates exact technical keywords, chapter titles, and formula names.
+3. **Reciprocal Rank Fusion (RRF)**: Results from both retrievers are merged mathematically:
+   $$\text{RRF}(d) = \sum_{m \in \{\text{dense}, \text{sparse}\}} \frac{1}{k + r_m(d)} \quad (k = 60)$$
+4. **Calibrated Confidence Thresholds**:
+   - `SUFFICIENT (>= 0.48)`: The system prompt includes verified citations and directs the LLM to ground its response in the retrieved syllabus text.
+   - `UNCERTAIN (0.35 - 0.47)`: The LLM answers with standard general pedagogical knowledge while gently advising the student that the topic is outside their specific CBSE chapter.
+   - `INSUFFICIENT (< 0.35)`: Prevents hallucination by politely informing the student that the question cannot be answered from the official course materials.
+
+---
+
+### 🔐 Enterprise Security & Hardware-Backed Encryption
+
+- **Dual-Token JWT Architecture**: Short-lived Access Tokens (15 minutes) paired with long-lived Refresh Tokens (30 days). Refresh tokens are stored as SHA-256 hashes linked to a unique `session_family_id`.
+- **Replay Attack Defense**: If a revoked refresh token is presented, the backend detects token theft and immediately revokes all sessions in that family.
+- **Android Keystore Encryption**: On Android, tokens are never stored in plaintext. They are encrypted using `androidx.security.crypto.MasterKey` with hardware-backed AES-256 GCM encryption.
+- **Synchronized Mutex Re-Authentication**: When an OkHttp request encounters a `401 Unauthorized`, an atomic mutex refreshes the token once and transparently retries all concurrent in-flight requests.
+
+---
+
+## 📂 Repository & Directory Structure
+
+EduNova is organized with dedicated documentation in every major directory:
+
+| Directory | Purpose | Dedicated Documentation |
 |---|---|---|
 | [`adapters/`](file:///e:/Offline%20First/adapters/README.md) | AI agent rule configuration adapters (`CLAUDE.md`, `GEMINI.md`, `GPT_OSS.md`) | [adapters/README.md](file:///e:/Offline%20First/adapters/README.md) |
 | [`app/`](file:///e:/Offline%20First/app/README.md) | Android client application (Kotlin, Compose, C++ NDK, SQLite, llama.cpp) | [app/README.md](file:///e:/Offline%20First/app/README.md) |
 | ├── [`app/src/main/cpp/`](file:///e:/Offline%20First/app/src/main/cpp/README.md) | Native C++ JNI bridge for `llama.cpp` inference and KV cache control | [app/src/main/cpp/README.md](file:///e:/Offline%20First/app/src/main/cpp/README.md) |
 | ├── [`app/src/main/jniLibs/`](file:///e:/Offline%20First/app/src/main/jniLibs/README.md) | Prebuilt 64-bit native libraries (`arm64-v8a`, `x86_64`) | [app/src/main/jniLibs/README.md](file:///e:/Offline%20First/app/src/main/jniLibs/README.md) |
-| ├── [`app/src/main/java/com/offline_First/`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/README.md) | Kotlin source root, `MainActivity.kt`, and `AppContainer.kt` | [java/.../README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/README.md) |
+| ├── [`app/src/main/java/.../`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/README.md) | Kotlin source root, `MainActivity.kt`, and `AppContainer.kt` | [java/.../README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/README.md) |
 | │   ├── [`data/`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/data/README.md) | Data layer: SQLite, EncryptedSharedPreferences, OkHttp clients, repositories | [data/README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/data/README.md) |
-| │   ├── [`domain/`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/domain/README.md) | Domain entities, business models, and reactive UI states | [domain/README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/domain/README.md) |
+| │   ├── [`domain/`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/domain/README.md) | Domain models, business entities, and reactive UI state wrappers | [domain/README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/domain/README.md) |
 | │   └── [`ui/`](file:///e:/Offline%20First/app/src/main/java/com/offline_First/ui/README.md) | Presentation layer: Jetpack Compose screens, ViewModels, and design system | [ui/README.md](file:///e:/Offline%20First/app/src/main/java/com/offline_First/ui/README.md) |
 | └── [`app/src/test/`](file:///e:/Offline%20First/app/src/test/README.md) | Android unit and integration test suite (JUnit 4, MockWebServer, Coroutines) | [app/src/test/README.md](file:///e:/Offline%20First/app/src/test/README.md) |
 | [`backend/`](file:///e:/Offline%20First/backend/README.md) | Python cloud backend application (FastAPI, SQLAlchemy 2.0 Async, Supabase) | [backend/README.md](file:///e:/Offline%20First/backend/README.md) |
@@ -204,7 +507,7 @@ Every major directory in this repository contains its own dedicated `README.md` 
 | ├── [`backend/docs/`](file:///e:/Offline%20First/backend/docs/README.md) | Backend research notes, threshold analyses, and architectural reports | [backend/docs/README.md](file:///e:/Offline%20First/backend/docs/README.md) |
 | ├── [`backend/evals/`](file:///e:/Offline%20First/backend/evals/README.md) | RAG evaluation framework, golden benchmark cases, and scoring metrics | [backend/evals/README.md](file:///e:/Offline%20First/backend/evals/README.md) |
 | ├── [`backend/migrations/`](file:///e:/Offline%20First/backend/migrations/README.md) | Alembic database schema migration history and scripts | [backend/migrations/README.md](file:///e:/Offline%20First/backend/migrations/README.md) |
-| ├── [`backend/models/`](file:///e:/Offline%20First/backend/models/README.md) | Local quantized ONNX embedding model (`intfloat/multilingual-e5-small`) | [backend/models/README.md](file:///e:/Offline%20First/backend/models/README.md) |
+| ├── [`backend/models/`](file:///e:/Offline%20First/backend/models/README.md) | Quantized ONNX embeddings (`e5-small`) and pre-downloaded GGUF weights | [backend/models/README.md](file:///e:/Offline%20First/backend/models/README.md) |
 | ├── [`backend/scripts/`](file:///e:/Offline%20First/backend/scripts/README.md) | Operational scripts (syllabus ingestion, data seeding, inference parity) | [backend/scripts/README.md](file:///e:/Offline%20First/backend/scripts/README.md) |
 | ├── [`backend/syllabus_sources/`](file:///e:/Offline%20First/backend/syllabus_sources/README.md) | Official CBSE & NCERT curriculum documents, raw PDFs, and source manifests | [syllabus_sources/README.md](file:///e:/Offline%20First/backend/syllabus_sources/README.md) |
 | └── [`backend/tests/`](file:///e:/Offline%20First/backend/tests/README.md) | Backend pytest test suite (unit, integration, property-based tests) | [backend/tests/README.md](file:///e:/Offline%20First/backend/tests/README.md) |
@@ -215,204 +518,66 @@ Every major directory in this repository contains its own dedicated `README.md` 
 
 ---
 
-## Android Client (`app/`)
-
-The Android application is written in 100% Kotlin with Jetpack Compose for declarative UI and a native C++ JNI bridge for on-device inference.
-
-### Key Capabilities
-
-1. **Native On-Device LLM Inference**:
-   - Compiles prebuilt `libllama.so` and `libggml.so` using Android NDK 27.2+ and CMake 3.31+.
-   - Streams tokens directly into Kotlin coroutine `Flow` collectors for instant UI rendering.
-   - Preserves prompt token sequences across multi-turn chats via KV cache prefix matching.
-   - Manages memory through an idle watchdog that unloads native model weights after **3 minutes** of inactivity (`OFFLINE_MODEL_IDLE_TIMEOUT_MS = 180_000L`).
-2. **Resilient Local Persistence**:
-   - `ChatCacheDatabase`: Native SQLite implementation managing conversations, parent-child message trees (supporting branching and editing), pinned items, draft text, and sync markers.
-   - `SyllabusDatabase`: Stores localized syllabus chunks and metadata for offline study.
-3. **Enterprise Security**:
-   - `EncryptedTokenStorage`: Leverages Android Keystore (`androidx.security.crypto.MasterKey`) with AES-256 GCM to secure access and refresh tokens.
-   - `TokenAuthenticator`: Implements a synchronized mutex on OkHttp 401 Unauthorized responses to perform a single token refresh request and retry pending calls without racing.
-
----
-
-## Cloud Backend (`backend/`)
-
-The backend is built with asynchronous Python 3.11 and FastAPI, adhering to clean architecture principles with separate routers, services, repositories, and ORM models.
-
-### Key Capabilities
-
-1. **Dual-Token JWT Authentication**:
-   - Access tokens (15-minute lifespan) and refresh tokens (30-day lifespan).
-   - Refresh tokens are hashed using SHA-256 and tracked under a unique `session_family_id`.
-   - **Replay Attack Detection**: If an already revoked refresh token is presented, all active sessions belonging to that family are immediately revoked.
-2. **Hybrid RAG & Reciprocal Rank Fusion (RRF)**:
-   - Queries are embedded using a quantized `intfloat/multilingual-e5-small` ONNX model (384 dimensions).
-   - Simultaneous vector similarity search and PostgreSQL `tsvector` keyword search in Supabase.
-   - Scores combined via RRF ($k=60$):
-     $$\text{RRF}(d) = \sum_{m \in \{dense, sparse\}} \frac{1}{k + r_m(d)}$$
-   - Calibrated normalized evidence threshold (`SUFFICIENT = 0.48`, `UNCERTAIN = 0.35`) prevents hallucination while allowing single-retriever semantic matches.
-3. **Automated Memory Extraction**:
-   - Real-time extraction of user coding preferences (languages, frameworks), career targets (JEE, NEET, GATE), and difficulty preferences from conversational inputs.
-   - Stored in `user_memories` and injected into LLM system prompts.
-
----
-
-## Official Curriculum & Syllabus Corpus
-
-EduNova contains official CBSE & NCERT curriculum documents structured under `backend/syllabus_sources/CBSE/`:
-
-- **Class 9**: English, Mathematics, Science, Social Science
-- **Class 10**: English, Mathematics, Science, Social Science
-- **Class 11**: Biology, Chemistry, Computer Science, Economics, Mathematics, Physics
-- **Class 12**: Biology, Chemistry, Computer Science, Economics, Mathematics, Physics
-
-Each subject folder contains:
-1. Official Curriculum PDF (e.g., `Curriculum_2026_27_Mathematics.pdf`).
-2. Verification Metadata (`.pdf.meta.json` with file hashes, page counts, and extraction dates).
-3. Source Provenance Manifest (`sources.json` with official CBSE portal source URLs).
-
----
-
-## Getting Started & Local Setup
-
-### Prerequisites
-
-- **Android Development**: Android Studio Jellyfish / Ladybug+ with JDK 17 or 21, Android SDK Platform 35, and NDK 27.2+.
-- **Backend Development**: Python 3.11+, PostgreSQL (or Supabase instance with `pgvector` enabled), and Git.
-- **PowerShell / Bash**: Standard shell tooling.
-
----
-
-### 1. Backend Setup & Local Server
-
-1. **Navigate to the backend directory and set up a virtual environment**:
-   ```powershell
-   cd backend
-   python -m venv .venv
-   .\.venv\Scripts\activate      # Windows PowerShell
-   # source .venv/bin/activate    # Linux / macOS
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment variables**:
-   Create or edit `.env` in the repository root (or `backend/.env`):
-   ```ini
-   ENVIRONMENT=development
-   DATABASE_URL=postgresql+asyncpg://postgres:your_password@localhost:5432/edunova
-   JWT_SECRET_KEY=your-32-byte-secret-hex-key-here
-   OPENROUTER_API_KEY=sk-or-v1-...
-   OPENROUTER_MODEL=google/gemini-3.8-flash
-   CORS_ORIGINS=["http://10.0.2.2:8000","http://localhost:8000"]
-   ```
-
-4. **Run database migrations**:
-   ```bash
-   alembic upgrade head
-   ```
-
-5. **(Optional) Seed baseline courses and roadmaps**:
-   ```bash
-   python scripts/seed_data.py
-   ```
-
-6. **Launch the FastAPI development server**:
-   ```bash
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
-   - Interactive OpenAPI Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-   - Health Check: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
-
----
-
-### 2. Android Studio Setup & Compilation
-
-1. **Configure Backend URL**:
-   In `gradle.properties`, set `backendBaseUrl`:
-   ```properties
-   # For Android Emulator pointing to local machine:
-   backendBaseUrl=http://10.0.2.2:8000
-
-   # Or Cloud Backend:
-   # backendBaseUrl=https://edunova-backend-9waj.onrender.com
-   ```
-
-2. **Compile and Run Unit Tests**:
-   ```powershell
-   # Point to Android Studio JDK
-   $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
-   .\gradlew.bat testDebugUnitTest
-   ```
-
-3. **Build the Debug APK**:
-   ```powershell
-   .\gradlew.bat assembleDebug
-   ```
-   The APK will be generated at:
-   `app/build/outputs/apk/debug/app-debug.apk`
-
----
-
-### 3. Native Libraries (`llama.cpp`) Prebuilt Setup
-
-The project includes precompiled native shared libraries in `app/src/main/jniLibs/` for `arm64-v8a` and `x86_64`. If you ever need to recompile or update the pinned `llama.cpp` version:
-
-```powershell
-# Windows PowerShell
-.\scripts\build_llama_prebuilt.ps1
-
-# Linux / macOS
-chmod +x scripts/build_llama_prebuilt.sh
-./scripts/build_llama_prebuilt.sh
-```
-
----
-
-## Testing & Quality Verification
+## 🧪 Testing & Quality Verification
 
 EduNova maintains comprehensive, automated test suites across both the Android application and the backend service:
 
-### Backend Pytest Suite
+### 1. Backend Pytest Suite
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m pytest tests/ -v
 ```
-Includes:
-- `test_auth.py`: Full login, registration, token refresh, and session revocation tests.
-- `test_auth_properties.py`: Property-based fuzzing with Hypothesis.
-- `test_chat.py` & `test_chat_stream.py`: SSE message streaming and ownership checks.
-- `test_rrf_scoring.py`: Mathematical verification of Reciprocal Rank Fusion scores.
-- `test_syllabus_sync.py`: Verification of curriculum sync payloads.
+Test modules include:
+- `test_auth.py`: Registration, login, token refresh, and session revocation.
+- `test_auth_properties.py`: Property-based fuzz testing of authentication tokens using Hypothesis.
+- `test_chat.py` & `test_chat_stream.py`: Real-time SSE streaming and message persistence invariants.
+- `test_rrf_scoring.py`: Mathematical validation of Reciprocal Rank Fusion retrieval logic.
+- `test_syllabus_sync.py`: Verification of curriculum synchronization payloads.
 
-### RAG Benchmark Evaluation Suite
+---
+
+### 2. RAG Retrieval Benchmark Evaluation
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe evals/rag/run_eval.py --suite retrieval --output-dir evals/rag/results/
 ```
-Calculates **Recall@K**, **MRR@K**, **nDCG@10**, and **Cross-Curriculum Leakage** on the `golden_set.jsonl` benchmark.
+Measures **Recall@K**, **MRR@K**, **nDCG@10**, and cross-curriculum leakage across the `golden_set.jsonl` benchmark suite.
 
-### Android Unit Tests
+---
+
+### 3. Android Client Unit Tests
 ```powershell
+# In the project root:
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat testDebugUnitTest
 ```
-Tests ViewModel state transformations, MockWebServer token refresh mutex, encrypted token storage, and offline model lifecycle watchdogs.
+Tests ViewModel state transitions, MockWebServer 401 token refresh mutex, SQLite cache integrity, and offline model watchdog lifecycles.
 
 ---
 
-## Contributing & Development Workflows
-
-- Follow [PROJECT_RULES.md](file:///e:/Offline%20First/PROJECT_RULES.md) for architectural boundaries, error-handling conventions, and coding guidelines.
-- Follow [GSD-STYLE.md](file:///e:/Offline%20First/GSD-STYLE.md) for commit standards and task orchestration.
-- To validate repository health before opening a pull request:
-  ```powershell
-  .\scripts\validate-all.ps1
-  ```
+### 4. Full Pre-Commit System Validation
+Before submitting pull requests or publishing updates, run the automated health check:
+```powershell
+.\scripts\validate-all.ps1
+```
 
 ---
 
-## License
+## 🤝 Contributing & Development Workflows
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+We welcome contributions from educators, students, and engineers!
+- Please read [PROJECT_RULES.md](file:///e:/Offline%20First/PROJECT_RULES.md) for architectural boundaries, coding standards, and error-handling conventions.
+- Check [GSD-STYLE.md](file:///e:/Offline%20First/GSD-STYLE.md) for commit standards and task orchestration conventions.
+- Review [PROJECT_ARCHITECTURE_AND_SUMMARY.md](file:///e:/Offline%20First/PROJECT_ARCHITECTURE_AND_SUMMARY.md) for deep technical details and roadmap progress.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for complete details.
+
+---
+
+<p align="center">
+  <b>Built with ❤️ for learners everywhere — online or offline.</b>
+</p>
